@@ -242,8 +242,8 @@ describe('starter template — standalone scaffold', () => {
         expect(readme).toMatch(/^# My Game$/m);
         expect(readme).not.toMatch(/scaffold your own copy/i);
         expect(readme).not.toContain('templates/starter');
-        expect(readme).toContain('tagline');
-        expect(readme).toContain('getPackSummaries()');
+        expect(readme).toContain('standalone');
+        expect(readme).toContain('Getting started');
     });
 
     it('F-3dcac63f: packMeta carries the catalog fields getPackSummaries() lists on', () => {

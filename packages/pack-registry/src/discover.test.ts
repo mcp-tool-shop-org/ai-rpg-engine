@@ -80,8 +80,8 @@ describe('discoverInstalledPacks', () => {
     expect(packs[0].meta.id).toBe('chapel-threshold');
   });
 
-  it('throws when from has no specifiers', () => {
-    expect(() => discoverInstalledPacks({ from: {} })).toThrow(/both empty/);
+  it('throws when from has no specifiers', async () => {
+    await expect(discoverInstalledPacks({ from: {} })).rejects.toThrow(/both empty/);
   });
 
   it('throws when a specifier cannot be imported', async () => {

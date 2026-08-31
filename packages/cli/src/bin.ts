@@ -21,6 +21,7 @@ import {
   glyphsFor,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
+import { ensureStartingLoadouts } from '@ai-rpg-engine/equipment';
 import { SaveLoadError, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { allPacks } from './packs.js';
 import { promptMenu, promptLine, closeReadline } from './prompts.js';
@@ -470,6 +471,10 @@ export async function createNewSession(
     const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
     installCreatedPlayer(engine, playerEntity);
   }
+
+  // F-5164895e: first snapshot after chargen wears starting kits (Gravewalker
+  // chapel-lantern in the tool slot). Readers (HUD, chronicle) stay pure.
+  ensureStartingLoadouts(engine.world);
 
   return { engine, pack };
 }

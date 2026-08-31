@@ -58,7 +58,7 @@ function makePlayer(): EntityState {
     name: 'Aldric',
     tags: ['player'],
     stats: { vigor: 6, instinct: 4, will: 3 },
-    resources: { hp: 25, maxHp: 25 },
+    resources: { hp: 25, maxHp: 25, stamina: 10 },
     statuses: [],
     inventory: [],
     zoneId: 'cell',

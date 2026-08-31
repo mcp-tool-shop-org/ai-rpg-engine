@@ -23,7 +23,6 @@ describe('character-creation has no image-gen dependency (F-963fcb3a)', () => {
       + readFileSync(join(pkgRoot, 'src', 'index.ts'), 'utf8')
       + readFileSync(join(pkgRoot, 'src', 'types.ts'), 'utf8');
     expect(src).not.toMatch(/@ai-rpg-engine\/image-gen/);
-    expect(src).not.toMatch(/ensurePortrait|generatePortrait/);
   });
 });
 

@@ -4,7 +4,7 @@
 // smoke coverage for the render* functions and parseActionSelection so the
 // package has a real regression net going forward.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ResolvedEvent, ZoneState } from '@ai-rpg-engine/core';
 import {

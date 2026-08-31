@@ -248,10 +248,14 @@ function autoWearEntity(world: WorldState, actor: EntityState, catalog: ItemCata
 export function ensureStartingLoadouts(world: WorldState): void {
   const runtime = AUTO_WEAR.get(world);
   if (!runtime) return;
+  const state = getEquipmentState(world);
   for (const id of Object.keys(world.entities).sort()) {
     if (runtime.worn.has(id)) continue;
-    const entity = world.entities[id];
     runtime.worn.add(id);
+    // An existing loadout means the player (or an earlier snapshot) already
+    // owns this entity's slots — don't refill emptied ones from inventory.
+    if (state.loadouts[id]) continue;
+    const entity = world.entities[id];
     if (!entity) continue;
     autoWearEntity(world, entity, runtime.catalog, runtime.statuses);
   }
@@ -259,9 +263,8 @@ export function ensureStartingLoadouts(world: WorldState): void {
 
 /** An entity's current loadout, or undefined when it has never equipped. */
 export function getEntityLoadout(world: WorldState, entityId: string): Loadout | undefined {
-  // First snapshot after chargen: wear starting kits so a Gravewalker's
-  // chapel-lantern is in the tool slot, not the pack (F-5164895e).
-  ensureStartingLoadouts(world);
+  // Pure read. First-snapshot auto-wear is ensureStartingLoadouts, called
+  // from the session/director snapshot — not from chronicle/HUD readers.
   return (world.modules[EQUIPMENT_STATE_KEY] as EquipmentModuleState | undefined)?.loadouts?.[entityId];
 }
 
@@ -802,11 +805,16 @@ export function createEquipmentCore(config: EquipmentCoreConfig): EngineModule {
       };
 
       ctx.actions.registerVerb('equip', (action, world) => {
-        bindAutoWear(world, readCatalog(), config.statuses);
+        const runtime = bindAutoWear(world, readCatalog(), config.statuses);
+        // Explicit loadout verbs mean the player owns this entity's slots —
+        // do not auto-wear inventory back into an emptied slot on the next
+        // getEntityLoadout (F-5164895e is first-snapshot only).
+        if (action.actorId) runtime.worn.add(action.actorId);
         return equipHandler(action, world, readCatalog, config.statuses);
       });
       ctx.actions.registerVerb('unequip', (action, world) => {
-        bindAutoWear(world, readCatalog(), config.statuses);
+        const runtime = bindAutoWear(world, readCatalog(), config.statuses);
+        if (action.actorId) runtime.worn.add(action.actorId);
         return unequipHandler(action, world, readCatalog, config.statuses);
       });
 

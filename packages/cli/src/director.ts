@@ -97,6 +97,7 @@ import {
   // equipment (F-ec5c7354) — read via the formula-registry transport, the
   // same per-engine pattern turns.ts's getAbilityCatalog uses
   getEntityLoadout,
+  ensureStartingLoadouts,
   EQUIPMENT_CATALOG_FORMULA,
   getItemProvenance,
   formatProvenanceForDirector,
@@ -459,6 +460,7 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
         // item's ItemDefinition through the formula-registry transport.
         const catalog = readEquipmentCatalog(engine);
         if (catalog.length === 0) return null; // pack never wired equipment-core
+        ensureStartingLoadouts(world);
         const loadout = getEntityLoadout(world, world.playerId);
         if (!loadout) return null; // wired, but this entity has never equipped
 

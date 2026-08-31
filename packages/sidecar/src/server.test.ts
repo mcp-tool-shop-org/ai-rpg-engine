@@ -500,6 +500,7 @@ describe('F-d76f8f25 — a known method without an id must not mutate', () => {
     expect(engine.getActionLog().length).toBe(actionsBefore);
     expect(sent.filter((m) => m.method === NOTIFICATIONS.TICK).length).toBe(ticksBefore);
 
+    call(METHODS.SNAPSHOT, {});
     const ok = call(METHODS.SUBMIT_ACTION, { verb: 'brand' });
     expect(ok?.error).toBeUndefined();
     expect(engine.getActionLog().length).toBeGreaterThan(actionsBefore);

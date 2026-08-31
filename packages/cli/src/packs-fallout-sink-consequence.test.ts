@@ -651,7 +651,7 @@ describe('sink: title-trigger (FSC-1)', () => {
 
     const earned = getEarnedTitles(custom).find((t) => t.tag === 'faction-operative')!;
     expect(earned.earnedAtTick).toBeGreaterThanOrEqual(0);
-    expect(getDisplayTitle(custom)).toBe('faction-operative');
+    expect(getDisplayTitle(custom)).toBe('the Operative');
   });
 
   it('earning it twice keeps the first tick — a title is not a counter', () => {

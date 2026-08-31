@@ -288,7 +288,7 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(npmJob).toContain('node scripts/check-packaging.mjs');
     expect(npmJob).toContain('node scripts/verify-isolated-consumer.mjs');
     const consumerAt = npmJob.indexOf('node scripts/verify-isolated-consumer.mjs');
-    const publishAt = npmJob.indexOf('npm publish');
+    const publishAt = npmJob.indexOf('npm publish -w');
     expect(consumerAt).toBeGreaterThan(-1);
     expect(publishAt).toBeGreaterThan(consumerAt);
   });

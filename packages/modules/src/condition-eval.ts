@@ -52,7 +52,6 @@
 
 import type { WorldState, EntityState } from '@ai-rpg-engine/core';
 import { getActiveCompanions, getPartyState } from './companion-core.js';
-import { getFactionAccess } from './social-consequence.js';
 
 type FactionAccessLevel = 'denied' | 'restricted' | 'normal' | 'privileged';
 
@@ -271,17 +270,22 @@ export function evaluateCondition(
       if (!factionId || !minLevel) {
         return { ok: false, evaluable: false, reason: 'faction-access needs `factionId` and `minLevel`' };
       }
-      const faction = world.factions[factionId] as { reputation?: number } | undefined;
-      const global = world.globals[`reputation_${factionId}`];
-      const rep = (faction?.reputation ?? 0) + (typeof global === 'number' ? global : 0);
+      // Gate on the persisted mark only (negotiate-access / call-in-favor).
+      // Reputation's derived band is a different operand (`faction-rep`);
+      // treating a missing mark as "normal" would open locked doors at boot.
       const storedRaw = actor.custom?.[`access.${factionId}`];
       const stored = asAccessLevel(storedRaw);
-      const level = getFactionAccess(rep, stored);
-      // Denied is fail-closed against any gate that asks for more than denied.
-      const ok = ACCESS_RANK[level] >= ACCESS_RANK[minLevel];
+      if (!stored) {
+        return {
+          ok: false,
+          evaluable: true,
+          reason: `no stored access with "${factionId}"`,
+        };
+      }
+      const ok = ACCESS_RANK[stored] >= ACCESS_RANK[minLevel];
       return ok
         ? { ok: true, evaluable: true }
-        : { ok: false, evaluable: true, reason: `access with "${factionId}" is ${level}, not ${minLevel}` };
+        : { ok: false, evaluable: true, reason: `access with "${factionId}" is ${stored}, not ${minLevel}` };
     }
 
     case 'faction-rep': {

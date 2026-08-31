@@ -778,6 +778,7 @@ describe('F-5164895e: starting kits auto-wear on first loadout snapshot', () => 
     const player = engine.world.entities['player'];
     expect(player.inventory).toEqual(['chapel-lantern']);
 
+    ensureStartingLoadouts(engine.world);
     const loadout = getEntityLoadout(engine.world, 'player');
     expect(loadout?.equipped.tool).toBe('chapel-lantern');
     expect(player.inventory).not.toContain('chapel-lantern');
@@ -788,6 +789,7 @@ describe('F-5164895e: starting kits auto-wear on first loadout snapshot', () => 
     const engine = makeEngine((p) => {
       p.inventory = ['trident-and-net', 'penitent-mail', 'chapel-lantern'];
     });
+    ensureStartingLoadouts(engine.world);
     const loadout = getEntityLoadout(engine.world, 'player');
     expect(loadout?.equipped.weapon).toBe('trident-and-net');
     expect(loadout?.equipped.armor).toBe('penitent-mail');
@@ -799,6 +801,7 @@ describe('F-5164895e: starting kits auto-wear on first loadout snapshot', () => 
     const engine = makeEngine((p) => {
       p.inventory = ['champion-helm'];
     });
+    ensureStartingLoadouts(engine.world);
     const loadout = getEntityLoadout(engine.world, 'player');
     expect(loadout?.equipped.armor ?? null).toBeNull();
     expect(engine.world.entities['player'].inventory).toEqual(['champion-helm']);
