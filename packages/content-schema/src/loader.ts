@@ -14,6 +14,7 @@ import {
   validateStatusDefinition,
   validateDistrictDefinition,
   validateHazardDefinition,
+  validateRuleProfile,
   validateItemRecord,
   validateItemPlacementRecord,
   validateRulesetDefinition,
@@ -114,6 +115,13 @@ function validatePackShape(pack: unknown): ValidationError[] {
     errors.push({
       path: 'pack.entityAi',
       message: `must be an object keyed by entity id if provided (got ${describe(entityAi)})`,
+    });
+  }
+  const ruleProfiles = (pack as Record<string, unknown>).ruleProfiles;
+  if (ruleProfiles !== undefined && !isPlainObject(ruleProfiles)) {
+    errors.push({
+      path: 'pack.ruleProfiles',
+      message: `must be an object keyed by profile id if provided (got ${describe(ruleProfiles)})`,
     });
   }
   const ruleset = (pack as Record<string, unknown>).ruleset;
@@ -298,6 +306,11 @@ export function loadContent(pack: ContentPack): LoadResult {
       } else if (typeof ai.profileId !== 'string' || ai.profileId.length === 0) {
         allErrors.push({ path: `${label}.profileId`, message: 'required non-empty string' });
       }
+    }
+  }
+  if (isPlainObject(pack.ruleProfiles)) {
+    for (const [id, rec] of Object.entries(pack.ruleProfiles)) {
+      allErrors.push(...validateRuleProfile(rec, `ruleProfiles.${id}`).errors);
     }
   }
 

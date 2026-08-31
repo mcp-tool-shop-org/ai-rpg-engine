@@ -123,6 +123,11 @@
       "description": "Optional RulesetDefinition the rest of the pack is written against. Overlay-only packs omit this.",
       "$ref": "#/$defs/RulesetDefinition"
     },
+    "ruleProfiles": {
+      "type": "object",
+      "description": "Optional RuleProfile registry keyed by EntityBlueprint.ruleProfileId. Overlay packs omit this. applyContentPack clones it onto WorldState.ruleProfiles. statMapping only — formulaOverrides reserved. Not sim-affecting.",
+      "additionalProperties": { "$ref": "#/$defs/RuleProfile" }
+    },
     "meta": {
       "description": "Optional listing identity (PackMetadata-shaped). Overlay packs omit this; packEntryFromJsonFile prefers it over the filename stub. Not sim-affecting.",
       "$ref": "#/$defs/PackMetadata"
@@ -421,6 +426,24 @@
         "fears": { "type": "array", "items": { "type": "string" } },
         "alertLevel": { "type": "number" },
         "knowledge": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "RuleProfile": {
+      "type": "object",
+      "required": ["statMapping"],
+      "additionalProperties": true,
+      "description": "Per-archetype combat mapping. statMapping only — formulaOverrides reserved because closures cannot round-trip.",
+      "properties": {
+        "statMapping": {
+          "type": "object",
+          "required": ["attack", "precision", "resolve"],
+          "additionalProperties": true,
+          "properties": {
+            "attack": { "type": "string", "minLength": 1 },
+            "precision": { "type": "string", "minLength": 1 },
+            "resolve": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "RulesetDefinition": {

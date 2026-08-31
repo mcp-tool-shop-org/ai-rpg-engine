@@ -27,6 +27,7 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'ProgressionTreeDefinition',
       'ItemPlacementRecord',
       'EntityAiState',
+      'RuleProfile',
       'RulesetDefinition',
       'PackMetadata',
       'GameManifest',
@@ -45,6 +46,7 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'itemPlacements',
       'entityAi',
       'ruleset',
+      'ruleProfiles',
       'meta',
       'manifest',
     ]) {

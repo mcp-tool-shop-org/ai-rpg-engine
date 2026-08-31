@@ -688,6 +688,26 @@ export function validateDistrictDefinition(v: unknown, path = 'DistrictDefinitio
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 
+/**
+ * Structural RuleProfile (F-0987c369). statMapping.attack/precision/resolve
+ * required non-empty strings. formulaOverrides is reserved and unread.
+ */
+export function validateRuleProfile(v: unknown, path = 'RuleProfile'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  const mapping = v.statMapping;
+  if (!isObj(mapping)) {
+    c.errors.push({ path: `${path}.statMapping`, message: 'required object { attack, precision, resolve }' });
+    return { ok: false, errors: c.errors };
+  }
+  const m = checker(`${path}.statMapping`);
+  reqStr(m, mapping, 'attack');
+  reqStr(m, mapping, 'precision');
+  reqStr(m, mapping, 'resolve');
+  c.errors.push(...m.errors);
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
 export function validateRoomDefinition(v: unknown, path = 'RoomDefinition'): ValidationResult {
   if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
   const c = checker(path);
