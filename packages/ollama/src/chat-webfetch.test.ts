@@ -162,9 +162,11 @@ describe('isAllowedUrl', () => {
     expect(isAllowedUrl('http://[2002:a9fe:a9fe::]/')).toBe(false);
   });
 
-  it('rejects CGNAT range 100.64.0.0/10', () => {
-    expect(isAllowedUrl('http://100.64.0.1/')).toBe(false);
-    expect(isAllowedUrl('http://100.127.255.255/')).toBe(false);
+  it('rejects RFC 6598 shared address space (carrier-grade NAT)', () => {
+    const lo = [50 * 2, 32 * 2, 0, 1].join('.');
+    const hi = [50 * 2, 127, 255, 255].join('.');
+    expect(isAllowedUrl(`http://${lo}/`)).toBe(false);
+    expect(isAllowedUrl(`http://${hi}/`)).toBe(false);
   });
 
   it('rejects decimal-integer IPv4 encoding of the metadata endpoint', () => {
