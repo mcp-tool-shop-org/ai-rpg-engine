@@ -1,6 +1,6 @@
 // Shared create-* generate → validate → one repair generate → re-validate loop.
 // Room and quest used to inline this; faction/district/packs and the new
-// dialogue/entity/ability/status verbs share the same single correction pass.
+// dialogue/entity/ability/status/item/hazard verbs share the same single correction pass.
 
 import type { OllamaTextClient } from './client.js';
 import { extractYaml } from './parsers.js';

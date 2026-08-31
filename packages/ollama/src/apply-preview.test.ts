@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup } from './apply-preview.js';
+import { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup, parseContentAppliedDetail, undoLastApply } from './apply-preview.js';
 
 describe('apply-preview', () => {
   let tempDir: string;
@@ -186,6 +186,28 @@ describe('apply-preview', () => {
       await writeFile(target, 'before\n', 'utf-8');
       await applyConfirmed({ content: 'after\n', targetPath: target, projectRoot: tempDir });
       const restored = await restoreFromBackup({ targetPath: target, projectRoot: tempDir });
+      expect(restored.ok).toBe(true);
+      expect(await readFile(target, 'utf-8')).toBe('before\n');
+    });
+
+    it('parseContentAppliedDetail reads path and backup from history detail', () => {
+      expect(parseContentAppliedDetail('/proj/chapel.yaml')).toEqual({ targetPath: '/proj/chapel.yaml' });
+      expect(parseContentAppliedDetail('/proj/chapel.yaml (backup: /proj/chapel.yaml.bak)')).toEqual({
+        targetPath: '/proj/chapel.yaml',
+        backupPath: '/proj/chapel.yaml.bak',
+      });
+    });
+
+    it('undoLastApply restores from the last content_applied backup', async () => {
+      const target = join(tempDir, 'chapel.yaml');
+      await writeFile(target, 'before\n', 'utf-8');
+      const written = await applyConfirmed({ content: 'after\n', targetPath: target, projectRoot: tempDir });
+      expect(written.ok).toBe(true);
+      if (!written.ok) return;
+      const restored = await undoLastApply({
+        history: [{ kind: 'content_applied', detail: `${written.path} (backup: ${written.backupPath})` }],
+        projectRoot: tempDir,
+      });
       expect(restored.ok).toBe(true);
       expect(await readFile(target, 'utf-8')).toBe('before\n');
     });

@@ -12,7 +12,7 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     createdAt: '2025-01-01',
     themes: ['cyberpunk', 'noir'],
     constraints: ['no magic'],
-    artifacts: { districts: ['neon-alley'], factions: ['syndicate'], quests: [], rooms: ['bar'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+    artifacts: { districts: ['neon-alley'], factions: ['syndicate'], quests: [], rooms: ['bar'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     issues: [],
     acceptedSuggestions: [],
     history: [],
@@ -102,7 +102,7 @@ describe('planFromSession — medium-severity issues', () => {
 describe('planFromSession — scaffold empty categories', () => {
   it('scaffolds missing categories in dependency order', () => {
     const session = makeSession({
-      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const plan = planFromSession(session);
     const scaffolds = plan.steps.filter(s => s.command === 'scaffold');
@@ -117,7 +117,7 @@ describe('planFromSession — scaffold empty categories', () => {
 
   it('signals missing categories', () => {
     const session = makeSession({
-      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const plan = planFromSession(session);
     expect(plan.signals.some(s => s.observation.includes('Missing artifact categories'))).toBe(true);
@@ -142,7 +142,7 @@ describe('planFromSession — fallback', () => {
   it('falls back to suggest_next when session is clean', () => {
     const now = new Date().toISOString();
     const session = makeSession({
-      artifacts: { districts: ['d1'], factions: ['f1'], quests: ['q1'], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: ['d1'], factions: ['f1'], quests: ['q1'], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
       history: [
         { kind: 'issue_opened', detail: 'recent critique', timestamp: now },
       ],

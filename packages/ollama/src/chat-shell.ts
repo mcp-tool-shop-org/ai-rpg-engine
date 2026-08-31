@@ -4,6 +4,7 @@
 
 import { createInterface } from 'node:readline';
 import type { OllamaTextClient } from './client.js';
+import { formatModelsReport } from './client.js';
 import { createChatEngine, type ChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, saveTranscript, defaultTranscriptPath } from './chat-transcript.js';
 import type { ChatMessage, ChatTranscript } from './chat-types.js';
@@ -31,9 +32,10 @@ import {
   formatExperimentSummary, formatExperimentComparison,
   formatParameterSweepResult, formatRunResults,
   compareExperiments, isTunableParam, generateSweepValues,
-  runExperiment, runParameterSweep,
-  type ReplayProducer, type ExperimentSummary,
+  runExperiment,
+  type ExperimentSpec, type ExperimentSummary,
 } from './chat-experiments.js';
+import { createDefaultReplayProducer } from './replay-producer.js';
 import {
   tryLoadSession, listSessions, formatSessionList, switchSession, exportSession,
 } from './session.js';
@@ -183,8 +185,22 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
   // /onboard is the purpose-built first-run walkthrough — name it here, not
   // only inside /help (F-a4c8e217 discoverability polish).
   console.log('ai-rpg-engine chat — type your question, /help for commands, /onboard for a guided tour, /quit to exit.');
+  if (client.version) {
+    try {
+      const ping = await client.version();
+      if (ping.ok) {
+        console.log(`Ollama ${ping.version} — /models to list installed models.`);
+      } else {
+        console.log(`Ollama health: ${ping.error}`);
+      }
+    } catch {
+      // health ping is best-effort
+    }
+  }
   console.log('');
   rl.prompt();
+
+  let inFlight: AbortController | null = null;
 
   rl.on('line', async (line) => {
     const trimmed = line.trim();
@@ -225,24 +241,55 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     // Liveness affordance (F-4be7a3c2 / F-8819f045): TTY line overwritten so
     // '(thinking...)' is never a permanent row between You: and Assistant:.
     const endThinking = beginThinking(out);
+    const controller = new AbortController();
+    inFlight = controller;
+    let streamed = false;
     try {
-      const response = await engine.process(trimmed);
+      const response = await engine.process(trimmed, {
+        signal: controller.signal,
+        onToken: (token) => {
+          if (!streamed) {
+            endThinking();
+            streamed = true;
+            out.write('Assistant: ');
+          }
+          out.write(token);
+        },
+      });
       endThinking();
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: response,
         timestamp: new Date().toISOString(),
       };
-      console.log(formatChatTurn(assistantMsg));
-      console.log('');
+      if (streamed) {
+        out.write('\n\n');
+      } else {
+        console.log(formatChatTurn(assistantMsg));
+        console.log('');
+      }
       addToTranscript(transcript, assistantMsg);
     } catch (err) {
       endThinking();
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`Error: ${msg}`);
+      if (controller.signal.aborted) {
+        console.log('Cancelled.');
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Error: ${msg}`);
+      }
+    } finally {
+      inFlight = null;
     }
 
     rl.prompt();
+  });
+
+  rl.on('SIGINT', () => {
+    if (inFlight) {
+      inFlight.abort();
+      return;
+    }
+    rl.close();
   });
 
   let exitSaveStarted = false;
@@ -334,6 +381,33 @@ export async function handleSlashCommand(
         console.log('No pending write.');
       }
       return 'handled';
+
+    case 'undo': {
+      const response = await engine.undoLastWrite();
+      console.log(response);
+      return 'handled';
+    }
+
+    case 'models': {
+      const { resolveConfig } = await import('./config.js');
+      const configuredModel = resolveConfig().model;
+      const chatClient = engine.client;
+      const [models, version] = await Promise.all([
+        chatClient.listModels
+          ? chatClient.listModels()
+          : Promise.resolve({ ok: false as const, error: 'listModels is not available on this client' }),
+        chatClient.version
+          ? chatClient.version()
+          : Promise.resolve({ ok: false as const, error: 'version is not available on this client' }),
+      ]);
+      console.log(formatModelsReport({
+        configuredModel,
+        models: models.ok ? models.models : undefined,
+        version: version.ok ? version.version : undefined,
+        error: models.ok ? undefined : models.error,
+      }));
+      return 'handled';
+    }
 
     case 'context':
       if (engine.lastContextSnapshot) {
@@ -721,10 +795,15 @@ export async function handleSlashCommand(
       }
       const label = parts[2] ?? 'experiment';
       console.log(`Experiment plan: ${runs} runs as "${label}"`);
-      console.log('Use the experiment runner API with a ReplayProducer to execute batches.');
-      const plan = generateExperimentPlan(`batch run ${runs}x`, null);
+      const producer = engine.replayProducer ?? createDefaultReplayProducer({ projectRoot });
+      const spec: ExperimentSpec = { id: label, label, runs, seedStart: 1 };
+      if (engine.lastExperiment) {
+        engine.baselineExperiment = engine.lastExperiment;
+      }
+      const summary = runExperiment(spec, producer);
+      engine.lastExperiment = summary;
       console.log('');
-      console.log(formatExperimentPlan(plan));
+      console.log(formatExperimentSummary(summary));
       console.log('');
       return 'handled';
     }

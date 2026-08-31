@@ -59,6 +59,8 @@ describe('session', () => {
       expect(s.artifacts.dialogues).toEqual([]);
       expect(s.artifacts.abilities).toEqual([]);
       expect(s.artifacts.statuses).toEqual([]);
+      expect(s.artifacts.items).toEqual([]);
+      expect(s.artifacts.hazards).toEqual([]);
       expect(s.issues).toEqual([]);
       expect(s.acceptedSuggestions).toEqual([]);
       expect(s.history).toHaveLength(1);
@@ -172,6 +174,8 @@ describe('session', () => {
       delete obj.artifacts['dialogues'];
       delete obj.artifacts['abilities'];
       delete obj.artifacts['statuses'];
+      delete obj.artifacts['items'];
+      delete obj.artifacts['hazards'];
       await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
       const loaded = await loadSession(tempDir);
       expect(loaded).not.toBeNull();
@@ -179,18 +183,24 @@ describe('session', () => {
       expect(loaded!.artifacts.dialogues).toEqual([]);
       expect(loaded!.artifacts.abilities).toEqual([]);
       expect(loaded!.artifacts.statuses).toEqual([]);
+      expect(loaded!.artifacts.items).toEqual([]);
+      expect(loaded!.artifacts.hazards).toEqual([]);
       expect(loaded!.artifacts.rooms).toEqual([]);
     });
 
-    it('tolerates unknown extra artifact keys on load', async () => {
+    it('keeps items/hazards when present and drops unknown extra keys', async () => {
       const s = createSession('extra-keys');
       const obj = JSON.parse(JSON.stringify(s)) as { artifacts: Record<string, unknown> };
       obj.artifacts['items'] = ['sword_01'];
+      obj.artifacts['hazards'] = ['chapel_fire'];
+      obj.artifacts['widgets'] = ['nope'];
       await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
       const loaded = await loadSession(tempDir);
       expect(loaded).not.toBeNull();
       expect(loaded!.name).toBe('extra-keys');
-      expect((loaded!.artifacts as Record<string, unknown>)['items']).toBeUndefined();
+      expect(loaded!.artifacts.items).toEqual(['sword_01']);
+      expect(loaded!.artifacts.hazards).toEqual(['chapel_fire']);
+      expect((loaded!.artifacts as Record<string, unknown>)['widgets']).toBeUndefined();
     });
 
     it('tolerates a session without history (older format)', async () => {
@@ -560,6 +570,8 @@ describe('session', () => {
       expect(artifactBucketForKind('npc')).toBe('entities');
       expect(artifactBucketForKind('ability')).toBe('abilities');
       expect(artifactBucketForKind('status')).toBe('statuses');
+      expect(artifactBucketForKind('item')).toBe('items');
+      expect(artifactBucketForKind('hazard')).toBe('hazards');
       expect(artifactBucketForKind('room')).toBe('rooms');
       expect(artifactBucketForKind('location-pack')).toBe('packs');
     });

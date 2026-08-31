@@ -7,6 +7,8 @@ import {
   validateDialogueDefinition,
   validateAbilityDefinition,
   validateStatusDefinition,
+  validateItemRecord,
+  validateHazardDefinition,
 } from '@ai-rpg-engine/content-schema';
 import type { ValidationResult, ValidationError } from '@ai-rpg-engine/content-schema';
 
@@ -423,5 +425,19 @@ export function validateGeneratedAbility(raw: string, parsed: unknown): Generate
 export function validateGeneratedStatus(raw: string, parsed: unknown): GeneratedContentResult {
   const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
   const validation = validateStatusDefinition(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed item (content-schema ItemDefinition / validateItemRecord). */
+export function validateGeneratedItem(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
+  const validation = validateItemRecord(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed hazard (content-schema HazardDefinition). */
+export function validateGeneratedHazard(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
+  const validation = validateHazardDefinition(obj);
   return { valid: validation.ok, content: parsed, validation, raw };
 }

@@ -26,7 +26,7 @@ npm install @ai-rpg-engine/ollama
 
 ## What's Inside
 
-- **Content scaffolding** — generate rooms, factions, quests, districts, location packs, encounter packs from a theme
+- **Content scaffolding** — generate rooms, factions, quests, districts, location packs, encounter packs, dialogue, entities, abilities, statuses, items, and hazards from a theme
 - **Critique & repair** — validate generated content against engine schemas, auto-repair on failure
 - **Chat shell** — interactive design session with context-aware routing, tool orchestration, and memory
 - **Guided builds** — session-aware, plan-first multi-step worldbuilding workflows

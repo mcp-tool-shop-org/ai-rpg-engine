@@ -250,6 +250,8 @@ Both are clamped to sane values: a non-finite or sub-1 `maxAttempts`, or a negat
 | `create-entity` | `--theme` | Entity blueprint YAML (validated, repairable) |
 | `create-ability` | `--theme` | Ability YAML (validated, repairable) |
 | `create-status` | `--theme` | Status YAML (validated, repairable) |
+| `create-item` | `--theme` | Item YAML (validated, repairable) |
+| `create-hazard` | `--theme` | Hazard YAML (validated, repairable) |
 
 All `create-*` commands validate against the engine schemas and honor `--validate` / `--repair`.
 
