@@ -249,6 +249,42 @@ export function sceneMusicTargetIds(): string[] {
   return [...ids].sort();
 }
 
+type StingTarget = { trackId: string };
+
+/**
+ * Optional music-sting hints for combat.* gameplay cues (F-fa44e956).
+ * Independent of {@link SCENE_MUSIC_MAP} / {@link resolveMusicStem}: a sting
+ * is a one-shot overlay layered over whatever stem is already playing (play
+ * it via `AudioDirector.scheduleSting`), never a stem replacement — so it
+ * gets its own resolver rather than folding into resolveMusicStem's
+ * loop-only vocabulary. Exact tier only; no namespace fallback (there is no
+ * generic "combat.*" sting to fall back to).
+ */
+export const COMBAT_STING_MAP: Readonly<Record<string, StingTarget>> = Object.freeze(
+  Object.assign(Object.create(null), {
+    'combat.victory': { trackId: 'music_victory_sting' },
+    'combat.defeat': { trackId: 'music_defeat_sting' },
+  }),
+);
+
+/**
+ * Optional music sting for a gameplay cue. Undefined when the cue has no
+ * sting hint (everything except combat.victory/combat.defeat today). Does
+ * not emit an SFX cue and does not change ambient beds or the active stem —
+ * unlike {@link resolveMusicStem}, a resolved sting is never meant to
+ * replace what schedule() already has playing.
+ */
+export function resolveMusicSting(cue: string): { trackId: string; via: CueMatchTier } | undefined {
+  if (Object.hasOwn(COMBAT_STING_MAP, cue)) {
+    return { trackId: COMBAT_STING_MAP[cue].trackId, via: 'exact' };
+  }
+  return undefined;
+}
+
+export function combatStingTargetIds(): string[] {
+  return [...new Set(Object.values(COMBAT_STING_MAP).map((t) => t.trackId))].sort();
+}
+
 /**
  * The exact-tier cue ids, for docs and totality tests. Namespace families are
  * open-ended by design and therefore not enumerable here.
@@ -377,6 +413,12 @@ if (!sceneMusicTargetIds().every((id) => coreIds.has(id))) {
   throw new Error(
     '[soundpack-core] scene music map points at a sound id missing from CORE_SOUND_PACK. ' +
       'Fix SCENE_MUSIC_MAP / NAMESPACE_MUSIC_MAP in cue-map.ts.',
+  );
+}
+if (!combatStingTargetIds().every((id) => coreIds.has(id))) {
+  throw new Error(
+    '[soundpack-core] combat sting map points at a sound id missing from CORE_SOUND_PACK. ' +
+      'Fix COMBAT_STING_MAP in cue-map.ts.',
   );
 }
 /* v8 ignore stop */

@@ -353,4 +353,93 @@ describe('AudioDirector', () => {
       expect(director.getLastWarnings()).toEqual([]);
     });
   });
+
+  // F-fa44e956: gameplay had no way to drive a music sting (victory/defeat
+  // fanfare) without killing the zone stem — scheduleMusic's action always
+  // folded into schedule()'s single-slot activeMusicId bookkeeping, so any
+  // play/crossfade stopped whatever was already playing. scheduleSting is
+  // a distinct entry point that never touches activeMusicId/activeLayers.
+  describe('music stings (F-fa44e956)', () => {
+    it('a sting play must not clear or crossfade-stop activeMusicId', () => {
+      const director = new AudioDirector();
+      director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'crypt_theme', fadeMs: 800 },
+      }), 0);
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+
+      director.scheduleSting('music_victory_sting');
+
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+      expect(director.getActiveLayers().get('crypt_theme')?.domain).toBe('music');
+    });
+
+    it('returns a music-domain command tagged with a distinct action, not play/crossfade/stop', () => {
+      const director = new AudioDirector();
+      const cmd = director.scheduleSting('music_victory_sting');
+      expect(cmd.domain).toBe('music');
+      expect(cmd.resourceId).toBe('music_victory_sting');
+      expect(cmd.action).toBe('sting');
+      expect(cmd.action).not.toBe('play');
+      expect(cmd.action).not.toBe('crossfade');
+      expect(cmd.action).not.toBe('stop');
+    });
+
+    it('a sting never appears in getActiveLayers as the active music', () => {
+      const director = new AudioDirector();
+      director.scheduleSting('music_victory_sting');
+      expect(director.getActiveLayers().has('music_victory_sting')).toBe(false);
+      expect(director.getActiveMusic()).toBeNull();
+    });
+
+    it('a later normal stem crossfade after a sting behaves exactly as if the sting never happened', () => {
+      const director = new AudioDirector();
+      director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'theme_a', fadeMs: 800 },
+      }), 0);
+      director.scheduleSting('music_victory_sting');
+
+      const next = director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'theme_b', fadeMs: 400 },
+      }), 1000);
+      const music = next.filter((c) => c.domain === 'music');
+      const stop = music.find((c) => c.action === 'stop');
+      expect(stop?.resourceId).toBe('theme_a');
+      expect(director.getActiveMusic()).toBe('theme_b');
+    });
+
+    it('resolves a file-source sting to its ingested hash via soundRegistry, same as a normal play', () => {
+      const stingHash = 'd'.repeat(64);
+      const director = new AudioDirector({
+        variantRoll: 0,
+        soundRegistry: {
+          get(id: string): ReturnType<SoundLookup['get']> {
+            if (id === 'custom_sting') {
+              return { source: 'file', variants: ['sting.wav'], hashes: { 'sting.wav': stingHash } };
+            }
+            return undefined;
+          },
+          pickVariant(id) {
+            return id === 'custom_sting' ? 'sting.wav' : undefined;
+          },
+        },
+      });
+      const cmd = director.scheduleSting('custom_sting');
+      expect(cmd.resourceId).toBe(stingHash);
+      expect(cmd.action).toBe('sting');
+      expect(cmd.params.effectId).toBe('custom_sting');
+    });
+
+    it('an optional fadeMs is forwarded in params for a soft fade-in over the mix', () => {
+      const director = new AudioDirector();
+      const cmd = director.scheduleSting('music_victory_sting', { fadeMs: 250 });
+      expect(cmd.params.fadeMs).toBe(250);
+    });
+
+    it('does not touch the music cooldown clock (still OPEN F-a360ad62)', () => {
+      const director = new AudioDirector();
+      director.scheduleSting('music_victory_sting');
+      // No cooldown bookkeeping is created for the sting's resourceId.
+      expect(director.isOnCooldown('music_victory_sting', 0)).toBe(false);
+    });
+  });
 });

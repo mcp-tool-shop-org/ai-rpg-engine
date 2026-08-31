@@ -198,6 +198,44 @@ export class AudioDirector {
     return this.activeMusicId;
   }
 
+  /**
+   * Play a music sting — a short one-shot overlay (victory fanfare, defeat
+   * stinger) that layers over whatever stem is already playing (F-fa44e956).
+   *
+   * Deliberately NOT routed through {@link schedule}'s NarrationPlan
+   * pipeline: that music-domain loop owns the single-slot `activeMusicId`
+   * bookkeeping (lines ~136-166) — any play/crossfade there stops the
+   * previous track. A sting must never do that, so this method never reads
+   * or writes `activeMusicId` / `activeLayers` at all. The returned command
+   * carries a distinct `action: 'sting'` (never `'play'`/`'crossfade'`/
+   * `'stop'`) so a host renderer can tell at a glance that this is a
+   * fire-and-forget overlay, not a stem replacement.
+   *
+   * Resolves a file-source `resourceId` to its ingested hash via
+   * `soundRegistry`, same as a normal play command. Does not touch the music
+   * cooldown clock — matching the existing loop-stem gap (still OPEN
+   * F-a360ad62, noted above `schedule`'s crossfade-stop block).
+   *
+   * @param resourceId A `domain: 'music'`, `durationClass: 'oneshot'` sound
+   *                    id (e.g. a CORE_SOUND_PACK sting, or the result of
+   *                    `SoundRegistry.pickMusicSting`).
+   * @param opts        `priority` (default: the configured music domain
+   *                     priority) and `fadeMs` (forwarded to the renderer for
+   *                     a soft fade-in over the mix).
+   */
+  scheduleSting(resourceId: string, opts?: { priority?: number; fadeMs?: number }): AudioCommand {
+    const raw: AudioCommand = {
+      domain: 'music',
+      action: 'play',
+      resourceId,
+      priority: opts?.priority ?? this.domainPriorities.music,
+      timing: 0,
+      params: opts?.fadeMs !== undefined ? { fadeMs: opts.fadeMs } : {},
+    };
+    const resolved = this.resolveCommand(raw);
+    return { ...resolved, action: 'sting' };
+  }
+
   /** Clear all cooldowns (e.g. on scene change). */
   clearCooldowns(): void {
     this.cooldowns.clear();

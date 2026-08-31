@@ -165,6 +165,19 @@ export class SoundRegistry {
     return pickLoop(this.query({ ...query, domain: 'music' }), roll);
   }
 
+  /**
+   * Pick a music sting — a one-shot overlay (victory fanfare, defeat
+   * stinger) meant to play OVER the current stem, never replace it
+   * (F-fa44e956). Forces `domain: 'music'` and keeps only
+   * `durationClass: 'oneshot'` entries — the inverse of
+   * {@link pickMusicStem}'s loop-only filter — then indexes the id-sorted
+   * matches the same way {@link pickMusicStem} indexes stems. Play the
+   * result via `AudioDirector.scheduleSting`, not `scheduleMusic`/`musicCue`.
+   */
+  pickMusicSting(query: SoundQuery, roll: number): SoundEntry | undefined {
+    return pickOneshot(this.query({ ...query, domain: 'music' }), roll);
+  }
+
   /** Get all loaded entry IDs. */
   getIds(): string[] {
     return [...this.entries.keys()];
@@ -218,6 +231,17 @@ export function diffAmbientLayers(
 function pickLoop(entries: SoundEntry[], roll: number): SoundEntry | undefined {
   const matches = entries
     .filter((e) => e.durationClass === 'long-loop' || e.durationClass === 'short-loop')
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (matches.length === 0) return undefined;
+  const clamped = Math.min(Math.max(roll, 0), 1);
+  const idx = Math.min(Math.floor(clamped * matches.length), matches.length - 1);
+  return matches[idx];
+}
+
+/** Mirrors {@link pickLoop}'s id-sort-then-index pattern, kept to oneshots only (F-fa44e956). */
+function pickOneshot(entries: SoundEntry[], roll: number): SoundEntry | undefined {
+  const matches = entries
+    .filter((e) => e.durationClass === 'oneshot')
     .sort((a, b) => a.id.localeCompare(b.id));
   if (matches.length === 0) return undefined;
   const clamped = Math.min(Math.max(roll, 0), 1);

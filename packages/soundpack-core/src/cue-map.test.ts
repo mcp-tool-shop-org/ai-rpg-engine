@@ -18,6 +18,9 @@ import {
   resolveMusicStem,
   sceneMusicTargetIds,
   SCENE_MUSIC_MAP,
+  resolveMusicSting,
+  combatStingTargetIds,
+  COMBAT_STING_MAP,
 } from './cue-map.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
 
@@ -310,6 +313,39 @@ describe('cue-map: optional scene music stems (F-768980bb)', () => {
       const entry = CORE_SOUND_PACK.entries.find((e) => e.id === id);
       expect(entry?.domain).toBe('music');
       expect(entry?.durationClass).toBe('long-loop');
+    }
+  });
+});
+
+describe('cue-map: optional combat music stings (F-fa44e956)', () => {
+  it('does not change existing SFX exact/namespace rows', () => {
+    expect(resolveSoundCue('combat.hit').effectId).toBe('alert_warning');
+    expect(resolveSoundCue('combat.victory').effectId).toBe('ui_success');
+    expect(resolveSoundCue('combat.defeat').effectId).toBe('alert_critical');
+  });
+
+  it('resolves combat.victory/combat.defeat to music stings, exact tier only (no namespace fallback)', () => {
+    expect(resolveMusicSting('combat.victory')).toEqual({ trackId: 'music_victory_sting', via: 'exact' });
+    expect(resolveMusicSting('combat.defeat')).toEqual({ trackId: 'music_defeat_sting', via: 'exact' });
+    // combat.hit has no sting hint — undefined, not a namespace fallback to
+    // either sting (unlike resolveMusicStem, this map has no namespace tier).
+    expect(resolveMusicSting('combat.hit')).toBeUndefined();
+    expect(resolveMusicSting('scene.enter')).toBeUndefined();
+    expect(COMBAT_STING_MAP['combat.victory'].trackId).toBe('music_victory_sting');
+  });
+
+  it('is independent of resolveMusicStem — combat.victory has no loop-stem hint', () => {
+    expect(resolveMusicStem('combat.victory')).toBeUndefined();
+    expect(resolveMusicStem('combat.defeat')).toBeUndefined();
+  });
+
+  it('sting targets exist as domain:music oneshots in CORE_SOUND_PACK', () => {
+    const have = new Set(CORE_SOUND_PACK.entries.map((e) => e.id));
+    expect(combatStingTargetIds().every((id) => have.has(id))).toBe(true);
+    for (const id of combatStingTargetIds()) {
+      const entry = CORE_SOUND_PACK.entries.find((e) => e.id === id);
+      expect(entry?.domain).toBe('music');
+      expect(entry?.durationClass).toBe('oneshot');
     }
   });
 });
