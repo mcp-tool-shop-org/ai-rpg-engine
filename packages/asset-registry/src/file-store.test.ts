@@ -408,4 +408,22 @@ describe('FileAssetStore quota (F-158910cc)', () => {
     expect(again.tags).toContain('extra');
     expect(await limited.count()).toBe(1);
   });
+
+  it('pin persists in the sidecar and keepHashes skips the live background (F-0b108b56)', async () => {
+    const first = await store.put(new Uint8Array([1]), testInput);
+    expect(await store.pin(first.hash)).toBe(true);
+    const sidecar = JSON.parse(
+      await fs.readFile(path.join(tmpDir, first.hash.slice(0, 2), `${first.hash}.json`), 'utf-8'),
+    ) as { pinned?: boolean; keep?: boolean; tags: string[] };
+    expect(sidecar.pinned).toBe(true);
+    expect(sidecar.keep).toBe(true);
+    expect(sidecar.tags).toContain('pinned');
+
+    const bg = await store.put(new Uint8Array([2]), { ...testInput, kind: 'background' });
+    const junk = await store.put(new Uint8Array([3]), { ...testInput, kind: 'icon' });
+    expect(await store.evictUntil({ maxCount: 1, policy: 'evict-oldest' }, [bg.hash])).toBe(1);
+    expect(await store.has(first.hash)).toBe(true);
+    expect(await store.has(bg.hash)).toBe(true);
+    expect(await store.has(junk.hash)).toBe(false);
+  });
 });

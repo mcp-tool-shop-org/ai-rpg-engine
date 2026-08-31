@@ -146,6 +146,46 @@ describe('ComfyUIProvider img2img (F-9daede34)', () => {
     expect(workflow!['5']?.inputs?.denoise).toBe(0.45);
     expect(workflow!['5']?.inputs?.latent_image).toEqual(['8', 0]);
   });
+
+  it('mask + initImage uses LoadImageMask + VAEEncodeForInpaint (F-f4a0a8ec)', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    let uploads = 0;
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/upload/image') {
+        uploads += 1;
+        const name = uploads === 1 ? 'init.png' : 'mask.png';
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ name, subfolder: '', type: 'input' }));
+        });
+        return;
+      }
+      comfyFlow(
+        (_req, viewRes) => {
+          viewRes.writeHead(200, { 'Content-Type': 'image/png' });
+          viewRes.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      )(req, res);
+    });
+
+    const result = await makeProvider(mock.url).generate('scarred knight', {
+      initImage: new Uint8Array([1, 2, 3, 4]),
+      mask: new Uint8Array([9, 9, 9, 9]),
+      denoise: 0.45,
+    });
+    expect(result.ok).toBe(true);
+    expect(uploads).toBe(2);
+    expect(workflow!['4']?.class_type).toBe('LoadImage');
+    expect(workflow!['9']?.class_type).toBe('LoadImageMask');
+    expect(workflow!['9']?.inputs?.image).toBe('mask.png');
+    expect(workflow!['8']?.class_type).toBe('VAEEncodeForInpaint');
+    expect(workflow!['8']?.inputs?.mask).toEqual(['9', 0]);
+    expect(workflow!['5']?.inputs?.latent_image).toEqual(['8', 0]);
+    expect(workflow!['4']?.class_type).not.toBe('EmptyLatentImage');
+  });
 });
 
 describe('ComfyUIProvider.generate — A1: typed failure envelope', () => {

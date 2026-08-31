@@ -93,6 +93,15 @@ function deriveDefaultSeed(
     }
     initSig = `${init.length}:${h}`;
   }
+  const mask = opts.mask;
+  let maskSig = '';
+  if (mask && mask.length > 0) {
+    let h = mask.length;
+    for (let i = 0; i < mask.length; i += Math.max(1, Math.floor(mask.length / 32))) {
+      h = (h * 33 + mask[i]) >>> 0;
+    }
+    maskSig = `${mask.length}:${h}`;
+  }
   const key = [
     prompt,
     opts.negativePrompt ?? '',
@@ -102,6 +111,7 @@ function deriveDefaultSeed(
     opts.cfgScale ?? 7,
     opts.denoise ?? '',
     initSig,
+    maskSig,
   ].join(' ');
   let hash = 0x811c9dc5; // FNV offset basis
   for (let i = 0; i < key.length; i++) {
@@ -111,12 +121,16 @@ function deriveDefaultSeed(
   return hash >>> 0;
 }
 
-/** Build a txt2img (EmptyLatentImage) or img2img (LoadImage + VAEEncode) workflow. */
+/**
+ * Build a txt2img (EmptyLatentImage), img2img (LoadImage + VAEEncode), or
+ * inpaint (LoadImageMask + VAEEncodeForInpaint) workflow (F-f4a0a8ec).
+ */
 function buildWorkflow(
   prompt: string,
   opts: GenerationOptions & ComfyUIProviderOptions,
   seed: number,
   initImageName?: string,
+  maskImageName?: string,
 ): Record<string, unknown> {
   const width = opts.width ?? 512;
   const height = opts.height ?? 512;
@@ -137,23 +151,39 @@ function buildWorkflow(
       ? Math.min(1, Math.max(0, rawDenoise))
       : (initImageName ? 0.7 : 1.0);
 
-  const latentNode: Record<string, unknown> = initImageName
+  const inpaint = Boolean(initImageName && maskImageName);
+  const latentNode: Record<string, unknown> = inpaint
     ? {
         '4': {
           class_type: 'LoadImage',
           inputs: { image: initImageName },
         },
+        '9': {
+          class_type: 'LoadImageMask',
+          inputs: { image: maskImageName, channel: 'alpha' },
+        },
         '8': {
-          class_type: 'VAEEncode',
-          inputs: { pixels: ['4', 0], vae: ['1', 2] },
+          class_type: 'VAEEncodeForInpaint',
+          inputs: { pixels: ['4', 0], vae: ['1', 2], mask: ['9', 0], grow_mask_by: 6 },
         },
       }
-    : {
-        '4': {
-          class_type: 'EmptyLatentImage',
-          inputs: { width, height, batch_size: batchSize },
-        },
-      };
+    : initImageName
+      ? {
+          '4': {
+            class_type: 'LoadImage',
+            inputs: { image: initImageName },
+          },
+          '8': {
+            class_type: 'VAEEncode',
+            inputs: { pixels: ['4', 0], vae: ['1', 2] },
+          },
+        }
+      : {
+          '4': {
+            class_type: 'EmptyLatentImage',
+            inputs: { width, height, batch_size: batchSize },
+          },
+        };
 
   return {
     '1': {
@@ -296,14 +326,15 @@ export class ComfyUIProvider implements ImageProvider {
     return `Is ComfyUI running at ${this.baseUrl}? Start it (or fix baseUrl), then retry.`;
   }
 
-  /** POST /upload/image so LoadImage can see the init frame (F-9daede34). */
-  private async uploadInitImage(
+  /** POST /upload/image so LoadImage / LoadImageMask can see the frame. */
+  private async uploadImage(
     bytes: Uint8Array,
     timeout: number,
+    filename: string,
   ): Promise<string | GenerationFailure> {
     const form = new FormData();
     const copy = new Uint8Array(bytes);
-    form.append('image', new Blob([copy], { type: 'image/png' }), 'init.png');
+    form.append('image', new Blob([copy], { type: 'image/png' }), filename);
     form.append('overwrite', 'true');
     const res = await fetch(`${this.baseUrl}/upload/image`, {
       method: 'POST',
@@ -394,11 +425,17 @@ export class ComfyUIProvider implements ImageProvider {
       : deriveDefaultSeed(prompt, mergedOpts);
     let initImageName: string | undefined;
     if (opts?.initImage && opts.initImage.length > 0) {
-      const uploaded = await this.uploadInitImage(opts.initImage, timeout);
+      const uploaded = await this.uploadImage(opts.initImage, timeout, 'init.png');
       if (typeof uploaded !== 'string') return uploaded;
       initImageName = uploaded;
     }
-    const workflow = buildWorkflow(prompt, mergedOpts, seed, initImageName);
+    let maskImageName: string | undefined;
+    if (initImageName && opts?.mask && opts.mask.length > 0) {
+      const uploaded = await this.uploadImage(opts.mask, timeout, 'mask.png');
+      if (typeof uploaded !== 'string') return uploaded;
+      maskImageName = uploaded;
+    }
+    const workflow = buildWorkflow(prompt, mergedOpts, seed, initImageName, maskImageName);
     const start = Date.now();
 
     // 1. Queue the prompt — bounded + non-JSON-safe (A1).

@@ -27,6 +27,14 @@ export type AssetMetadata = {
   createdAt: string;
   /** Origin: generation prompt, URL, file path, or 'manual'. */
   source?: string;
+  /**
+   * Quota pin (F-0b108b56). When true, evict-oldest / {@link AssetStore.evictUntil}
+   * skip this asset so a first portrait or live zone background is not dropped
+   * for later batch junk. Hash identity is unchanged.
+   */
+  pinned?: boolean;
+  /** Alias of {@link AssetMetadata.pinned} — hosts may set either. */
+  keep?: boolean;
 };
 
 /** Lightweight reference to an asset — just hash + kind. */
@@ -114,6 +122,14 @@ export interface AssetStore {
    * Delete oldest assets (by `createdAt`, then hash) until the store is within
    * `quota.maxBytes` / `quota.maxCount`. Returns how many assets were removed.
    * File backends delete blob + sidecar; memory backends drop both maps.
+   * Pinned / keep assets and `keepHashes` are never deleted (F-0b108b56).
    */
-  evictUntil(quota: StoreQuota): Promise<number>;
+  evictUntil(quota: StoreQuota, keepHashes?: readonly string[]): Promise<number>;
+  /**
+   * Mark an asset as pinned/keep so quota eviction skips it (F-0b108b56).
+   * Returns false when the hash is missing or malformed.
+   */
+  pin(hash: string): Promise<boolean>;
+  /** Clear the pin/keep flags (and the `pinned`/`keep` tags). */
+  unpin(hash: string): Promise<boolean>;
 }

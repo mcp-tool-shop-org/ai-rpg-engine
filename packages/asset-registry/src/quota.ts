@@ -44,11 +44,50 @@ export function wouldExceedQuota(
   return false;
 }
 
-/** Oldest-first so evictUntil is deterministic across backends. */
-export function sortOldestFirst(metas: readonly AssetMetadata[]): AssetMetadata[] {
-  return [...metas].sort(
-    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.hash.localeCompare(b.hash),
-  );
+/** True when quota eviction must skip this asset (F-0b108b56). */
+export function isProtectedAsset(
+  meta: AssetMetadata,
+  keepHashes?: ReadonlySet<string>,
+): boolean {
+  if (meta.pinned === true || meta.keep === true) return true;
+  if (meta.tags.includes('pinned') || meta.tags.includes('keep')) return true;
+  if (keepHashes?.has(meta.hash)) return true;
+  return false;
+}
+
+/**
+ * Oldest-first so evictUntil is deterministic across backends.
+ * Pinned/keep assets and `keepHashes` are omitted so eviction cannot drop them.
+ */
+export function sortOldestFirst(
+  metas: readonly AssetMetadata[],
+  keepHashes?: readonly string[],
+): AssetMetadata[] {
+  const keep = keepHashes && keepHashes.length > 0 ? new Set(keepHashes) : undefined;
+  return metas
+    .filter((m) => !isProtectedAsset(m, keep))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.hash.localeCompare(b.hash));
+}
+
+/** Apply or clear pin/keep flags and the matching tags (F-0b108b56). */
+export function applyPinFlags(meta: AssetMetadata, pinned: boolean): AssetMetadata {
+  const tags = pinned
+    ? (meta.tags.includes('pinned') ? [...meta.tags] : [...meta.tags, 'pinned'])
+    : meta.tags.filter((t) => t !== 'pinned' && t !== 'keep');
+  const next: AssetMetadata = { ...meta, tags };
+  if (pinned) {
+    next.pinned = true;
+    next.keep = true;
+  } else {
+    delete next.pinned;
+    delete next.keep;
+  }
+  return next;
+}
+
+/** First-write pin when the caller already tagged the asset `pinned`/`keep`. */
+export function tagsRequestPin(tags: readonly string[] | undefined): boolean {
+  return Boolean(tags?.includes('pinned') || tags?.includes('keep'));
 }
 
 /**

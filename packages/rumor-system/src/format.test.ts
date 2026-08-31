@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { formatRumorForPlayer } from './format.js';
+import { formatRumorForPlayer, formatRumorBoard } from './format.js';
 import type { Rumor } from './types.js';
 
 function rumor(overrides: Partial<Rumor> = {}): Rumor {
@@ -86,5 +86,75 @@ describe('formatRumorForPlayer (F-9d1fac77)', () => {
     expect(view.confidencePct).toBe(42);
     view.factions.push('spies');
     expect(r.factionUptake).toEqual(['town_guard']);
+  });
+});
+
+describe('formatRumorBoard (F-823e0edf)', () => {
+  test('collapses (subject, key) to the highest-confidence row with witness count', () => {
+    const low = rumor({
+      id: 'rum_low',
+      confidence: 0.4,
+      sourceId: 'guard_1',
+      spreadPath: ['guard_1'],
+    });
+    const high = rumor({
+      id: 'rum_high',
+      confidence: 0.9,
+      sourceId: 'priest_1',
+      spreadPath: ['priest_1', 'innkeep'],
+    });
+    const other = rumor({
+      id: 'rum_other',
+      subject: 'merchant',
+      key: 'missing',
+      claim: 'merchant_1 fled town',
+      sourceId: 'beggar',
+      spreadPath: ['beggar'],
+      confidence: 0.5,
+    });
+    const board = formatRumorBoard([low, high, other]);
+    expect(board).toHaveLength(2);
+    const killed = board.find((line) => line.key === 'killed_merchant');
+    expect(killed?.spoken).toBe('Player killed merchant');
+    expect(killed?.witnessCount).toBe(3);
+    expect(killed?.denied).toBe(false);
+    expect(killed?.denialLine).toBeUndefined();
+    expect(killed?.confidencePct).toBe(90);
+  });
+
+  test('sets denied + denialLine when the winning value is inverted', () => {
+    const denied = rumor({
+      value: false,
+      originalValue: true,
+      mutationCount: 1,
+      spreadPath: ['guard_1', 'priest_1'],
+    });
+    const board = formatRumorBoard([denied], {
+      resolveName: (id) => (id === 'player' ? 'The player' : id === 'merchant_1' ? 'merchant' : id),
+    });
+    expect(board).toHaveLength(1);
+    expect(board[0].denied).toBe(true);
+    expect(board[0].spoken).toBe('The player spared merchant');
+    expect(board[0].denialLine).toBe('The player spared merchant');
+    expect(board[0].witnessCount).toBe(2);
+  });
+
+  test('omits dead rumors unless includeDead, then flags them as denied', () => {
+    const live = rumor({ id: 'live', status: 'spreading' });
+    const dead = rumor({
+      id: 'dead',
+      status: 'dead',
+      key: 'cursed',
+      claim: 'player is cursed',
+      sourceId: 'priest_1',
+      spreadPath: ['priest_1'],
+    });
+    expect(formatRumorBoard([live, dead])).toHaveLength(1);
+    const withDead = formatRumorBoard([live, dead], { includeDead: true });
+    expect(withDead).toHaveLength(2);
+    const cursed = withDead.find((line) => line.key === 'cursed');
+    expect(cursed?.denied).toBe(true);
+    expect(cursed?.denialLine).toBe('Player is cursed');
+    expect(cursed?.status).toBe('dead');
   });
 });

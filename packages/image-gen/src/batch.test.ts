@@ -1,8 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { MemoryAssetStore } from '@ai-rpg-engine/asset-registry';
-import { generatePortraits, ensurePortraits, isPortraitBatchFailure } from './batch.js';
+import {
+  generatePortraits,
+  ensurePortraits,
+  isPortraitBatchFailure,
+  generateBackgrounds,
+  ensureBackgrounds,
+  generateIcons,
+  ensureIcons,
+  isSceneBatchFailure,
+  isIconBatchFailure,
+} from './batch.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
-import type { PortraitRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
+import type {
+  PortraitRequest,
+  SceneRequest,
+  IconRequest,
+  ImageProvider,
+  GenerationOutcome,
+  GenerationOptions,
+} from './types.js';
 
 const base: PortraitRequest = {
   characterName: 'Aldric',
@@ -39,7 +56,7 @@ class NamedProvider implements ImageProvider {
     this.calls.push(prompt);
     try {
       if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
-      const who = /Portrait of ([^,]+)/.exec(prompt)?.[1] ?? prompt;
+      const who = /(?:Portrait|Scene|Icon) of ([^,]+)/.exec(prompt)?.[1] ?? prompt;
       if (this.failFor.has(who)) {
         return { ok: false, code: 'timeout', error: `failed ${who}`, hint: 'retry' };
       }
@@ -149,6 +166,82 @@ describe('ensurePortraits (F-48a47f12)', () => {
 
     if (!isPortraitBatchFailure(first.results[0]) && !isPortraitBatchFailure(second.results[0])) {
       expect(second.results[0].hash).toBe(first.results[0].hash);
+    }
+  });
+});
+
+function scene(zoneId: string, locationName = zoneId): SceneRequest {
+  return {
+    zoneId,
+    locationName,
+    description: 'candlelit interior',
+    genre: 'fantasy',
+  };
+}
+
+function icon(itemId: string, name = itemId): IconRequest {
+  return {
+    itemId,
+    name,
+    description: 'worn metal',
+    genre: 'fantasy',
+  };
+}
+
+describe('generateBackgrounds / generateIcons (F-3a495263)', () => {
+  it('isolates ImageGenError so a later background still succeeds', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new NamedProvider('comfyui', new Set(['Nyx Chapel']));
+    const out = await generateBackgrounds(
+      [scene('chapel', 'Ashen Chapel'), scene('nyx', 'Nyx Chapel'), scene('tavern', 'Ashen Tavern')],
+      provider,
+      store,
+      { concurrency: 1 },
+    );
+    expect(out.results).toHaveLength(3);
+    expect(isSceneBatchFailure(out.results[0])).toBe(false);
+    expect(isSceneBatchFailure(out.results[1])).toBe(true);
+    expect(isSceneBatchFailure(out.results[2])).toBe(false);
+    if (isSceneBatchFailure(out.results[1])) {
+      expect(out.results[1].request.zoneId).toBe('nyx');
+    }
+    expect(await store.count()).toBe(2);
+  });
+
+  it('isolates ImageGenError so a later icon still succeeds', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new NamedProvider('comfyui', new Set(['Cursed Lantern']));
+    const out = await generateIcons(
+      [icon('chalice', 'Ashen Chalice'), icon('lantern', 'Cursed Lantern'), icon('key', 'Iron Key')],
+      provider,
+      store,
+    );
+    expect(out.results).toHaveLength(3);
+    expect(isIconBatchFailure(out.results[0])).toBe(false);
+    expect(isIconBatchFailure(out.results[1])).toBe(true);
+    expect(isIconBatchFailure(out.results[2])).toBe(false);
+    expect(await store.count()).toBe(2);
+  });
+
+  it('ensureBackgrounds / ensureIcons reuse identity matching', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new NamedProvider('farm');
+    const scenes = [scene('chapel', 'Ashen Chapel')];
+    const icons = [icon('chalice', 'Ashen Chalice')];
+
+    const bg1 = await ensureBackgrounds(scenes, provider, store);
+    const ic1 = await ensureIcons(icons, provider, store);
+    const calls = provider.calls.length;
+    const bg2 = await ensureBackgrounds(scenes, provider, store);
+    const ic2 = await ensureIcons(icons, provider, store);
+    expect(provider.calls.length).toBe(calls);
+    expect(isSceneBatchFailure(bg1.results[0])).toBe(false);
+    expect(isIconBatchFailure(ic1.results[0])).toBe(false);
+    if (!isSceneBatchFailure(bg1.results[0]) && !isSceneBatchFailure(bg2.results[0])) {
+      expect(bg2.results[0].hash).toBe(bg1.results[0].hash);
+    }
+    if (!isIconBatchFailure(ic1.results[0]) && !isIconBatchFailure(ic2.results[0])) {
+      expect(ic2.results[0].hash).toBe(ic1.results[0].hash);
     }
   });
 });

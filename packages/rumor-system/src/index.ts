@@ -33,5 +33,10 @@ export type { DeserializeWarning, DeserializeResult, SerializeOptions } from './
 export type { ValidationError } from './validate.js';
 export { validateRumor, isValidRumor } from './validate.js';
 
-export { formatRumorForPlayer } from './format.js';
-export type { FormatRumorOptions, PlayerRumorView } from './format.js';
+export { formatRumorForPlayer, formatRumorBoard } from './format.js';
+export type {
+  FormatRumorOptions,
+  FormatRumorBoardOptions,
+  PlayerRumorView,
+  RumorBoardLine,
+} from './format.js';

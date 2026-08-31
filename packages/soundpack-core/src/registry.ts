@@ -153,13 +153,16 @@ export class SoundRegistry {
    * the id-sorted matches the same way {@link pickVariant} indexes variants.
    */
   pickAmbientBed(query: SoundQuery, roll: number): SoundEntry | undefined {
-    const matches = this.query({ ...query, domain: 'ambient' })
-      .filter((e) => e.durationClass === 'long-loop' || e.durationClass === 'short-loop')
-      .sort((a, b) => a.id.localeCompare(b.id));
-    if (matches.length === 0) return undefined;
-    const clamped = Math.min(Math.max(roll, 0), 1);
-    const idx = Math.min(Math.floor(clamped * matches.length), matches.length - 1);
-    return matches[idx];
+    return pickLoop(this.query({ ...query, domain: 'ambient' }), roll);
+  }
+
+  /**
+   * Pick a music stem from a query using a deterministic roll (F-768980bb).
+   * Forces `domain: 'music'` and keeps loop duration classes, then indexes
+   * the id-sorted matches the same way {@link pickAmbientBed} indexes beds.
+   */
+  pickMusicStem(query: SoundQuery, roll: number): SoundEntry | undefined {
+    return pickLoop(this.query({ ...query, domain: 'music' }), roll);
   }
 
   /** Get all loaded entry IDs. */
@@ -210,6 +213,16 @@ export function diffAmbientLayers(
   const start = [...desired].filter((id) => !active.has(id)).sort();
   const stop = [...active].filter((id) => !desired.has(id)).sort();
   return { start, stop };
+}
+
+function pickLoop(entries: SoundEntry[], roll: number): SoundEntry | undefined {
+  const matches = entries
+    .filter((e) => e.durationClass === 'long-loop' || e.durationClass === 'short-loop')
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (matches.length === 0) return undefined;
+  const clamped = Math.min(Math.max(roll, 0), 1);
+  const idx = Math.min(Math.floor(clamped * matches.length), matches.length - 1);
+  return matches[idx];
 }
 
 /** Copy tags/mood/variants so the Map is not aliased to caller handles (F-74ba230b). */

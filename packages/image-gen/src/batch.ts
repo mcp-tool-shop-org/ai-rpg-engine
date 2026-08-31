@@ -1,10 +1,19 @@
-// Batch portrait generation — roster/chargen fan-out with partial success.
+// Batch generation — roster/zone/icon fan-out with partial success.
 
 import type { AssetMetadata, AssetStore } from '@ai-rpg-engine/asset-registry';
-import { ensurePortrait, generatePortrait, ImageGenError, type PipelineOptions } from './pipeline.js';
-import type { ImageProvider, PortraitRequest } from './types.js';
+import {
+  ensurePortrait,
+  generatePortrait,
+  generateBackground,
+  ensureBackground,
+  generateIcon,
+  ensureIcon,
+  ImageGenError,
+  type PipelineOptions,
+} from './pipeline.js';
+import type { ImageProvider, PortraitRequest, SceneRequest, IconRequest } from './types.js';
 
-export type PortraitBatchOptions = PipelineOptions & {
+export type BatchOptions = PipelineOptions & {
   /**
    * Max in-flight generations. Default 1 — ComfyUI's EmptyLatentImage stays
    * `batch_size: 1`, and a local GPU cannot usefully run concurrent queues.
@@ -12,35 +21,63 @@ export type PortraitBatchOptions = PipelineOptions & {
    */
   concurrency?: number;
   /** Fired after each request settles (success or isolated failure). */
-  onProgress?: (info: PortraitBatchProgress) => void;
+  onProgress?: (info: BatchProgress) => void;
   /** Cancel queued (not in-flight) work. Already-started generates finish. */
   signal?: AbortSignal;
 };
 
-export type PortraitBatchProgress = {
+export type BatchProgress = {
   completed: number;
   total: number;
   index: number;
   ok: boolean;
 };
 
-export type PortraitBatchFailure = {
+export type BatchFailure<TRequest> = {
   ok: false;
-  request: PortraitRequest;
+  request: TRequest;
   error: ImageGenError | Error;
 };
 
-export type PortraitBatchItem = AssetMetadata | PortraitBatchFailure;
+export type BatchItem<TRequest> = AssetMetadata | BatchFailure<TRequest>;
 
-export type PortraitBatchResult = {
-  results: PortraitBatchItem[];
+export type BatchResult<TRequest> = {
+  results: BatchItem<TRequest>[];
 };
 
-export function isPortraitBatchFailure(item: PortraitBatchItem): item is PortraitBatchFailure {
-  return (item as PortraitBatchFailure).ok === false;
+export type PortraitBatchOptions = BatchOptions;
+export type PortraitBatchProgress = BatchProgress;
+export type PortraitBatchFailure = BatchFailure<PortraitRequest>;
+export type PortraitBatchItem = BatchItem<PortraitRequest>;
+export type PortraitBatchResult = BatchResult<PortraitRequest>;
+
+export type SceneBatchOptions = BatchOptions;
+export type SceneBatchFailure = BatchFailure<SceneRequest>;
+export type SceneBatchItem = BatchItem<SceneRequest>;
+export type SceneBatchResult = BatchResult<SceneRequest>;
+
+export type IconBatchOptions = BatchOptions;
+export type IconBatchFailure = BatchFailure<IconRequest>;
+export type IconBatchItem = BatchItem<IconRequest>;
+export type IconBatchResult = BatchResult<IconRequest>;
+
+export function isBatchFailure<TRequest>(item: BatchItem<TRequest>): item is BatchFailure<TRequest> {
+  return (item as BatchFailure<TRequest>).ok === false;
 }
 
-function toFailure(err: unknown, request: PortraitRequest): PortraitBatchFailure {
+export function isPortraitBatchFailure(item: PortraitBatchItem): item is PortraitBatchFailure {
+  return isBatchFailure(item);
+}
+
+export function isSceneBatchFailure(item: SceneBatchItem): item is SceneBatchFailure {
+  return isBatchFailure(item);
+}
+
+export function isIconBatchFailure(item: IconBatchItem): item is IconBatchFailure {
+  return isBatchFailure(item);
+}
+
+function toFailure<TRequest>(err: unknown, request: TRequest): BatchFailure<TRequest> {
   if (err instanceof ImageGenError || err instanceof Error) {
     return { ok: false, request, error: err };
   }
@@ -66,22 +103,23 @@ async function runPool<T>(
   return results;
 }
 
-type OneShot = (
-  request: PortraitRequest,
+type OneShot<TRequest> = (
+  request: TRequest,
   provider: ImageProvider,
   store: AssetStore,
   opts?: PipelineOptions,
 ) => Promise<AssetMetadata>;
 
-async function runBatch(
-  requests: readonly PortraitRequest[],
+async function runBatch<TRequest>(
+  requests: readonly TRequest[],
   provider: ImageProvider,
   store: AssetStore,
-  opts: PortraitBatchOptions | undefined,
-  one: OneShot,
-): Promise<PortraitBatchResult> {
+  opts: BatchOptions | undefined,
+  one: OneShot<TRequest>,
+  label: string,
+): Promise<BatchResult<TRequest>> {
   if (!Array.isArray(requests)) {
-    throw new Error('[image-gen] batch portraits require an array of PortraitRequest');
+    throw new Error(`[image-gen] batch ${label} require an array of requests`);
   }
   const rawConcurrency = opts?.concurrency ?? 1;
   if (typeof rawConcurrency !== 'number' || !Number.isFinite(rawConcurrency) || rawConcurrency < 1) {
@@ -127,7 +165,7 @@ export async function generatePortraits(
   store: AssetStore,
   opts?: PortraitBatchOptions,
 ): Promise<PortraitBatchResult> {
-  return runBatch(requests, provider, store, opts, generatePortrait);
+  return runBatch(requests, provider, store, opts, generatePortrait, 'portraits');
 }
 
 /** Like {@link generatePortraits} but reuses {@link ensurePortrait} identity matching. */
@@ -137,5 +175,45 @@ export async function ensurePortraits(
   store: AssetStore,
   opts?: PortraitBatchOptions,
 ): Promise<PortraitBatchResult> {
-  return runBatch(requests, provider, store, opts, ensurePortrait);
+  return runBatch(requests, provider, store, opts, ensurePortrait, 'portraits');
+}
+
+/** Zone atlas fan-out — one ImageGenError must not abort the rest (F-3a495263). */
+export async function generateBackgrounds(
+  requests: readonly SceneRequest[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: SceneBatchOptions,
+): Promise<SceneBatchResult> {
+  return runBatch(requests, provider, store, opts, generateBackground, 'backgrounds');
+}
+
+/** Like {@link generateBackgrounds} but reuses {@link ensureBackground} identity matching. */
+export async function ensureBackgrounds(
+  requests: readonly SceneRequest[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: SceneBatchOptions,
+): Promise<SceneBatchResult> {
+  return runBatch(requests, provider, store, opts, ensureBackground, 'backgrounds');
+}
+
+/** Inventory-sheet fan-out — one ImageGenError must not abort the rest (F-3a495263). */
+export async function generateIcons(
+  requests: readonly IconRequest[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: IconBatchOptions,
+): Promise<IconBatchResult> {
+  return runBatch(requests, provider, store, opts, generateIcon, 'icons');
+}
+
+/** Like {@link generateIcons} but reuses {@link ensureIcon} identity matching. */
+export async function ensureIcons(
+  requests: readonly IconRequest[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: IconBatchOptions,
+): Promise<IconBatchResult> {
+  return runBatch(requests, provider, store, opts, ensureIcon, 'icons');
 }

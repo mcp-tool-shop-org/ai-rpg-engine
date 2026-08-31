@@ -171,7 +171,17 @@ function resolveGenerationBase(
   const denoise = finiteOr(generation?.denoise, null);
   if (denoise !== null) resolved.denoise = denoise;
   if (generation?.initImage) resolved.initImage = generation.initImage;
+  if (generation?.mask && generation.mask.length > 0) resolved.mask = generation.mask;
   return resolved;
+}
+
+/** Compact mask identity so two inpaint masks cannot share a cached variant. */
+function maskSignature(mask: Uint8Array | undefined): string | null {
+  if (!mask || mask.length === 0) return null;
+  let h = mask.length;
+  const step = Math.max(1, Math.floor(mask.length / 32));
+  for (let i = 0; i < mask.length; i += step) h = (h * 33 + mask[i]) >>> 0;
+  return `${mask.length}:${h}`;
 }
 
 function resolveGeneration(
@@ -430,6 +440,47 @@ export function portraitVariantIdentityTag(
     sanitize(variant),
     portraitIdentityTag(request, generation),
     g.denoise ?? null,
+    maskSignature(g.mask),
+  ])}`;
+}
+
+export function sceneIdentityVariantTag(
+  baseHash: string,
+  variant: string,
+  request: SceneRequest,
+  generation?: GenerationOptions,
+): string {
+  const g = resolveGenerationBase(generation, {
+    width: 768,
+    height: 512,
+    negativePrompt: buildSceneNegativePrompt(request),
+  });
+  return `variant:${JSON.stringify([
+    baseHash,
+    sanitize(variant),
+    sceneIdentityTag(request, generation),
+    g.denoise ?? null,
+    maskSignature(g.mask),
+  ])}`;
+}
+
+export function iconIdentityVariantTag(
+  baseHash: string,
+  variant: string,
+  request: IconRequest,
+  generation?: GenerationOptions,
+): string {
+  const g = resolveGenerationBase(generation, {
+    width: 256,
+    height: 256,
+    negativePrompt: buildIconNegativePrompt(request),
+  });
+  return `variant:${JSON.stringify([
+    baseHash,
+    sanitize(variant),
+    iconIdentityTag(request, generation),
+    g.denoise ?? null,
+    maskSignature(g.mask),
   ])}`;
 }
 
@@ -629,4 +680,98 @@ export async function ensurePortraitVariant(
     opts.generation,
   );
   return existing;
+}
+
+/**
+ * Img2img scene variant keyed by `baseHash` + variant slot (F-fabbd6d2).
+ * Loads the base asset as `initImage` unless the caller already supplied one.
+ */
+export async function ensureBackgroundVariant(
+  baseHash: string,
+  request: SceneRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts: VariantPipelineOptions,
+): Promise<AssetMetadata> {
+  const identity = sceneIdentityVariantTag(baseHash, opts.variant, request, opts.generation);
+  return ensureByIdentity(
+    'background',
+    identity,
+    provider,
+    store,
+    async () => {
+      const generation: GenerationOptions = { ...opts.generation };
+      if (!generation.initImage) {
+        const base = await store.get(baseHash, { verify: true });
+        if (!base) {
+          throw new Error(`[image-gen] ensureBackgroundVariant: no asset at hash ${baseHash}`);
+        }
+        generation.initImage = base;
+      }
+      if (generation.denoise === undefined) generation.denoise = 0.55;
+      const genOpts = resolveGenerationBase(generation, {
+        width: 768,
+        height: 512,
+        negativePrompt: buildSceneNegativePrompt(request),
+      });
+      return putGenerated(
+        'background',
+        identity,
+        request.tags,
+        provider,
+        store,
+        buildScenePrompt(request),
+        genOpts,
+        opts.extraTags,
+      );
+    },
+    opts.generation,
+  );
+}
+
+/**
+ * Img2img icon variant keyed by `baseHash` + variant slot (F-fabbd6d2).
+ * Loads the base asset as `initImage` unless the caller already supplied one.
+ */
+export async function ensureIconVariant(
+  baseHash: string,
+  request: IconRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts: VariantPipelineOptions,
+): Promise<AssetMetadata> {
+  const identity = iconIdentityVariantTag(baseHash, opts.variant, request, opts.generation);
+  return ensureByIdentity(
+    'icon',
+    identity,
+    provider,
+    store,
+    async () => {
+      const generation: GenerationOptions = { ...opts.generation };
+      if (!generation.initImage) {
+        const base = await store.get(baseHash, { verify: true });
+        if (!base) {
+          throw new Error(`[image-gen] ensureIconVariant: no asset at hash ${baseHash}`);
+        }
+        generation.initImage = base;
+      }
+      if (generation.denoise === undefined) generation.denoise = 0.55;
+      const genOpts = resolveGenerationBase(generation, {
+        width: 256,
+        height: 256,
+        negativePrompt: buildIconNegativePrompt(request),
+      });
+      return putGenerated(
+        'icon',
+        identity,
+        request.tags,
+        provider,
+        store,
+        buildIconPrompt(request),
+        genOpts,
+        opts.extraTags,
+      );
+    },
+    opts.generation,
+  );
 }

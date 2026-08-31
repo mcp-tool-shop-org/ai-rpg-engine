@@ -18,4 +18,4 @@ export { hashBytes, isValidHash } from './hash.js';
 export { matchesFilter } from './filter.js';
 export { MemoryAssetStore } from './memory-store.js';
 export { FileAssetStore } from './file-store.js';
-export { OverQuotaError } from './quota.js';
+export { OverQuotaError, isProtectedAsset, sortOldestFirst } from './quota.js';

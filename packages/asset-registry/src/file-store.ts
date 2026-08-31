@@ -12,7 +12,14 @@ import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStor
 import { VALID_ASSET_KINDS } from './types.js';
 import { hashBytes, isValidHash } from './hash.js';
 import { matchesFilter, unionTags, cloneMetadata } from './filter.js';
-import { OverQuotaError, wouldExceedQuota, sortOldestFirst, reserveQuota } from './quota.js';
+import {
+  OverQuotaError,
+  wouldExceedQuota,
+  sortOldestFirst,
+  reserveQuota,
+  applyPinFlags,
+  tagsRequestPin,
+} from './quota.js';
 
 /**
  * Runtime shape check for a parsed metadata sidecar (F-4d8f612a). The sidecar
@@ -37,7 +44,9 @@ function isAssetMetadataShape(v: unknown): v is AssetMetadata {
     typeof m.createdAt === 'string' &&
     (m.width === undefined || typeof m.width === 'number') &&
     (m.height === undefined || typeof m.height === 'number') &&
-    (m.source === undefined || typeof m.source === 'string')
+    (m.source === undefined || typeof m.source === 'string') &&
+    (m.pinned === undefined || typeof m.pinned === 'boolean') &&
+    (m.keep === undefined || typeof m.keep === 'boolean')
   );
 }
 
@@ -104,13 +113,14 @@ export class FileAssetStore implements AssetStore {
       createdAt: new Date().toISOString(),
       source: input.source,
     };
+    const stored = tagsRequestPin(metadata.tags) ? applyPinFlags(metadata, true) : metadata;
 
     const dir = this.shardDir(hash);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(this.dataPath(hash), data);
-    await fs.writeFile(this.metaPath(hash), JSON.stringify(metadata, null, 2));
+    await fs.writeFile(this.metaPath(hash), JSON.stringify(stored, null, 2));
 
-    return cloneMetadata(metadata);
+    return cloneMetadata(stored);
   }
 
   async get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null> {
@@ -256,10 +266,11 @@ export class FileAssetStore implements AssetStore {
     return all.reduce((s, m) => s + m.sizeBytes, 0);
   }
 
-  async evictUntil(quota: StoreQuota): Promise<number> {
-    const ordered = sortOldestFirst(await this.list());
-    let count = ordered.length;
-    let bytes = ordered.reduce((s, m) => s + m.sizeBytes, 0);
+  async evictUntil(quota: StoreQuota, keepHashes?: readonly string[]): Promise<number> {
+    const all = await this.list();
+    const ordered = sortOldestFirst(all, keepHashes);
+    let count = all.length;
+    let bytes = all.reduce((s, m) => s + m.sizeBytes, 0);
     let n = 0;
     for (const meta of ordered) {
       const overCount = quota.maxCount !== undefined && count > quota.maxCount;
@@ -273,6 +284,22 @@ export class FileAssetStore implements AssetStore {
       }
     }
     return n;
+  }
+
+  async pin(hash: string): Promise<boolean> {
+    const existing = await this.readSidecar(hash);
+    if (!existing || !(await this.has(hash))) return false;
+    const merged = applyPinFlags(existing, true);
+    await fs.writeFile(this.metaPath(hash), JSON.stringify(merged, null, 2));
+    return true;
+  }
+
+  async unpin(hash: string): Promise<boolean> {
+    const existing = await this.readSidecar(hash);
+    if (!existing || !(await this.has(hash))) return false;
+    const merged = applyPinFlags(existing, false);
+    await fs.writeFile(this.metaPath(hash), JSON.stringify(merged, null, 2));
+    return true;
   }
 
   /** New-blob puts only — hash-hits never consume quota (CAS identity). */

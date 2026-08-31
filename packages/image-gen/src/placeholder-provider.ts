@@ -109,13 +109,62 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+/** Bounding box of non-zero mask pixels so inpaint overlays stay local (F-f4a0a8ec). */
+function maskBBox(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+): { x: number; y: number; w: number; h: number } | null {
+  const n = width * height;
+  if (n <= 0 || mask.length === 0) return null;
+  const sample = (i: number): number => {
+    if (mask.length >= n * 4) return mask[i * 4] || mask[i * 4 + 3];
+    if (mask.length >= n) return mask[i];
+    return mask[Math.min(mask.length - 1, Math.floor((i / n) * mask.length))] ?? 0;
+  };
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (sample(y * width + x) > 0) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null;
+  return { x: minX, y: minY, w: Math.max(1, maxX - minX + 1), h: Math.max(1, maxY - minY + 1) };
+}
+
 /** Overlay a corner mark so img2img variants are visually distinct (F-9daede34). */
-function overlayVariantMark(svgBytes: Uint8Array, width: number, height: number): Uint8Array {
+function overlayVariantMark(
+  svgBytes: Uint8Array,
+  width: number,
+  height: number,
+  mask?: Uint8Array,
+): Uint8Array {
   const text = new TextDecoder().decode(svgBytes);
   if (!text.includes('<svg')) return svgBytes;
-  const markW = Math.max(8, Math.floor(width * 0.12));
-  const markH = Math.max(8, Math.floor(height * 0.12));
-  const mark = `  <rect x="0" y="0" width="${markW}" height="${markH}" fill="#c9a227" data-variant="1"/>`;
+  let x = 0;
+  let y = 0;
+  let markW = Math.max(8, Math.floor(width * 0.12));
+  let markH = Math.max(8, Math.floor(height * 0.12));
+  let masked = false;
+  if (mask && mask.length > 0) {
+    const bbox = maskBBox(mask, width, height);
+    if (bbox) {
+      x = bbox.x;
+      y = bbox.y;
+      markW = bbox.w;
+      markH = bbox.h;
+      masked = true;
+    }
+  }
+  const mark = `  <rect x="${x}" y="${y}" width="${markW}" height="${markH}" fill="#c9a227" data-variant="1"${masked ? ' data-mask="1"' : ''}/>`;
   const patched = text.includes('</svg>')
     ? text.replace('</svg>', `${mark}\n</svg>`)
     : `${text}\n${mark}`;
@@ -135,8 +184,8 @@ export class PlaceholderProvider implements ImageProvider {
     if (opts?.initImage && opts.initImage.length > 0) {
       const asText = new TextDecoder().decode(opts.initImage);
       image = asText.includes('<svg')
-        ? overlayVariantMark(opts.initImage, width, height)
-        : overlayVariantMark(image, width, height);
+        ? overlayVariantMark(opts.initImage, width, height, opts.mask)
+        : overlayVariantMark(image, width, height, opts.mask);
     }
 
     // Local + synchronous: this provider has no failure modes, so it always
