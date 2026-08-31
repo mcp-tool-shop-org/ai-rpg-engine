@@ -140,7 +140,8 @@ jobs:
   # Dedicated job (not a fifth workflow file — the org already carries 4 vs
   # the 2-file guideline in docs-integrity.yml). Proves the CLI image boots
   # before a Dockerfile-only PR can merge. load:true / push:false: never
-  # publishes. Smoke fail fails the job.
+  # publishes. Native-arch only (ubuntu-latest amd64) — multi-arch GHCR
+  # push lives on release.yml. Smoke fail fails the job.
   docker-smoke:
     name: Docker smoke (CLI image)
     runs-on: ubuntu-latest
@@ -160,6 +161,10 @@ jobs:
           load: true
           push: false
           tags: ai-rpg-engine:ci-smoke
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ github.event.head_commit.timestamp || github.run_started_at }}
 
       - name: Smoke — CLI --help
         run: docker run --rm ai-rpg-engine:ci-smoke --help
@@ -168,3 +173,14 @@ jobs:
       # --out is the real flag; a cwd-write would EACCES.
       - name: Smoke — create-starter writes under /tmp
         run: docker run --rm ai-rpg-engine:ci-smoke create-starter ci-smoke --out /tmp/ci-smoke
+
+      # Image CVE gate: OS + library HIGH/CRITICAL on the loaded tag.
+      # ignore-unfixed stays off — the FROM digest pin is the known snapshot,
+      # not a silent ignore of whatever Hub serves today.
+      - name: Scan CLI image (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ai-rpg-engine:ci-smoke
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '1'
