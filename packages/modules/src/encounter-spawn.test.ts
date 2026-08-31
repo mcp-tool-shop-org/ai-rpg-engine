@@ -25,7 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ResolvedEvent, ZoneState } from '@ai-rpg-engine/core';
-import { traversalCore } from './traversal-core.js';
+import { traversalCore, emitZoneEnteredForPlacement } from './traversal-core.js';
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
 import type { EncounterDefinition } from './combat-roles.js';
@@ -288,6 +288,23 @@ describe('encounter-spawn — entry-driven, one live encounter per zone', () => 
       engine.store.advanceTick();
       expect(runWorldTick(engine).encounters).toEqual([]);
     }
+  });
+
+  it('F-96e9a5f4: a session-start placement via emitZoneEnteredForPlacement (the CLI --start boot path\'s modules-side companion to Engine.setPlayerLocation) rolls for the starting zone, unlike a raw placement with no event', () => {
+    const engine = makeEngine({ baseChance: 0.95 });
+
+    let reports: SpawnedEncounterReport[] = [];
+    for (let i = 0; i < 30 && reports.length === 0; i++) {
+      // Mirrors the CLI's --start boot path: never engine.submitAction('move',
+      // ...) / moveHandler -- just the placement primitive's own synthesized
+      // entry event, exactly like a sidecar session's opening zone.
+      emitZoneEnteredForPlacement(engine, 'zone-b');
+      engine.store.advanceTick();
+      reports = runWorldTick(engine).encounters;
+    }
+
+    expect(reports.length).toBeGreaterThan(0);
+    expect(reports[0].zoneId).toBe('zone-b');
   });
 
   it('re-entering while the spawn still stands cannot restack; a cleared zone spawns again', () => {

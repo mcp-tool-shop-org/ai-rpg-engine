@@ -1,10 +1,10 @@
 // traversal-core — movement between zones
 
-import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
+import type { Engine, EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone, getDistrictDefinition, getDistrictState } from './district-core.js';
 import { getDistrictEconomy, deriveEconomyDescriptor, formatEconomyForDirector } from './economy-core.js';
-import { computeDistrictMood, formatDistrictMoodForNarrator } from './district-mood.js';
+import { computeDistrictMood, formatDistrictMoodForNarrator, type DistrictMood } from './district-mood.js';
 import { getPersistedMoveRecommendation } from './move-advisor.js';
 import { evaluateConditions } from './condition-eval.js';
 import { applyZoneItemRecognition } from './item-recognition.js';
@@ -130,16 +130,7 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   // tone->mood bridge and cli-surface's zone-entry music wiring (their own
   // work, not this file's). Truthy-gated like moodHint/situationHint — an
   // unmapped zone stays byte-identical (no tone key at all).
-  const moodDistrictId = getDistrictForZone(world, targetZoneId);
-  const moodDistrictState = moodDistrictId ? getDistrictState(world, moodDistrictId) : undefined;
-  const moodDistrictDef = moodDistrictId ? getDistrictDefinition(world, moodDistrictId) : undefined;
-  const districtMood = moodDistrictState && moodDistrictDef
-    ? computeDistrictMood(moodDistrictState, moodDistrictDef.tags)
-    : undefined;
-  const moodHint = districtMood && moodDistrictDef
-    ? formatDistrictMoodForNarrator(districtMood, moodDistrictDef.name)
-    : undefined;
-  const tone = districtMood?.tone;
+  const { moodHint, tone } = zoneMoodFields(world, targetZoneId);
 
   const entered = makeEvent(action, 'world.zone.entered', {
     zoneId: targetZoneId,
@@ -237,5 +228,78 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
     resources: entity.resources,
     statuses: entity.statuses.map(s => s.statusId),
   })];
+}
+
+/** Shared by moveHandler and emitZoneEnteredForPlacement so both derive
+ * moodHint/tone from the SAME computeDistrictMood call. An unmapped zone
+ * (no district) returns both fields undefined. */
+function zoneMoodFields(world: WorldState, zoneId: string): { moodHint?: string; tone?: DistrictMood['tone'] } {
+  const districtId = getDistrictForZone(world, zoneId);
+  const districtState = districtId ? getDistrictState(world, districtId) : undefined;
+  const districtDef = districtId ? getDistrictDefinition(world, districtId) : undefined;
+  const districtMood = districtState && districtDef
+    ? computeDistrictMood(districtState, districtDef.tags)
+    : undefined;
+  const moodHint = districtMood && districtDef
+    ? formatDistrictMoodForNarrator(districtMood, districtDef.name)
+    : undefined;
+  return { moodHint, tone: districtMood?.tone };
+}
+
+/**
+ * F-96e9a5f4 — synthesize a `world.zone.entered` event for a zone the player
+ * was PLACED into rather than walked into. world.zone.entered has exactly
+ * one production emitter anywhere in this repo: moveHandler above, inside
+ * the 'move' verb. But Engine.setPlayerLocation (packages/core/src/world.ts
+ * — outside this domain) sets locationId/the player entity's zoneId directly
+ * and emits NOTHING; this primitive is exercised in production by the CLI
+ * sidecar's `--start <zone>` boot path (packages/cli/src/sidecar-command.ts,
+ * `engine.store.setPlayerLocation(zoneId)`), used to place the player in
+ * their authored starting zone. Skipping world.zone.entered means every
+ * zone-entry LISTENER in this package silently never runs for a sidecar
+ * session's starting zone — engagement-core's positional texture,
+ * encounter-spawn's zone-entry cursor, district-core's and cognition-core's
+ * own listeners among them — and no tone/moodHint ever reaches the opening
+ * scene.
+ *
+ * This is the modules-side half of the fix. Built from `store.emitEvent`
+ * (the same primitive encounter-spawn.ts's trySpawn already uses for its own
+ * synthesized event) rather than `makeEvent`, because a session-start
+ * placement has no ActionIntent to hang off of. `previousZoneId` is
+ * deliberately omitted — there is no "from" zone for a session start, and
+ * every consumer already treats it as optional (hazard-interpreter.ts's
+ * on-exit half no-ops without it, exactly as it should here).
+ *
+ * Caller contract: call this AFTER `engine.store.setPlayerLocation(zoneId)`,
+ * e.g. `engine.store.setPlayerLocation(zoneId);
+ * emitZoneEnteredForPlacement(engine, zoneId);`. The CLI's sidecar `--start`
+ * boot path (packages/cli/src/sidecar-command.ts, the
+ * `engine.store.setPlayerLocation(zoneId)` call site) should make that
+ * second call — packages/cli sits outside packages/modules/** and is not
+ * edited here; naming the exact call site for the coordinator's cross-domain
+ * stitch. Returns undefined (and records nothing) if `zoneId` does not name
+ * a real zone, mirroring moveHandler's own zone-existence check.
+ */
+export function emitZoneEnteredForPlacement(engine: Engine, zoneId: string): ResolvedEvent | undefined {
+  const world = engine.store.state;
+  const zone = world.zones[zoneId];
+  if (!zone) return undefined;
+
+  const { moodHint, tone } = zoneMoodFields(world, zoneId);
+
+  return engine.store.emitEvent('world.zone.entered', {
+    zoneId,
+    zoneName: zone.name,
+    tags: zone.tags,
+    ...(moodHint ? { moodHint } : {}),
+    ...(tone ? { tone } : {}),
+  }, {
+    actorId: world.playerId,
+    presentation: {
+      channels: ['objective'],
+      priority: 'normal',
+      soundCues: ['scene.enter'],
+    },
+  });
 }
 
