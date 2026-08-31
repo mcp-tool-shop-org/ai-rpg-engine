@@ -255,7 +255,7 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
     nftChecks = input.nfts.map((ref) => {
       const gameItemId = ref.gameItemId;
       const nftId = ref.nftId;
-      const expectedOwner = input.playerAddress ?? '';
+      const expectedOwner = ref.ownerAddress ?? input.playerAddress ?? '';
       const expectedUri = ref.uri;
 
       // On-ledger truth (account_nfts, keyed by nftId). `led === undefined`

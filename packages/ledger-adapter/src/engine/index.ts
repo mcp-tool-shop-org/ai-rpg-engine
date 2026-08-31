@@ -1,8 +1,8 @@
 // engine-seam barrel — the adapter's ONLY read of the engine's world
 // (snapshotFromWorld) plus the thin checkpoint-driver wrappers built on it
 // (enableFromWorld, settleCheckpoint, settleEquipmentFromWorld,
-// settleAllFromWorld, inferSettleOptionsFromWorld, reconcileFromWorld,
-// witnessStateHash).
+// settleAllFromWorld, inferSettleOptionsFromWorld, giveRecipientsFromWorld,
+// reconcileFromWorld, witnessStateHash).
 // See snapshot.ts and checkpoint.ts for
 // the determinism-firewall contract every export here upholds: type-only
 // `@ai-rpg-engine/core` import, zero runtime engine dependency, never a
@@ -19,6 +19,7 @@ export {
   settleEquipmentFromWorld,
   settleAllFromWorld,
   inferSettleOptionsFromWorld,
+  giveRecipientsFromWorld,
   reconcileFromWorld,
   witnessStateHash,
 } from './checkpoint.js';

@@ -31,7 +31,7 @@ import type {
 import { snapshotFromWorld } from './snapshot.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
 import { settleEquipmentNFTs } from '../settle/nft.js';
-import type { NFTSettlementResult } from '../settle/nft.js';
+import type { GivenGearRecipient, NFTSettlementResult } from '../settle/nft.js';
 import {
   reconcileAgainstLedger,
   type ReconcileAgainstLedgerOpts,
@@ -107,6 +107,7 @@ function diaryNftNoOp(transport: NFTTransport): NFTSettlementResult {
     skipped: [],
     pending: [],
     released: [],
+    transferred: [],
     items: [],
     txids: [],
   };
@@ -140,6 +141,7 @@ export async function settleEquipmentFromWorld(
   transport: NFTTransport,
   catalog: ItemCatalog,
   chronicle?: Record<string, ItemChronicleEntry[]>,
+  recipientAddresses?: Record<string, string>,
 ): Promise<NFTSettlementResult> {
   // Diary (and any run with no issuer) witnesses unique gear; it does not mint.
   // Ledger-mode missing-seed below stays a real sidecar failure.
@@ -165,17 +167,35 @@ export async function settleEquipmentFromWorld(
       skipped: [],
       pending: [],
       released: [],
+      transferred: [],
       items: [],
       txids: [],
     };
   }
-  return settleEquipmentNFTs(transport, state, snapshot, {
-    gameId: adapter.gameId,
-    issuerAddress: state.issuerAddress,
-    playerAddress: state.playerAddress,
-    issuerSeed,
-    playerSeed,
-  });
+  const givenByEntity = giveRecipientsFromWorld(world, playerId);
+  const given: Record<string, GivenGearRecipient> = {};
+  const skipRelease: string[] = [];
+  for (const [itemId, entityId] of Object.entries(givenByEntity)) {
+    skipRelease.push(itemId);
+    const recipientAddress = recipientAddresses?.[entityId] ?? state.merchantAddress;
+    if (!recipientAddress) continue;
+    const recipientSeed = adapter.getSeed(recipientAddress);
+    if (!recipientSeed) continue;
+    given[itemId] = { recipientAddress, recipientSeed };
+  }
+  return settleEquipmentNFTs(
+    transport,
+    state,
+    snapshot,
+    {
+      gameId: adapter.gameId,
+      issuerAddress: state.issuerAddress,
+      playerAddress: state.playerAddress,
+      issuerSeed,
+      playerSeed,
+    },
+    { given, skipRelease },
+  );
 }
 
 const SETTLEMENT_VERBS: readonly SettlementVerb[] = ['buy', 'sell', 'settle', 'consign', 'default'];
@@ -190,6 +210,49 @@ function eventActorId(event: ResolvedEvent): string | undefined {
   if (typeof event.actorId === 'string' && event.actorId) return event.actorId;
   const payloadActor = event.payload?.actorId;
   return typeof payloadActor === 'string' ? payloadActor : undefined;
+}
+
+function stringPayload(event: ResolvedEvent, key: string): string | undefined {
+  const value = event.payload?.[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function eventTargetId(event: ResolvedEvent): string | undefined {
+  if (Array.isArray(event.targetIds) && typeof event.targetIds[0] === 'string' && event.targetIds[0]) {
+    return event.targetIds[0];
+  }
+  const payloadTargets = event.payload?.targetIds;
+  if (Array.isArray(payloadTargets) && typeof payloadTargets[0] === 'string' && payloadTargets[0]) {
+    return payloadTargets[0];
+  }
+  return stringPayload(event, 'toEntityId');
+}
+
+/**
+ * Recent successful give records: gameItemId (toolId / itemId) → recipient
+ * entity id (targetIds[0] / toEntityId). Later events overwrite earlier ones
+ * for the same item. `item.given` is the successful-transfer record;
+ * action.declared is ignored (a later reject must not look like a give).
+ */
+export function giveRecipientsFromWorld(world: WorldState, playerId: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const event of world.eventLog ?? []) {
+    const isGiven =
+      event.type === 'item.given' ||
+      (event.type === 'item.lost' && event.payload?.reason === 'given');
+    if (!isGiven) continue;
+    const fromId = stringPayload(event, 'fromEntityId') ?? eventActorId(event);
+    if (fromId && fromId !== playerId) continue;
+    if (event.type === 'item.lost') {
+      const entityId = stringPayload(event, 'entityId');
+      if (entityId && entityId !== playerId) continue;
+    }
+    const toolId = stringPayload(event, 'toolId') ?? stringPayload(event, 'itemId');
+    const targetId = eventTargetId(event);
+    if (!toolId || !targetId) continue;
+    out[toolId] = targetId;
+  }
+  return out;
 }
 
 function verbFromEvent(event: ResolvedEvent): SettlementVerb | undefined {
@@ -282,6 +345,8 @@ export type CheckpointNftOpts = {
   transport: NFTTransport;
   catalog: ItemCatalog;
   chronicle?: Record<string, ItemChronicleEntry[]>;
+  /** Optional entityId → XRPL address map for L2 give recipients. Default is `state.merchantAddress`. */
+  recipientAddresses?: Record<string, string>;
 };
 
 /**
@@ -308,6 +373,7 @@ export async function settleAllFromWorld(
     nft.transport,
     nft.catalog,
     nft.chronicle,
+    nft.recipientAddresses,
   );
   return { settlement, nft: nftResult };
 }

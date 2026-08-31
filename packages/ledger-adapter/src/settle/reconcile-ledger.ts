@@ -77,11 +77,20 @@ export async function reconcileAgainstLedger(
 
   const nftRefs = Object.values(state.nfts ?? {});
   let ledgerNfts: Record<string, { owner: string; uri: string }> | undefined;
-  if (nftRefs.length > 0 && state.playerAddress) {
+  if (nftRefs.length > 0) {
     const nftTransport = asNftTransport(transport);
     if (nftTransport) {
-      const owned: NFTInfo[] = await nftTransport.accountNfts(state.playerAddress);
-      ledgerNfts = buildLedgerNfts(owned, state.playerAddress);
+      const owners = new Set<string>();
+      for (const ref of nftRefs) {
+        const owner = ref.ownerAddress ?? state.playerAddress;
+        if (owner) owners.add(owner);
+      }
+      if (state.playerAddress) owners.add(state.playerAddress);
+      ledgerNfts = {};
+      for (const owner of owners) {
+        const owned: NFTInfo[] = await nftTransport.accountNfts(owner);
+        Object.assign(ledgerNfts, buildLedgerNfts(owned, owner));
+      }
     }
   }
 

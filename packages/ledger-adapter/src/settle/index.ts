@@ -13,5 +13,5 @@ export { reconcile, deriveCurrencyCode } from './reconcile.js';
 export { reconcileAgainstLedger } from './reconcile-ledger.js';
 export type { ReconcileAgainstLedgerOpts } from './reconcile-ledger.js';
 
-export { settleEquipmentNFTs, buildLedgerNfts, ARPG_NFT_TAXON } from './nft.js';
-export type { NFTSettlementResult, NFTItemSettlement } from './nft.js';
+export { settleEquipmentNFTs, transferUniqueGear, buildLedgerNfts, ARPG_NFT_TAXON } from './nft.js';
+export type { NFTSettlementResult, NFTItemSettlement, GivenGearRecipient, SettleEquipmentNftOpts } from './nft.js';

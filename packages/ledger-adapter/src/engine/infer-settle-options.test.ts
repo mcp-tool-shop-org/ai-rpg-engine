@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
-import { inferSettleOptionsFromWorld, settleCheckpoint, settleEquipmentFromWorld } from './checkpoint.js';
+import {
+  giveRecipientsFromWorld,
+  inferSettleOptionsFromWorld,
+  settleCheckpoint,
+  settleEquipmentFromWorld,
+} from './checkpoint.js';
 import { createLedgerAdapter } from '../settle/adapter.js';
 import { createInitialState } from '../state/index.js';
 import { DryRunTransport } from '../transport/dry-run.js';
@@ -220,5 +225,30 @@ describe('inferSettleOptionsFromWorld', () => {
     expect(nft.success).toBe(false);
     expect(nft.message).toContain('missing seed');
     expect(nft.minted).toEqual([]);
+  });
+});
+
+describe('giveRecipientsFromWorld', () => {
+  it('reads item.given tool/item + target as gameItemId → entityId, last write wins', () => {
+    const w = world({
+      eventLog: [
+        event('item.given', { itemId: 'writ-of-passage', fromEntityId: 'player', toEntityId: 'broker-inaya' }),
+        event('item.given', { itemId: 'guild-seal', fromEntityId: 'player', toEntityId: 'other' }),
+        event('item.given', { itemId: 'writ-of-passage', fromEntityId: 'player', toEntityId: 'harbour-clerk' }),
+      ],
+    });
+    expect(giveRecipientsFromWorld(w, 'player')).toEqual({
+      'writ-of-passage': 'harbour-clerk',
+      'guild-seal': 'other',
+    });
+  });
+
+  it('ignores gives that are not from the player', () => {
+    const w = world({
+      eventLog: [
+        event('item.given', { itemId: 'writ-of-passage', fromEntityId: 'npc', toEntityId: 'broker-inaya' }, 'npc'),
+      ],
+    });
+    expect(giveRecipientsFromWorld(w, 'player')).toEqual({});
   });
 });

@@ -178,14 +178,22 @@ low-level worker.
   (`tfTransferable | tfMutable`, never burnable — true player ownership) and
   transferred to the player. Idempotent per `gameItemId`: a fail-then-retry never
   double-mints.
+- **Give → directed transfer, never a burn.** `give` is the engine-side title
+  move. `settleEquipmentFromWorld` / `settleAllFromWorld` read recent give
+  events (`toolId` + `targetIds`) and call `transferUniqueGear` — the same
+  directed 0-value CreateOffer/AcceptOffer as the issuer→player grant, pointed
+  at the recipient. Default recipient is `state.merchantAddress`; pass
+  `recipientAddresses` (entityId → address) for an L2 map. The token is not
+  returned to the issuer and is not burned. `NFTokenRef.ownerAddress` is
+  persisted so `reconcile()` expects that holder (fallback: player).
 - **Relic growth → `NFTokenModify`.** As an item earns its history, the issuer
   advances the NFT's metadata URI in place (**XLS-46 DynamicNFT**) — the same
   NFTokenID, so the asset's identity is preserved while its state evolves.
   (Growth fires on real content once the engine's item-chronicle is populated — a
   dormant system today; the mint path manifests on real content now.)
 - **`reconcile()` verifies ownership.** The external verifier checks on-ledger
-  `account_nfts` — the player owns the NFT and its URI matches the engine's relic
-  version — a truth the engine cannot fake.
+  `account_nfts` — the tracked owner holds the NFT and its URI matches the
+  engine's relic version — a truth the engine cannot fake.
 
 The whole layer honors the same firewall: mint/modify happen only at checkpoints,
 the engine never reads the adapter, and a run is byte-identical with or without
