@@ -14,31 +14,32 @@
 
 # एआई आरपीजी इंजन
 
-नियतात्मक आरपीजी सिमुलेशन बनाने के लिए एक टाइपस्क्रिप्ट टूलकिट। आप आँकड़े परिभाषित करते हैं, मॉड्यूल चुनते हैं, युद्ध प्रणाली को जोड़ते हैं और सामग्री बनाते हैं। इंजन स्थिति, घटनाओं, यादृच्छिक संख्या जनरेटर (आरएनजी), क्रिया समाधान और एआई निर्णय लेने का प्रबंधन करता है। प्रत्येक रन दोहराया जा सकता है।
+निर्धारित आरपीजी सिमुलेशन बनाने के लिए एक टाइपस्क्रिप्ट टूलकिट। आप आँकड़े परिभाषित करते हैं, मॉड्यूल चुनते हैं, एक युद्ध प्रणाली स्थापित करते हैं, और सामग्री बनाते हैं। इंजन स्थिति, घटनाओं, आरएनजी, क्रिया समाधान और एआई निर्णय लेने का प्रबंधन करता है। प्रत्येक रन को दोहराया जा सकता है।
 
-यह एक **कंपोज़िशन इंजन** है, न कि कोई तैयार गेम। 10 शुरुआती दुनिया उदाहरण हैं - विघटनीय पैटर्न जिनसे आप सीखते हैं और उन्हें फिर से जोड़ते हैं। आपके गेम में इंजन के जो भी उपसमुच्चय की आवश्यकता होती है, उसका उपयोग किया जाता है।
+यह एक **कंपोज़िशन इंजन** है, न कि एक तैयार गेम। 12 शुरुआती दुनिया उदाहरण हैं - ऐसे पैटर्न जिन्हें आप सीख सकते हैं और जिनसे आप बदलाव कर सकते हैं। आपका गेम इंजन के उस हिस्से का उपयोग करता है जिसकी आपको आवश्यकता होती है।
 
 ---
 
 ## यह क्या है
 
-- A **module library** — 30+ engine modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more
-- A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game
-- A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG
-- An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama
-- An **optional on-ledger layer** — `@ai-rpg-engine/ledger-adapter` backs a game's coin and tradeable items with real XRPL **testnet** tokens, settled at checkpoints, entirely outside the deterministic core (opt-in; a run is byte-identical without it)
+- एक **मॉड्यूल लाइब्रेरी** - 30 से अधिक इंजन मॉड्यूल जो युद्ध, धारणा, अनुभूति, गुट, अफवाहें, यात्रा, साथी और अन्य चीजों को कवर करते हैं
+- एक **कंपोज़िशन टूलकिट** - `buildCombatStack()` लगभग 7 पंक्तियों में युद्ध प्रणाली स्थापित करता है; `new Engine({ modules })` गेम शुरू करता है
+- एक **सिमुलेशन रनटाइम** - निर्धारित टिक, दोहराए जा सकने वाले क्रिया लॉग, सीडेड आरएनजी
+- एक **एआई डिज़ाइन स्टूडियो** (वैकल्पिक) - ढांचा, आलोचना, संतुलन विश्लेषण, ट्यूनिंग, ओलामा के माध्यम से प्रयोग
+- एक **वैकल्पिक ऑन-लेजर लेयर** - `@ai-rpg-engine/ledger-adapter` एक गेम के सिक्के और व्यापार योग्य वस्तुओं का समर्थन वास्तविक एक्सआरपीएल **टेस्टनेट** टोकन के साथ करता है, जो चेकपॉइंट पर तय किए जाते हैं, पूरी तरह से निर्धारित कोर के बाहर (वैकल्पिक; इसके बिना एक रन बाइट-समान होता है)
 
 ## यह क्या नहीं है
 
-- Not a single finished game — it ships 10 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
+- Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
 - Not a visual engine — it outputs structured events, not pixels
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## वर्तमान स्थिति (संस्करण 3.7.0)
+## वर्तमान स्थिति (v3.8.1)
 
 **What works and is tested:**
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -82,21 +83,21 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **6180 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-**What is rough or incomplete:**
-- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
-- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound; the commands are an integration hook for a GUI/web embedder
-- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
-- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
-- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
-- Documentation is extensive but not every handbook page reflects the very latest APIs
+**क्या कच्चा या अधूरा है:**
+- एआई दुनिया-निर्माण स्टूडियो (ओलामा परत) सिमुलेशन कोर की तुलना में कम परीक्षण किया गया है, और इसे एक स्थानीय ओलामा डेमॉन की आवश्यकता होती है; यह पूरी तरह से वैकल्पिक है - इंजन और `run` लूप को किसी नेटवर्क की आवश्यकता नहीं है।
+- कथन/ऑडियो स्टैक नियतात्मक ऑडियो कमांड बनाता है, लेकिन इसमें **कोई टर्मिनल ऑडियो बैकएंड नहीं** है - कोई भी ध्वनि नहीं बजाता; कमांड एक GUI/वेब एम्बेडर के लिए एकीकरण हुक हैं।
+- मल्टीप्लेयर (एक ही दुनिया साझा करने वाले दो मानव खिलाड़ी) **नहीं** बनाया गया है - यह एक नेटवर्किंग परत है, जानबूझकर दायरे से बाहर; आज के प्रोफाइल एक एकल नियंत्रक को लक्षित करते हैं।
+- `replay --replay` पुन: अनुकरण करने के बजाय सहेजे गए डेटा को पुनर्स्थापित करता है - और v2.9 के बाद यह **निश्चित** दिशा है, कोई विलंब नहीं: `Engine.serialize()` पहले से ही एक सिद्ध पूर्ण-अवस्था स्नैपशॉट है, जबकि पुन: अनुकरण को दुनिया-टिक/मुठभेड़ अवस्था का पीछा करना होगा जो कार्रवाई लॉग के बाहर मौजूद है। v2.9 उस सिद्ध पुनर्स्थापना पथ पर बहु-चेकपॉइंट सहेजने के स्लॉट भेजता है; वास्तविक घटना-आधारित पुन: अनुकरण की योजना नहीं है।
+- v3.1 ने v3.0 के तीन नामित सीमाओं को बंद कर दिया - शैली **शुरुआती आपूर्ति**, शैली-विशिष्ट *मरम्मत* व्यंजन, और `deny` / `bury-scandal` मेनू सतह अब सभी भेजते हैं। एकमात्र ईमानदार सीमा जो बनी हुई है: उन नए शैली मरम्मत व्यंजनों में एक निर्मित `statDelta` (एक छोटा सा आँकड़ा बोनस) होता है जो `resolveRepair` अभी तक लागू नहीं करता है - मरम्मत *पुनर्स्थापित करती है*, `modify` *अपग्रेड करती है* - इसलिए मरम्मत-को-अपग्रेड के रूप में कोड में चिह्नित किया गया है और इसे जानबूझकर **v3.2/v3.3 तक स्थगित** कर दिया गया है, न कि एक मौन निष्क्रिय क्षेत्र के रूप में। और `obligation-exists` एक निर्मित डेमो (भाई एल्ड्रिक) के साथ भेजता है; शर्त सामग्री लेखकों के लिए अधिक संवाद को गेट करने के लिए लाइव है।
+- प्रलेखन व्यापक है लेकिन हर हैंडबुक पृष्ठ नवीनतम एपीआई को प्रतिबिंबित नहीं करता है।
 
 ---
 
 ## यह कैसा दिखता है
 
-The bundled terminal UI composes each turn into labeled sections — scene, status, log, and actions — with a glance-able HUD. Output is plain text by default and adds semantic color on a TTY (damage red, heals green, rejections yellow), honoring `NO_COLOR` and non-TTY pipes; every cue is carried in the text too, never color alone.
+बंडल किए गए टर्मिनल UI प्रत्येक मोड़ को लेबल वाले अनुभागों में जोड़ते हैं - दृश्य, स्थिति, लॉग और क्रियाएं - एक नज़र में देखने योग्य HUD के साथ। डिफ़ॉल्ट रूप से आउटपुट सादा पाठ होता है और एक TTY पर सिमेंटिक रंग जोड़ता है (क्षति लाल, उपचार हरा, अस्वीकृति पीला), `NO_COLOR` और गैर-TTY पाइप का सम्मान करता है; प्रत्येक संकेत पाठ में भी होता है, कभी भी केवल रंग में नहीं।
 
 ```text
 ── The Crypt Gate ──────────────────────────────────────────
@@ -131,7 +132,7 @@ The bundled terminal UI composes each turn into labeled sections — scene, stat
 
 ## स्थापित करें और खेलें
 
-टर्मिनल से एक शुरुआती गेम खेलें या अपना खुद का गेम बनाएं:
+एक शुरुआती गेम खेलें, या टर्मिनल से अपना गेम बनाएं:
 
 ```bash
 npm install -g @ai-rpg-engine/cli
@@ -141,11 +142,9 @@ ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
 ai-rpg-engine run ./my-game          # run a game you scaffolded
 ```
 
-The `run` loop is a real turn-based session: enemies act on their own AI
-profiles, abilities and XP are on the menu, you can save and resume, and a
-fight ends in victory or defeat. Every game is deterministic and replayable.
+`run` लूप एक वास्तविक टर्न-आधारित सत्र है: दुश्मन अपनी स्वयं की एआई प्रोफाइल पर कार्य करते हैं, क्षमताएं और XP मेनू पर हैं, आप सहेज सकते हैं और फिर से शुरू कर सकते हैं, और एक लड़ाई जीत या हार में समाप्त होती है। प्रत्येक गेम नियतात्मक और पुन: चलाने योग्य है।
 
-वैकल्पिक रूप से, एआई डिज़ाइन स्टूडियो अपने स्वयं के कमांड के रूप में स्थापित होता है:
+वैकल्पिक रूप से, एआई डिज़ाइन स्टूडियो को अपने स्वयं के कमांड के रूप में स्थापित किया जाता है:
 
 ```bash
 npm install -g @ai-rpg-engine/ollama
@@ -153,9 +152,9 @@ ai chat                              # scaffold, critique, and balance content
                                      # against a local Ollama model (see Ch. 36)
 ```
 
-स्टूडियो एक स्थानीय [ओलामा](https://ollama.com) डेमॉन से संवाद करता है – पहले `ollama serve` और `ollama pull qwen2.5-coder` चलाएं। यह पूरी तरह से वैकल्पिक है; इंजन और `run` लूप को किसी नेटवर्क की आवश्यकता नहीं होती।
+स्टूडियो एक स्थानीय [ओलामा](https://ollama.com) डेमॉन से बात करता है - पहले `ollama serve` और `ollama pull qwen2.5-coder` चलाएं। यह पूरी तरह से वैकल्पिक है; इंजन और `run` लूप को किसी नेटवर्क की आवश्यकता नहीं है।
 
-एक कंटेनर इमेज को जीएचसीआर पर `ghcr.io/mcp-tool-shop-org/ai-rpg-engine` के रूप में प्रकाशित किया जाता है, जिसका उपयोग सीआई और सैंडबॉक्स्ड रन के लिए किया जाता है।
+एक कंटेनर छवि को GHCR पर CI और सैंडबॉक्स्ड रन के लिए `ghcr.io/mcp-tool-shop-org/ai-rpg-engine` के रूप में प्रकाशित किया गया है।
 
 ---
 
@@ -187,7 +186,7 @@ engine.submitAction('attack', { targetIds: ['skeleton-1'] });
 engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
 ```
 
-पूर्ण वर्कफ़्लो के लिए [कंपोज़िशन गाइड](docs/handbook/57-composition-guide.md) देखें, या एक नया शुरुआती बनाएं:
+पूर्ण वर्कफ़्लो के लिए [रचना गाइड](site/src/content/docs/handbook/57-composition-guide.md) देखें, या एक नया शुरुआती गेम बनाएं:
 
 ```bash
 npx @ai-rpg-engine/cli create-starter my-game
@@ -199,64 +198,67 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | परत | भूमिका |
 |-------|------|
-| **Core Runtime** | नियतात्मक इंजन - विश्व स्थिति, घटनाएं, क्रियाएं, टिक, आरएनजी, पुनरावृत्ति। |
-| **Modules** | 30+ कंपोजेबल सिस्टम - युद्ध, धारणा, अनुभूति, गुट, यात्रा, साथी, आदि। |
-| **Content** | इकाइयाँ, क्षेत्र, संवाद, आइटम, क्षमताएँ, स्थितियाँ - लेखक द्वारा बनाई गई। |
-| **AI Studio** | वैकल्पिक ओलामा परत - ढांचा, आलोचना, संतुलन विश्लेषण, ट्यूनिंग, प्रयोग। |
+| **Core Runtime** | नियततात्मक इंजन - दुनिया की स्थिति, घटनाएं, क्रियाएं, टिक, आरएनजी, पुन: खेलना |
+| **Modules** | 30+ कंपोजेबल सिस्टम - मुकाबला, धारणा, अनुभूति, गुट, यात्रा, साथी, आदि। |
+| **Content** | इकाइयाँ, क्षेत्र, संवाद, आइटम, क्षमताएं, स्थितियाँ - लेखक द्वारा बनाई गई |
+| **AI Studio** | वैकल्पिक ओलामा परत - स्केफोल्डिंग, आलोचना, संतुलन विश्लेषण, ट्यूनिंग, प्रयोग |
 
 ---
 
-## XRPL लेजर एडॉप्टर (ऑप्ट-इन)।
+## XRPL लेज़र एडाप्टर (ऑप्ट-इन)
 
-`@ai-rpg-engine/ledger-adapter` एक **वैकल्पिक** पैकेज है जो किसी गेम की **खिलाड़ी-स्वामित्व वाली व्यापार योग्य परत** – `coin` बैलेंस और उपभोग करने योग्य इन्वेंट्री को जोड़ता है, जिसे `trade-core` के `buy`/`sell` क्रियाएँ पहले से ही स्थानांतरित करती हैं – को **एक्सआरपीएल टेस्टनेट** से जोड़ता है, ताकि उन संपत्तियों का समर्थन वास्तविक ऑन-लेजर टोकन द्वारा किया जा सके और उन्हें चेकपॉइंट पर निपटाया जा सके। अनुपस्थित एडाप्टर ठीक वही ऑफ़लाइन इंजन है जो आज उपलब्ध है।
+`@ai-rpg-engine/ledger-adapter` एक **वैकल्पिक** पैकेज है जो गेम के **खिलाड़ी-स्वामित्व वाले व्यापार योग्य परत** को बांधता है - `coin` संतुलन और उपभोग योग्य इन्वेंट्री जो `trade-core` के `buy`/`sell` क्रियाएं पहले से ही स्थानांतरित करते हैं - **XRPL टेस्टनेट** पर, ताकि उन संपत्तियों का समर्थन वास्तविक ऑन-लेज़र टोकन द्वारा किया जा सके और चेकपॉइंट पर निपटाया जा सके। अनुपस्थित एडाप्टर ठीक वही ऑफ़लाइन इंजन है जो आज भेजा गया है।
 
-**नियतिवाद अपरिवर्तनीय (पूरा बिंदु)।** एडॉप्टर एक *साइड चैनल* है, सिमुलेशन का कभी हिस्सा नहीं:
+**नियतता अपरिवर्तनीय (पूरा बिंदु)।** एडाप्टर एक *साइड चैनल* है, कभी भी सिमुलेशन का हिस्सा नहीं:
 
-- इसे **कभी भी नियतात्मक टिक के अंदर नहीं बुलाया जाता** – केवल **चेकपॉइंट** पर (सेव, शहर/बाजार में प्रवेश, अध्याय का अंत)।
+- इसे **कभी भी नियतात्मक टिक के अंदर नहीं बुलाया जाता है** - केवल **चेकपॉइंट पर** (सहेजें, शहर/बाजार में प्रवेश, अध्याय विराम)।
 - `@ai-rpg-engine/core` या `@ai-rpg-engine/modules` में कुछ भी इसे आयात नहीं करता है (इसकी एकमात्र इंजन निर्भरता संकलन-समय `import type` है)।
-- **किसी रन में यह शामिल हो या न हो, दोनों ही स्थितियों में वह समान रहता है।** एक फ़ायरवॉल परीक्षण वास्तविक `starter-pirate` `createGame()` व्यापारी लूप को दो इंजनों पर चलाता है – एक जिसमें एडाप्टर सक्षम है और चेकपॉइंट पर निपटान होता है – और पुष्टि करता है कि दोनों दुनिया गहरे रूप से समान हैं। सीड-0 रीप्ले अपरिवर्तित रहता है।
+- **एक रन इसके साथ या इसके बिना बाइट-समान है।** एक फ़ायरवॉल परीक्षण वास्तविक `starter-pirate` `createGame()` व्यापारी लूप को दो इंजनों पर चलाता है - एक एडाप्टर सक्षम के साथ और एक चेकपॉइंट पर निपटान - और दावा करता है कि दोनों दुनिया गहरी-समान हैं। सीड-0 पुन: खेलना अपरिवर्तित है।
 
-**एकीकरण स्तर - एक गेम इसे जितना गहरा चाहता है, उतना ही एकीकृत करता है।** फ़ायरवॉल एक *नियतिवाद* सीमा है, न कि एक एंटी-एकीकरण नियम; उपरोक्त हर स्तर पर लागू होता है:
+**एकीकरण स्तर - एक गेम इसे जितना चाहे उतना गहराई से एकीकृत करता है।** फ़ायरवॉल एक *नियतता* सीमा है, न कि एक एंटी-एकीकरण नियम; उपरोक्त अपरिवर्तनीय प्रत्येक स्तर पर लागू होता है:
 
-| स्तर | एडॉप्टर पर क्या निर्भर करता है | फिट बैठता है |
+| स्तर | एडाप्टर पर क्या निर्भर करता है | फिट बैठता है |
 |-------|-----------------------------|------|
-| **L0 — External observer** | गेम के अंदर कुछ भी नहीं; एडॉप्टर चेकपॉइंट पर बाहर से जुड़ता है और गेम अनजान रहता है। | एक मौजूदा गेम को फिर से तैयार करना (शिप किए गए पायरेट डेमो)। |
-| **L1 - गेम-संचालित चेकपॉइंट** | गेम का अपना सहेजें / शहर / मेटा-प्रगति प्रवाह परिभाषित क्षणों पर एडॉप्टर को कॉल करता है। | एक ऐसा गेम जो जानबूझकर लेजर क्षण चाहता है। |
-| **L2 — Ledger-native design** | गेम की अर्थव्यवस्था या पहचान को *ऑन-चेन स्वामित्व* (स्थायी जारीकर्ता, वास्तविक बाजार) के आसपास डिज़ाइन किया गया है। | एक लेजर-प्रथम व्यापारी गेम। |
+| **L0 — External observer** | गेम के अंदर कुछ भी नहीं; एडाप्टर चेकपॉइंट पर बाहर से जुड़ता है और गेम अनजान है। | एक मौजूदा गेम को फिर से तैयार करना (भेजा गया समुद्री डाकू डेमो)। |
+| **L1 - गेम-संचालित चेकपॉइंट** | गेम का अपना सहेजें / शहर / मेटा-प्रगति प्रवाह परिभाषित क्षणों पर एडाप्टर को कॉल करता है। | एक ऐसा गेम जो जानबूझकर लेज़र क्षण चाहता है। |
+| **L2 — Ledger-native design** | गेम की अर्थव्यवस्था या पहचान को ऑन-चेन स्वामित्व (स्थायी जारीकर्ता, वास्तविक बाजार) के आसपास डिज़ाइन किया गया है। | एक लेज़र-प्रथम व्यापारी गेम। |
 
-वह अंतर जो रिप्ले को सुरक्षित रखता है वह **यह नहीं** है कि "कौन सा पैकेज एडॉप्टर आयात करता है" बल्कि "क्या कॉल टिक के अंदर है।" एक गेम पैकेज स्वतंत्र रूप से एडॉप्टर को आयात और चला सकता है, जब तक कि प्रत्येक कॉल बीज-संचालित रिप्ले लूप के बाहर चेकपॉइंट पर हो।
+वह अंतर जो पुन: खेलना सुरक्षित रखता है, वह यह **नहीं** है कि "कौन सा पैकेज एडाप्टर आयात करता है" बल्कि "क्या कॉल टिक के अंदर है।" एक गेम पैकेज एडाप्टर को स्वतंत्र रूप से आयात और चला सकता है, जब तक कि प्रत्येक कॉल एक चेकपॉइंट पर उतरता है जो बीज-संचालित पुन: प्ले लूप के बाहर होता है।
 
-**Three play modes.** `offline` (default — no chain, the engine as it ships) ·
-`ledger` (coin/items backed by testnet balances, settled at checkpoints) ·
-`diary` (play offline, then anchor the run's state hash on-ledger for a
-tamper-evident receipt).
+**तीन प्ले मोड।** `offline` (डिफ़ॉल्ट - कोई श्रृंखला नहीं, इंजन जैसा कि यह भेजा गया है) · `ledger` (टेस्टनेट बैलेंस द्वारा समर्थित सिक्के/आइटम, चेकपॉइंट पर निपटाए गए) · `diary` (ऑफ़लाइन खेलें, फिर रन की स्थिति हैश को छेड़छाड़-सबूत रसीद के लिए ऑन-लेज़र पर एंकर करें)।
 
-**लेजर में क्या है।** `coin` → एक ट्रस्ट लाइन पर जारी मुद्रा आईओयू; उपभोग करने योग्य वस्तुएँ → परिवर्तनीय टोकन; किसी चेकपॉइंट का शुद्ध व्यापार अंतर → **एक्सएलएस-85 टोकन एस्क्रो** के माध्यम से निपटाया गया स्थानांतरण। अद्वितीय उपकरण **एक्सएलएस-20 एनएफटी** (v3.3) के रूप में आते हैं, जिसमें अवशेष वृद्धि वास्तविक प्ले द्वारा v3.4 से एक परिवर्तनीय एनएफटी की मेटाडेटा को अपडेट करती है – यह **एक्सएलएस-46 `NFTokenModify`** द्वारा संचालित होता है। अमूर्त जिला अर्थव्यवस्था (`economy-core`) अपरिवर्तित रहती है – यह एक शुद्ध सिमुलेशन बनी रहती है।
+**लेज़र में क्या है।** `coin` → एक ट्रस्ट लाइन पर जारी मुद्रा का वचन;
+उपभोग योग्य वस्तुएं → परिवर्तनीय टोकन; एक चेकपॉइंट का शुद्ध व्यापार अंतर → **XLS-85 टोकन एस्क्रो** के माध्यम से एक निश्चित
+लेन-देन; अद्वितीय उपकरण **XLS-20 NFT** के रूप में भेजे जाते हैं
+(v3.3), जिसमें अवशेष वृद्धि एक परिवर्तनीय NFT के मेटाडेटा को **XLS-46 `NFTokenModify`** के माध्यम से बदलती है — जो v3.4 से वास्तविक गेमप्ले द्वारा संचालित है। अमूर्त जिला
+अर्थव्यवस्था (`economy-core`) को *प्रभावित नहीं* किया जाता है — यह एक शुद्ध सिमुलेशन बनी रहती है।
 
-**सुरक्षा रेल।** केवल टेस्टनेट, एक **मेननेट-असंभव-इन-कोड** संरचनात्मक गार्ड के साथ (कोई कॉन्फ़िगरेशन ध्वज नहीं); वॉलेट बीज एक gitignored सीक्रेट साइडकार में रहते हैं, कभी भी सहेजें फ़ाइल में नहीं; निपटान पुन: प्रयास पथ पर निष्क्रिय और संरक्षण-सुरक्षित है; प्रमाण **वास्तविक ऑन-चेन मेमो** को सत्यापित करते हैं (इंजन का अपना स्ट्रिंग नहीं); और यदि श्रृंखला दुर्गम है तो रन बस जारी रहता है, *अनएन्कर्ड* के रूप में चिह्नित।
+**सुरक्षा उपाय।** केवल टेस्टनेट, एक **मुख्यनेट-असंभव-कोड में** संरचनात्मक
+सुरक्षा (कोई कॉन्फ़िगरेशन फ़्लैग नहीं); वॉलेट बीज एक गिट-अनदेखे गुप्त साइडकार में रहते हैं,
+कभी भी सेव फ़ाइल में नहीं; निपटान idempotent है और पुनः प्रयास पथ पर संरक्षण-सुरक्षित है; प्रमाण **वास्तविक ऑन-चेन मेमो** को सत्यापित करते हैं (इंजन का अपना
+स्ट्रिंग नहीं); और यदि श्रृंखला दुर्गम है, तो रन बस जारी रहता है, जिसे *अनचर्ड* के रूप में चिह्नित किया गया है।
 
-**Proven live.** A real `starter-pirate` merchant run — sell a cutlass, buy a
-cannon-shell — settles on XRPL testnet via token escrow, then `reconcile()`
-confirms on-ledger balances and memos against the engine's economy (conservation
-holds for every token). The ledger is a different system family than the engine,
-so the engine cannot fake it — reconciliation is a genuine external verifier.
-Testnet only; assets are game-scoped receipts, not securities.
+**सिद्ध रूप से लाइव।** एक वास्तविक `starter-pirate` व्यापारी रन — एक कटलैस बेचें, एक
+तोप का गोला खरीदें — टोकन एस्क्रो के माध्यम से XRPL टेस्टनेट पर निपटान होता है, फिर `reconcile()`
+लेज़र पर शेष राशि और मेमो की पुष्टि इंजन की अर्थव्यवस्था के विरुद्ध करता है (प्रत्येक टोकन के लिए संरक्षण)। लेज़र इंजन की तुलना में एक अलग सिस्टम परिवार है,
+इसलिए इंजन इसे नकली नहीं बना सकता — सामंजस्य एक वास्तविक बाहरी सत्यापनकर्ता है।
+केवल टेस्टनेट; संपत्ति गेम-स्कोप किए गए रसीदें हैं, प्रतिभूतियां नहीं।
 
 ---
 
-## युद्ध प्रणाली
+## लड़ाई प्रणाली
 
-पांच क्रियाएं (हमला, रक्षा, अलग होना, सहारा देना, पुन: स्थिति), चार युद्ध अवस्थाएं (संरक्षित, असंतुलित, उजागर, भागना), चार संलग्नता अवस्थाएं (संलग्न, संरक्षित, बैकलाइन, पृथक)। तीन आँकड़े आयाम हर सूत्र को चलाते हैं इसलिए एक त्वरित द्वंद्ववादी एक भारी ब्रूज़र या एक रचनाबद्ध प्रहरी से अलग तरीके से खेलता है।
+पांच क्रियाएं (हमला, रक्षा, अलग होना, सहारा, पुन: स्थिति), चार लड़ाई की अवस्थाएं (संरक्षित, असंतुलित, उजागर, भागना), चार जुड़ाव की अवस्थाएं (जुड़ा हुआ, संरक्षित, बैकलाइन, अलग)। तीन सांख्यिकीय आयाम प्रत्येक सूत्र को चलाते हैं ताकि एक तेज द्वंद्ववादी एक भारी लड़ाकू या एक संयमित प्रहरी से अलग तरीके से खेले।
 
-एआई विरोधी एकीकृत निर्णय स्कोरिंग का उपयोग करते हैं - युद्ध क्रियाएं और क्षमताएं एक ही मूल्यांकन में प्रतिस्पर्धा करती हैं, जिसमें मामूली क्षमता स्पैम को रोकने के लिए कॉन्फ़िगर करने योग्य सीमाएँ होती हैं।
+एआई विरोधी एकीकृत निर्णय स्कोरिंग का उपयोग करते हैं — लड़ाई की क्रियाएं और क्षमताएं एक ही मूल्यांकन में प्रतिस्पर्धा करती हैं, जिसमें मामूली क्षमता स्पैम को रोकने के लिए कॉन्फ़िगर करने योग्य सीमाएं होती हैं।
 
-पैक लेखक, युद्ध को एक सांख्यिकीय मानचित्रण, संसाधन प्रोफ़ाइल और पूर्वाग्रह टैग से जोड़ने के लिए `buildCombatStack()` का उपयोग करते हैं। [कॉम्बैट ओवरव्यू](site/src/content/docs/handbook/49a-combat-overview.md) और [पैक ऑथर गाइड](site/src/content/docs/handbook/55-combat-pack-guide.md) देखें।
+पैक लेखक लड़ाई को एक सांख्यिकीय मानचित्रण, संसाधन प्रोफ़ाइल और पूर्वाग्रह टैग से जोड़ने के लिए `buildCombatStack()` का उपयोग करते हैं। [लड़ाई अवलोकन](site/src/content/docs/handbook/49a-combat-overview.md) और [पैक लेखक गाइड](site/src/content/docs/handbook/55-combat-pack-guide.md) देखें।
 
 ---
 
 ## क्षमताएं
 
-शैली-देशी क्षमता प्रणाली जिसमें लागत, आँकड़े की जांच, कूलडाउन और टाइप किए गए प्रभाव (नुकसान, उपचार, स्थिति लागू करें, शुद्ध करें) शामिल हैं। स्थिति प्रभावों में प्रतिरोध / भेद्यता प्रोफाइल के साथ 11-टैग सिमेंटिक शब्दावली का उपयोग किया जाता है। एआई-जागरूक चयन स्व / AoE / एकल-लक्ष्य पथों को स्कोर करता है।
+शैली-देशी क्षमता प्रणाली जिसमें लागत, सांख्यिकीय जांच, कूलडाउन और टाइप किए गए प्रभाव (नुकसान, उपचार, स्थिति लागू करें, शुद्ध करें) शामिल हैं। स्थिति प्रभाव प्रतिरोध/संवेदनशीलता प्रोफाइल के साथ 11-टैग सिमेंटिक शब्दावली का उपयोग करते हैं। एआई-जागरूक चयन स्कोर स्व/एओई/एकल-लक्ष्य पथ।
 
 ```typescript
 const warCry: AbilityDefinition = {
@@ -278,72 +280,72 @@ const warCry: AbilityDefinition = {
 
 | पैकेज | उद्देश्य |
 |---------|---------|
-| [`@ai-rpg-engine/core`](packages/core) | नियतात्मक सिमुलेशन रनटाइम - विश्व स्थिति, घटनाएं, आरएनजी, टिक, क्रिया समाधान। |
-| [`@ai-rpg-engine/modules`](packages/modules) | 30+ कंपोजेबल मॉड्यूल - युद्ध, धारणा, अनुभूति, गुट, अफवाहें, यात्रा, साथी, एनपीसी एजेंसी, रणनीतिक मानचित्र, आइटम पहचान, उभरते अवसर, चाप का पता लगाना, अंतिम खेल ट्रिगर। |
-| [`@ai-rpg-engine/content-schema`](packages/content-schema) | विश्व सामग्री के लिए विहित स्कीमा और सत्यापनकर्ता। |
-| [`@ai-rpg-engine/character-profile`](packages/character-profile) | चरित्र का विकास, चोटें, महत्वपूर्ण पड़ाव, प्रतिष्ठा। |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | आदर्श प्रकार का चयन, संरचना निर्माण, शुरुआती उपकरण। |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | उपकरण प्रकार, आइटम उत्पत्ति और अवशेष वृद्धि – जिसमें `item-chronicle-core` शामिल है, जो एक वैकल्पिक मॉड्यूल है जो वास्तविक प्ले से गियर इतिहास रिकॉर्ड करता है ताकि आइटम उपनाम और स्तर अर्जित करें। |
-| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | विभिन्न सत्रों में स्मृति, संबंधपरक प्रभाव, अभियान की स्थिति। |
-| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | अफवाह का जीवनचक्र, परिवर्तन की प्रक्रिया, प्रसार का पता लगाना। |
-| [`@ai-rpg-engine/presentation`](packages/presentation) | कथा-वर्णन योजना का ढांचा, अनुबंधों का प्रारूपण, आवाज प्रोफाइल। |
-| [`@ai-rpg-engine/audio-director`](packages/audio-director) | संकेत निर्धारण, प्राथमिकता, ध्वनि कम करना, शीतन अवधि तर्क। |
-| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | ध्वनि पैकेज की सूची, सामग्री-आधारित रजिस्ट्री। |
-| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | पैक पंजीकरण, मूल्यांकन मानदंड, पैक की खोज। |
-| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | चित्रों, आइकनों और मीडिया के लिए सामग्री-आधारित संग्रहण। |
-| [`@ai-rpg-engine/image-gen`](packages/image-gen) | प्लग-इन योग्य प्रदाताओं के साथ सिर रहित पोर्ट्रेट का निर्माण। |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | वैकल्पिक एआई-आधारित लेखन सुविधा – ढांचा तैयार करना, आलोचनात्मक मूल्यांकन, निर्देशित कार्यप्रवाह, अनुकूलन और प्रयोग। |
-| [`@ai-rpg-engine/cli`](packages/cli) | सीएलआई: गेम चलाएं, शुरुआती टेम्पलेट बनाएं, सहेजे गए डेटा की जांच करें। |
-| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | टर्मिनल रेंडरर और इनपुट लेयर। |
-| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | व्यापारिक स्टार्टर – लेजर एडाप्टर के लिए संदर्भ पैक, जिस पर इसकी कोई निर्भरता नहीं है। |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | चोर पकड़ने वाला शुरुआती व्यक्ति – पीछा करना एक चक्र की तरह है, और शहर का कौन सा हिस्सा आपके लिए दरवाजे खोलेगा। |
-| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **वैकल्पिक** - खिलाड़ी द्वारा स्वामित्व वाली व्यापार योग्य परत (सिक्का / इन्वेंट्री / व्यापार) के लिए ऑप्ट-इन XRPL टेस्टनेट निपटान, चेकपॉइंट पर XLS-85 टोकन एस्क्रो के माध्यम से, पूरी तरह से नियतात्मक कोर के बाहर। |
+| [`@ai-rpg-engine/core`](packages/core) | निर्धारित सिमुलेशन रनटाइम — विश्व स्थिति, घटनाएं, आरएनजी, टिक, क्रिया समाधान |
+| [`@ai-rpg-engine/modules`](packages/modules) | 30+ संयोजनीय मॉड्यूल — लड़ाई, धारणा, अनुभूति, गुट, अफवाहें, यात्रा, साथी, एनपीसी एजेंसी, रणनीतिक मानचित्र, आइटम पहचान, उभरते अवसर, चाप का पता लगाना, अंतिम खेल ट्रिगर |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | विश्व सामग्री के लिए विहित स्कीमा और सत्यापनकर्ता |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | चरित्र प्रगति, चोटें, मील के पत्थर, प्रतिष्ठा |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | आर्केटाइप चयन, निर्माण पीढ़ी, स्टार्टर गियर |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | उपकरण प्रकार, आइटम उत्पत्ति और अवशेष वृद्धि — जिसमें `item-chronicle-core` शामिल है, जो एक वैकल्पिक मॉड्यूल है जो वास्तविक गेमप्ले से गियर इतिहास रिकॉर्ड करता है ताकि आइटम उपनाम और स्तर अर्जित करें |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | क्रॉस-सत्र स्मृति, संबंध प्रभाव, अभियान स्थिति |
+| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | अफवाह जीवनचक्र, उत्परिवर्तन यांत्रिकी, प्रसार ट्रैकिंग |
+| [`@ai-rpg-engine/presentation`](packages/presentation) | कथा योजना स्कीमा, रेंडर अनुबंध, आवाज प्रोफाइल |
+| [`@ai-rpg-engine/audio-director`](packages/audio-director) | संकेत शेड्यूलिंग, प्राथमिकता, डकिंग, कूलडाउन तर्क |
+| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | साउंड पैक मेनिफेस्ट, सामग्री-पता योग्य रजिस्ट्री |
+| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | पैक पंजीकरण, रूब्रिक स्कोरिंग, पैक खोज |
+| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | पोर्ट्रेट, आइकन, मीडिया के लिए सामग्री-पता भंडारण |
+| [`@ai-rpg-engine/image-gen`](packages/image-gen) | प्लग करने योग्य प्रदाताओं के साथ हेडलेस पोर्ट्रेट पीढ़ी |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | वैकल्पिक एआई लेखक — स्केफोल्डिंग, आलोचना, निर्देशित वर्कफ़्लो, ट्यूनिंग, प्रयोग |
+| [`@ai-rpg-engine/cli`](packages/cli) | सीएलआई: गेम चलाएं, स्टार्टर बनाएं, सेव का निरीक्षण करें |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | टर्मिनल रेंडरर और इनपुट परत |
+| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | व्यापारी स्टार्टर — लेज़र एडाप्टर के लिए संदर्भ पैक, जिसमें इस पर कोई निर्भरता नहीं है |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | चोर-शिकारी स्टार्टर — लूप के रूप में पीछा, और शहर का कौन सा आधा आपके लिए एक दरवाजा खोलेगा |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **वैकल्पिक** — खिलाड़ी के स्वामित्व वाले व्यापार योग्य परत (सिक्का / इन्वेंट्री / व्यापार) के लिए वैकल्पिक XRPL टेस्टनेट निपटान, चेकपॉइंट पर XLS-85 टोकन एस्क्रो के माध्यम से, पूरी तरह से निर्धारित कोर के बाहर |
 
-### शुरुआती उदाहरण
+### स्टार्टर उदाहरण
 
-ये दस शुरुआती दुनियाएँ **रचना के उदाहरण** हैं – ये दर्शाती हैं कि गेम इंजन मॉड्यूल को मिलाकर पूर्ण गेम कैसे बनाया जा सकता है। प्रत्येक दुनिया विभिन्न प्रकार के पैटर्न (सांख्यिकीय मानचित्रण, संसाधन प्रोफाइल, जुड़ाव कॉन्फ़िगरेशन, क्षमता सेट) दिखाती है। प्रत्येक शुरुआती दुनिया के ‘रीडमी’ में “दिखाए गए पैटर्न” और “क्या उपयोग किया जा सकता है” देखें।
+12 स्टार्टर दुनिया **रचना उदाहरण** हैं — वे इंजन मॉड्यूल को पूर्ण गेम में संयोजित करने का तरीका प्रदर्शित करते हैं। प्रत्येक एक अलग पैटर्न दिखाता है (सांख्यिकीय मानचित्रण, संसाधन प्रोफाइल, जुड़ाव कॉन्फ़िगरेशन, क्षमता सेट)। "दिखाए गए पैटर्न" और "क्या उधार लेना है" के लिए प्रत्येक स्टार्टर के README देखें।
 
-| शुरुआती/प्रारंभिक | शैली | प्रमुख पैटर्न |
+| स्टार्टर | शैली | प्रमुख पैटर्न |
 |---------|-------|-------------|
-| [`starter-fantasy`](packages/starter-fantasy) | अंधकारमय काल्पनिक कथा | न्यूनतम युद्ध, संवाद पर आधारित। |
-| [`starter-cyberpunk`](packages/starter-cyberpunk) | साइबरपंक | संसाधन, भागीदारी की भूमिकाएँ। |
-| [`starter-detective`](packages/starter-detective) | विक्टोरियन रहस्य | सामाजिक दृष्टिकोण को प्राथमिकता, धारणा पर अधिक जोर। |
-| [`starter-pirate`](packages/starter-pirate) | समुद्री डाकू | नौसैनिक + हाथापाई युद्ध, बहु-क्षेत्रीय |
-| [`starter-zombie`](packages/starter-zombie) | ज़ॉम्बी से बचने की रणनीति/तरीका। | कमी, संक्रमण, संसाधन। |
-| [`starter-weird-west`](packages/starter-weird-west) | अजीब पश्चिम | पूर्वाग्रहों को दूर करें, सुरक्षित वातावरण में सुधार करें। |
-| [`starter-colony`](packages/starter-colony) | विज्ञान कथा पर आधारित कॉलोनी। | संकरी राहें, घात लगाने के स्थान। |
-| [`starter-ronin`](packages/starter-ronin) | सामंती जापान | छिपे हुए मार्ग, कई सुरक्षात्मक भूमिकाएँ। |
-| [`starter-merchant`](packages/starter-merchant) | व्यापारिक | लूप के रूप में दायित्व, दंड के रूप में मूल्यवान युद्ध |
-| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | पीछा करना | पैसों के लिए लोगों का शिकार करना; हिंसा ज़ाहिर है, वर्जित नहीं। |
-| [`starter-vampire`](packages/starter-vampire) | पिशाच हॉरर। | रक्त संसाधन, सामाजिक हेरफेर। |
-| [`starter-gladiator`](packages/starter-gladiator) | ऐतिहासिक ग्लैडिएटर | अखाड़े में मुकाबला, दर्शकों का समर्थन। |
+| [`starter-fantasy`](packages/starter-fantasy) | डार्क फंतासी | न्यूनतम लड़ाई, संवाद-संचालित |
+| [`starter-cyberpunk`](packages/starter-cyberpunk) | साइबरपंक | संसाधन, जुड़ाव भूमिकाएँ |
+| [`starter-detective`](packages/starter-detective) | विक्टोरियन रहस्य | सामाजिक-प्रथम, धारणा-भारी |
+| [`starter-pirate`](packages/starter-pirate) | समुद्री डाकू | नौसैनिक + हाथापाई, बहु-क्षेत्रीय |
+| [`starter-zombie`](packages/starter-zombie) | ज़ोंबी उत्तरजीविता | कमी, संक्रमण संसाधन |
+| [`starter-weird-west`](packages/starter-weird-west) | अजीब पश्चिम | पैक पूर्वाग्रह, सुरक्षित-क्षेत्र पुनर्प्राप्ति |
+| [`starter-colony`](packages/starter-colony) | विज्ञान-फाई कॉलोनी | चोकपॉइंट, घात क्षेत्र |
+| [`starter-ronin`](packages/starter-ronin) | सामंती जापान | छिपे हुए मार्ग, एकाधिक संरक्षक भूमिकाएँ |
+| [`starter-merchant`](packages/starter-merchant) | व्यापारी | लूप के रूप में दायित्व, लड़ाई को दंड के रूप में मूल्यवान |
+| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | पीछा | पैसे के लिए लोगों का शिकार; हिंसा जोर से है, निषिद्ध नहीं |
+| [`starter-vampire`](packages/starter-vampire) | पिशाच हॉरर | रक्त संसाधन, सामाजिक हेरफेर |
+| [`starter-gladiator`](packages/starter-gladiator) | ऐतिहासिक ग्लेडिएटर | अखाड़ा लड़ाई, भीड़ का पक्ष |
 
 ---
 
-## दस्तावेज़ीकरण
+## प्रलेखन
 
 | संसाधन | विवरण |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | एक नया गेम बनाएं – कमांड लाइन इंटरफेस (सीएलआई) या मैन्युअल टेम्पलेट विधि का उपयोग करें। |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | इंजन मॉड्यूल को जोड़कर अपना खुद का गेम बनाएं। |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | प्रति-इकाई नियम समाधान – मिश्रित-शैली का युद्ध, `applyProfile`, प्रोफ़ाइल टेम्पलेट, `profile` सीएलआई। |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | ऑप्ट-इन ऑन-लेजर निपटान - नियतिवाद फ़ायरवॉल, L0/L1/L2 एकीकरण स्तर, प्ले मोड, सुरक्षा रेल और लाइव-सिद्ध पायरेट डेमो। |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | छह प्रमुख युद्ध रणनीतियाँ, पाँच क्रियाएँ, और राज्यों की त्वरित जानकारी। |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | क्रमबद्ध तरीके से कॉम्बैट स्टैक बनाएं, आँकड़ों का मानचित्रण करें और संसाधनों की जानकारी तैयार करें। |
-| [Handbook](site/src/content/docs/handbook/index.md) | विस्तृत निर्देशिका – सभी प्रणालियों का विवरण, साथ ही चार परिशिष्ट। |
-| [Composition Model](docs/composition-model.md) | छह पुन: प्रयोज्य परतें और वे कैसे मिलकर एक संरचना बनाती हैं। |
-| [Examples](docs/examples/) | चलाने योग्य टाइपस्क्रिप्ट उदाहरण (टाइप-जांच और सीआई में व्यवहार परीक्षण के साथ)—प्रत्येक इकाई के लिए मिश्रित पार्टी, साझा प्रोफाइल, विभिन्न दुनियाओं में उपयोग, शुरुआत से। |
-| [Design Document](docs/DESIGN.md) | आर्किटेक्चर का गहन अध्ययन – क्रियान्वयन प्रक्रिया, वास्तविकता बनाम प्रस्तुति। |
-| [Philosophy](PHILOSOPHY.md) | निश्चित नियमों पर आधारित दुनिया, प्रमाणों द्वारा संचालित डिज़ाइन, कृत्रिम बुद्धिमत्ता सहायक के रूप में। |
+| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | एक नया गेम बनाएं - CLI या मैन्युअल टेम्पलेट रूट |
+| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | इंजन मॉड्यूल को मिलाकर अपना गेम बनाएं |
+| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | प्रति-इकाई नियम समाधान - मिश्रित-शैली युद्ध, `applyProfile`, प्रोफ़ाइल टेम्पलेट, `profile` CLI |
+| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | ऑप्ट-इन ऑन-लेजर सेटलमेंट - नियतिवादी फ़ायरवॉल, L0/L1/L2 एकीकरण स्तर, प्ले मोड, सुरक्षा रेल, और लाइव-सिद्ध समुद्री डाकू डेमो |
+| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | छह युद्ध स्तंभ, पाँच क्रियाएं, एक नज़र में स्थितियाँ |
+| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | चरण-दर-चरण buildCombatStack, आँकड़ा मैपिंग, संसाधन प्रोफ़ाइल |
+| [Handbook](site/src/content/docs/handbook/index.md) | व्यापक हैंडबुक - प्रत्येक प्रणाली, साथ में 4 परिशिष्ट |
+| [Composition Model](docs/composition-model.md) | 6 पुन: प्रयोज्य परतें और वे कैसे मिलकर काम करती हैं |
+| [Examples](docs/examples/) | चलाने योग्य टाइपस्क्रिप्ट उदाहरण (टाइप-चेक + CI में व्यवहार-परीक्षण) - प्रति-इकाई मिश्रित पार्टी, साझा प्रोफ़ाइल, क्रॉस-वर्ल्ड, स्क्रैच से |
+| [Design Document](docs/DESIGN.md) | आर्किटेक्चर का गहन अध्ययन - एक्शन पाइपलाइन, सत्य बनाम प्रस्तुति |
+| [Philosophy](PHILOSOPHY.md) | नियतिवादी दुनिया, साक्ष्य-आधारित डिज़ाइन, सहायक के रूप में AI |
 | [Changelog](CHANGELOG.md) | रिलीज़ इतिहास |
 
 ---
 
-## कार्य योजना
+## रोडमैप
 
-### हम अभी कहाँ हैं।
+### हम अभी कहाँ हैं
 
-Both composition spines are complete — 6412 tests across 326 files, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v3.0 makes the world live: named NPCs come alive with goals, trust/fear/greed/loyalty relationships, obligation ledgers, and consequence chains; the social layer earns passively and spends across twenty-one new diplomacy/sabotage verbs; the economy is genre-flavored per starter; and the leverage you earn finally reaches the campaign endings it gates. A Phase-9 audit caught the headline wired-but-inert in shipped content — the fix ships a named NPC in every starter.**
+दोनों रचना रीढ़ की हड्डी पूरी हो गई है - 326 फ़ाइलों में 6412 परीक्षण, `buildCombatStack` और `buildWorldStack` पर सभी 12 स्टार्टर, मुद्रित बीज के तहत नियतिवादी बाइट-समान रीप्ले, पूर्ण AI निर्णय स्कोरिंग, और एक CLI जो बनाता है, चलाता है, मान्य करता है और निरीक्षण करता है। **v3.0 दुनिया को जीवंत बनाता है: नामित NPC लक्ष्य, विश्वास/भय/लालच/वफ़ादारी संबंध, दायित्व लेज़र और परिणाम श्रृंखला के साथ जीवंत हो जाते हैं; सामाजिक परत निष्क्रिय रूप से कमाती है और इक्कीस नए कूटनीति/विध्वंस क्रियाओं में खर्च करती है; अर्थव्यवस्था प्रति स्टार्टर शैली-आधारित होती है; और आपके द्वारा अर्जित लाभ अंततः उस अभियान के अंत तक पहुँचता है जिसे यह नियंत्रित करता है। चरण-9 ऑडिट में शिप किए गए सामग्री में एक प्रमुख त्रुटि पाई गई - सुधार एक नामित NPC को प्रत्येक स्टार्टर में भेजता है।**
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
@@ -354,30 +356,30 @@ Both composition spines are complete — 6412 tests across 326 files, all 12 sta
 - v2.9.0 — Close the loops: `buy` + merchant stock and crafting complete the economy; companions take independent turns; four social verbs (bribe / intimidate / petition / seed) run on a leverage economy funded by opportunity rewards; opportunities resolve with expiry + favor-fallout consequence; and equipment, quests, recruitables, and starting coin roll out uniformly to all ten starters
 - **v3.0.0 — Make the world live: the npc-agency producer lights named NPCs (goals / relationships / obligation ledgers / consequence chains) plus a story NPC in every starter; the social surface grows to 25 verbs (diplomacy + sabotage) with passive leverage income and dialogue that reads social state; per-starter genre-flavored stock + recipes; the leverage endings (victory / puppet-master / quiet-retirement) become reachable; repair/modify menu rows, escort opportunities, and an `audit-content` dev CLI — shipped through a Phase-9 audit that caught two dead-wires the green test suite hid**
 
-### अगला (v2.8 ढांचा)
+### अगला (v3.0 रीढ़ की हड्डी)
 
-- **Living NPCs** — the persisted npc-agency producer that lights the Director's PEOPLE section: named NPCs with goals, relationship breakpoints, obligation ledgers, and consequence chains, plus companion-morale favor-fallout and the departure-risk path the reaction system already carries
-- Genre-flavored merchant stock and crafting recipes (per-starter genre threading over the universal fallback that ships today), and the `repair`/`modify` menu surface
-- The leverage economy's next layer — passive income beyond opportunity rewards, and social verbs beyond the shipped four (diplomacy / sabotage groups) — plus the dialogue condition/effect vocabulary that reads the new social state
-- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
-- API documentation sync — ensure every handbook page reflects the latest APIs
+- **जीवंत NPC** - लगातार npc-एजेंसी निर्माता जो निर्देशक के PEOPLE अनुभाग को रोशन करता है: नामित NPC लक्ष्य, संबंध ब्रेकपॉइंट, दायित्व लेज़र और परिणाम श्रृंखला के साथ, साथ ही साथी-मनोबल पक्षपात-पतन और प्रस्थान-जोखिम पथ जो प्रतिक्रिया प्रणाली में पहले से मौजूद है
+- शैली-आधारित व्यापारी स्टॉक और क्राफ्टिंग रेसिपी (प्रति-स्टार्टर शैली थ्रेडिंग आज भेजे गए सार्वभौमिक फ़ॉलबैक पर), और `repair`/`modify` मेनू सतह
+- लाभ अर्थव्यवस्था की अगली परत - अवसर पुरस्कारों से परे निष्क्रिय आय, और चार भेजे गए सामाजिक क्रियाओं से परे सामाजिक क्रियाएं (कूटनीति / विध्वंस समूह) - साथ ही संवाद स्थिति/प्रभाव शब्दावली जो नई सामाजिक स्थिति को पढ़ती है
+- मल्टीप्लेयर - एक ही दुनिया को साझा करने वाले दो *मानव* खिलाड़ी (एक नेटवर्किंग परत, जानबूझकर स्थगित; एकल-नियंत्रक साझा प्रोफ़ाइल आज भेजे गए हैं [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
+- क्रमबद्ध सूत्र ओवरराइड - प्रति-प्रोफ़ाइल सूत्र ट्यूनिंग (एक सूत्र DSL पर अवरुद्ध; प्रोफ़ाइल में आज आँकड़ा मैपिंग है, क्लोजर नहीं)
+- API प्रलेखन सिंक्रनाइज़ेशन - सुनिश्चित करें कि प्रत्येक हैंडबुक पृष्ठ नवीनतम API को दर्शाता है
 
-### गंतव्य: प्लग-इन प्रोफाइल।
+### गंतव्य: प्लग-इन प्रोफ़ाइल
 
-The engine's end goal is **user-defined profiles** — portable bundles that slot into any game. A profile packages a stat mapping, resource behavior, AI bias tags, and abilities into a single importable unit. As of v2.5, entities in one world can each carry their own profile and resolve combat per-entity — a `might` fighter and a `will` mystic share a party, each bringing their own playstyle.
+इंजन का अंतिम लक्ष्य **उपयोगकर्ता-परिभाषित प्रोफ़ाइल** है - पोर्टेबल बंडल जो किसी भी गेम में स्लॉट करते हैं। एक प्रोफ़ाइल एक आँकड़ा मैपिंग, संसाधन व्यवहार, AI पूर्वाग्रह टैग और क्षमताओं को एक एकल आयात योग्य इकाई में पैकेज करता है। v2.5 तक, एक दुनिया में इकाइयाँ प्रत्येक अपनी प्रोफ़ाइल ले जा सकती हैं और प्रति-इकाई युद्ध को हल कर सकती हैं - एक `might` सेनानी और एक `will` रहस्यवादी एक पार्टी साझा करते हैं, प्रत्येक अपनी खेल शैली लाते हैं।
 
-The schema, the `applyProfile` loader, per-entity ability resolution, and cross-profile validation are all shipped. What remains is multiplayer — letting two *human* players (not just two entities) share a world — which is a networking layer. See [Profile Roadmap](docs/profile-roadmap.md) and [feature-architecture.md](docs/feature-architecture.md) for the design.
+स्कीमा, `applyProfile` लोडर, प्रति-इकाई क्षमता समाधान और क्रॉस-प्रोफ़ाइल सत्यापन सभी भेजे गए हैं। जो बचा है वह मल्टीप्लेयर है - दो *मानव* खिलाड़ियों (सिर्फ दो इकाइयों के नहीं) को एक दुनिया साझा करने की अनुमति देना - जो एक नेटवर्किंग परत है। डिज़ाइन के लिए [प्रोफ़ाइल रोडमैप](docs/profile-roadmap.md) और [feature-architecture.md](docs/feature-architecture.md) देखें।
 
 ---
 
-## दर्शनशास्त्र
+## दर्शन
 
-एआई आरपीजी इंजन तीन मुख्य विचारों पर आधारित है:
+एआई आरपीजी इंजन तीन विचारों पर आधारित है:
 
 1. **निश्चित दुनिया** — सिमुलेशन के परिणाम दोहराए जा सकने चाहिए।
-2. **साक्ष्य-आधारित डिज़ाइन** — दुनिया की यांत्रिकी का परीक्षण सिमुलेशन के माध्यम से किया जाना चाहिए।
-3. **सहायक के रूप में एआई, अधिकार नहीं** — एआई उपकरण डिज़ाइनों को उत्पन्न करने और उनकी आलोचना करने में मदद करते हैं, लेकिन वे निश्चित प्रणालियों को प्रतिस्थापित नहीं करते हैं।
+2. **साक्ष्य-आधारित डिज़ाइन** — दुनिया के यांत्रिकी का परीक्षण सिमुलेशन के माध्यम से किया जाना चाहिए।
+3. **एआई एक सहायक के रूप में, न कि अधिकार के रूप में** — एआई उपकरण डिज़ाइन उत्पन्न करने और उनकी आलोचना करने में मदद करते हैं, लेकिन वे निश्चित प्रणालियों को प्रतिस्थापित नहीं करते हैं।
 
 पूर्ण विवरण के लिए [PHILOSOPHY.md](PHILOSOPHY.md) देखें।
 
@@ -385,21 +387,21 @@ The schema, the `applyProfile` loader, per-entity ability resolution, and cross-
 
 ## सुरक्षा
 
-The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. Two **optional** layers add an outbound path, and only when you invoke them:
+मुख्य इंजन एक **स्थानीय-केवल सिमुलेशन लाइब्रेरी** है: कोई टेलीमेट्री नहीं, कोई नेटवर्क नहीं, कोई गुप्त जानकारी नहीं। सहेजी गई फाइलें केवल स्पष्ट रूप से अनुरोध किए जाने पर `.ai-rpg-engine/` में सहेजी जाती हैं। दो **वैकल्पिक** परतें एक आउटबाउंड पथ जोड़ती हैं, और केवल तभी जब आप उन्हें सक्रिय करते हैं:
 
-- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).
-- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.
+- एआई परत (`@ai-rpg-engine/ollama`) एक **स्थानीय** ओलामा डेमॉन से बात करती है; इसकी वैकल्पिक `webfetch` (आरएजी के लिए) एक एसएसआरएफ गार्ड द्वारा सीमित है (जो लूपबैक/लिंक-स्थानीय/सीजीएनएटी/क्लाउड-मेटाडेटा और IPv6-टनल्ड समकक्षों को अवरुद्ध करता है)।
+- लेजर परत (`@ai-rpg-engine/ledger-adapter`) **एक्सआरपीएल टेस्टनेट** तक पहुंचती है — और केवल टेस्टनेट तक: एक **मुख्यनेट-असंभव-इन-कोड** संरचनात्मक गार्ड (कोई कॉन्फ़िगरेशन ध्वज नहीं) निर्माण के समय किसी भी गैर-टेस्टनेट होस्ट को अस्वीकार करता है। वॉलेट सीड्स एक गिट-अनदेखा गुप्त साइडकार में रहते हैं, कभी भी सहेजी गई फ़ाइल में नहीं, और निश्चित कोर कभी भी एडाप्टर को आयात नहीं करता है।
 
-अधिक जानकारी के लिए [SECURITY.md](SECURITY.md) देखें।
+विवरण के लिए [SECURITY.md](SECURITY.md) देखें।
 
-## आवश्यकताएँ
+## आवश्यकताएं
 
-- Node.js >= 20
-- TypeScript (ईएसएम मॉड्यूल)
+- नोड.जेएस >= 20
+- टाइपस्क्रिप्ट (ईएसएम मॉड्यूल)
 
 ## लाइसेंस
 
-[MIT](LICENSE)
+[एमआईटी](LICENSE)
 
 ---
 

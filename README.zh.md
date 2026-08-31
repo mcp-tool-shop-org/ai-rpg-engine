@@ -12,33 +12,34 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# AI RPG 引擎
+# AI 角色扮演游戏引擎
 
-一个用于构建确定性 RPG 模拟的 TypeScript 工具包。你可以定义属性、选择模块、配置战斗流程，并创建内容。该引擎处理状态、事件、随机数生成器 (RNG)、行动决策和 AI 决策。每次运行都是可重复的。
+一个 TypeScript 工具包，用于构建确定性的角色扮演游戏模拟。您可以定义属性、选择模块、配置战斗流程，并创建内容。该引擎处理状态、事件、随机数生成器、行动解析和 AI 决策。每次运行都是可重复的。
 
-这是一个**组合引擎**，而不是一个完整的游戏。10 个初始世界只是示例——你可以从中学习并重新组合的可分解模式。你的游戏可以使用你需要的引擎的任何子集。
+这是一个**组合引擎**，而不是一个完整的游戏。12 个初始世界只是示例——您可以从中学习和重新组合的可分解模式。您的游戏可以使用您需要的引擎的任何子集。
 
 ---
 
 ## 这是什么
 
-- A **module library** — 30+ engine modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more
-- A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game
-- A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG
-- An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama
-- An **optional on-ledger layer** — `@ai-rpg-engine/ledger-adapter` backs a game's coin and tradeable items with real XRPL **testnet** tokens, settled at checkpoints, entirely outside the deterministic core (opt-in; a run is byte-identical without it)
+- 一个**模块库**——30 多个引擎模块，涵盖战斗、感知、认知、派系、谣言、移动、伙伴等
+- 一个**组合工具包**——`buildCombatStack()` 用大约 7 行代码配置战斗；`new Engine({ modules })` 启动游戏
+- 一个**模拟运行时**——确定性的时间步进、可重放的行动日志、基于种子的随机数生成器
+- 一个**AI 设计工作室**（可选）——提供框架、评估、平衡分析、调整和通过 Ollama 进行的实验
+- 一个**可选的链上层**——`@ai-rpg-engine/ledger-adapter` 使用真实的 XRPL **测试网**令牌来支持游戏中的货币和可交易物品，并在检查点处结算，完全独立于确定性的核心（可选；如果没有它，每次运行的字节码将完全相同）
 
 ## 这不是什么
 
-- Not a single finished game — it ships 10 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
+- Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
 - Not a visual engine — it outputs structured events, not pixels
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## 当前状态（版本 3.7.0）
+## 当前状态（v3.8.1）
 
 **What works and is tested:**
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -82,21 +83,21 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **6180 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-**What is rough or incomplete:**
-- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
-- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound; the commands are an integration hook for a GUI/web embedder
-- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
-- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
-- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
-- Documentation is extensive but not every handbook page reflects the very latest APIs
+**哪些部分存在缺陷或不完整：**
+- AI 世界构建工作室（Ollama 层）的测试不如模拟核心充分，需要本地 Ollama 守护进程；它是完全可选的——引擎和 `run` 循环不需要网络。
+- 叙事/音频堆栈构建确定性的音频命令，但**没有终端音频后端**——没有任何声音播放；这些命令是 GUI/Web 嵌入器的集成钩子。
+- 多人游戏（两个人类玩家共享一个世界）**尚未构建**——它是一个网络层，有意不在设计范围内；目前的配置针对单个控制器。
+- `replay --replay` 恢复保存状态，而不是重新模拟——并且在 v2.9 之后，这就是**既定的**方向，而不是推迟：`Engine.serialize()` 已经是一个经过验证的完整状态快照，而重新模拟必须跟踪世界时间/遭遇状态，这些状态存在于动作日志之外。v2.9 版本在经过验证的恢复路径上提供了多检查点保存槽；真正的事件溯源重模拟尚未计划。
+- v3.1 结束了 v3.0 的三个既定限制——游戏**起始资源**、特定类型的*修复*配方，以及 `deny` / `bury-scandal` 菜单界面，现在都已发布。剩下的唯一限制是：新的游戏修复配方包含作者编写的 `statDelta`（一个小数值加成），而 `resolveRepair` 尚未应用——修复*恢复*，`modify` *升级*——因此，修复即升级的功能已在代码中标记，并**推迟到 v3.2/v3.3** 版本，作为一种有意的机制，而不是一个静默的、不活跃的字段。并且 `obligation-exists` 包含一个作者编写的演示示例（Brother Aldric）；该条件已激活，供内容作者用于控制更多对话。
+- 文档内容丰富，但并非每个手册页面都反映了最新的 API。
 
 ---
 
-## 它看起来是什么样？
+## 它看起来是什么样子
 
-The bundled terminal UI composes each turn into labeled sections — scene, status, log, and actions — with a glance-able HUD. Output is plain text by default and adds semantic color on a TTY (damage red, heals green, rejections yellow), honoring `NO_COLOR` and non-TTY pipes; every cue is carried in the text too, never color alone.
+捆绑的终端 UI 将每个回合分解为带有标签的部分——场景、状态、日志和动作——并提供一目了然的 HUD。默认输出为纯文本，并在 TTY 上添加语义颜色（伤害为红色，治疗为绿色，拒绝为黄色），同时支持 `NO_COLOR` 和非 TTY 管道；每个提示都包含在文本中，而不是仅使用颜色。
 
 ```text
 ── The Crypt Gate ──────────────────────────────────────────
@@ -129,9 +130,9 @@ The bundled terminal UI composes each turn into labeled sections — scene, stat
 
 ---
 
-## 安装与运行
+## 安装和游玩
 
-从终端运行一个示例世界，或构建你自己的游戏：
+从终端开始一个游戏，或者构建你自己的游戏：
 
 ```bash
 npm install -g @ai-rpg-engine/cli
@@ -141,11 +142,9 @@ ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
 ai-rpg-engine run ./my-game          # run a game you scaffolded
 ```
 
-The `run` loop is a real turn-based session: enemies act on their own AI
-profiles, abilities and XP are on the menu, you can save and resume, and a
-fight ends in victory or defeat. Every game is deterministic and replayable.
+`run` 循环是一个真实的基于回合的会话：敌人根据其自身的 AI 配置文件行动，能力和经验值显示在菜单中，你可以保存和恢复，并且战斗以胜利或失败结束。每个游戏都是确定性的，并且可以重复游玩。
 
-可选地，AI 设计工作室可以作为独立的命令安装：
+可选地，AI 设计工作室可以作为其自身的命令进行安装：
 
 ```bash
 npm install -g @ai-rpg-engine/ollama
@@ -153,15 +152,15 @@ ai chat                              # scaffold, critique, and balance content
                                      # against a local Ollama model (see Ch. 36)
 ```
 
-该工作室与本地 [Ollama](https://ollama.com) 守护进程进行通信——首先运行 `ollama serve` 和 `ollama pull qwen2.5-coder`。 这完全是可选的；引擎和 `run` 循环不需要网络连接。
+该工作室与本地 [Ollama](https://ollama.com) 守护进程进行通信——首先运行 `ollama serve` 和 `ollama pull qwen2.5-coder`。它是完全可选的；引擎和 `run` 循环不需要网络。
 
-一个容器镜像被发布到 GHCR，作为 `ghcr.io/mcp-tool-shop-org/ai-rpg-engine` 用于 CI 和沙盒环境中的运行。
+容器镜像已发布到 GHCR，地址为 `ghcr.io/mcp-tool-shop-org/ai-rpg-engine`，用于 CI 和沙盒运行。
 
 ---
 
-## 快速入门
+## 快速开始
 
-如果你想用代码构建自己的游戏？从模块中组合引擎：
+你更喜欢在代码中构建自己的游戏吗？从模块中组合引擎：
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
@@ -187,7 +186,7 @@ engine.submitAction('attack', { targetIds: ['skeleton-1'] });
 engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
 ```
 
-请参阅 [组合指南](site/src/content/docs/handbook/57-composition-guide.md)，了解完整的流程，或者创建一个新的示例世界：
+有关完整工作流程，请参阅 [组合指南](site/src/content/docs/handbook/57-composition-guide.md)，或者构建一个新的起始游戏：
 
 ```bash
 npx @ai-rpg-engine/cli create-starter my-game
@@ -197,68 +196,59 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 ## 架构
 
-| 层级 | 角色 |
+| 层 | 角色 |
 |-------|------|
-| **Core Runtime** | 确定性引擎——世界状态、事件、行动、时间流逝、随机数生成器、重放功能。 |
+| **Core Runtime** | 确定性引擎——世界状态、事件、动作、时间、RNG、重播 |
 | **Modules** | 30 多个可组合的系统——战斗、感知、认知、派系、移动、伙伴等。 |
-| **Content** | 实体、区域、对话、物品、技能、状态——由作者创建。 |
-| **AI Studio** | 可选的 Ollama 层——构建原型、提供反馈、平衡分析、调整参数、进行实验。 |
+| **Content** | 实体、区域、对话、物品、能力、状态——由作者创建。 |
+| **AI Studio** | 可选的 Ollama 层——构建、评论、平衡分析、调整、实验。 |
 
 ---
 
 ## XRPL 分账本适配器（可选）
 
-`@ai-rpg-engine/ledger-adapter` 是一个**可选**包，它将游戏中的**玩家拥有的可交易物品层**——即 `coin` 余额和消耗品库存（这些物品由 `trade-core` 的 `buy`/`sell` 命令已经处理）绑定到 **XRPL 测试网络**，以便这些资产可以由实际的链上令牌支持，并在检查点处结算。如果缺少适配器，则它就是当前发布的离线引擎。
+`@ai-rpg-engine/ledger-adapter` 是一个**可选**包，它将游戏的**玩家拥有的可交易层**——即 `coin` 余额和消耗品库存，这些库存由 `trade-core` 的 `buy`/`sell` 动词进行操作——绑定到 **XRPL 测试网络**，以便这些资产可以由真实的链上令牌支持，并在检查点处结算。如果缺少适配器，则完全是今天发布的离线引擎。
 
-**确定性不变性（最重要的）。** 适配器是一个*侧通道*，
-它永远不会是模拟的一部分：
+**确定性不变性（整个目的）。**适配器是一个*侧通道*，绝不属于模拟：
 
-- 它**绝不会在确定性循环中被调用**——仅在**检查点**（保存、进入城镇/市场、章节结束）时调用。
-- `@ai-rpg-engine/core` 或 `@ai-rpg-engine/modules` 中的任何内容都不会导入它（它的唯一引擎依赖项是编译时的 `import type`）。
-- **无论是否使用它，运行结果都是完全相同的。** 防火墙测试会在两个引擎上运行真实的 `starter-pirate` `createGame()` 商人循环——一个启用了适配器并在检查点处结算，另一个没有启用——并断言这两个世界是深度相等的。种子 0 重放不受影响。
+- 它**绝不在确定性循环内被调用**——而仅在**检查点**（保存、城镇/市场入口、章节中断）时被调用。
+- `@ai-rpg-engine/core` 或 `@ai-rpg-engine/modules` 中的任何内容都不会导入它（它唯一的引擎依赖项是编译时的 `import type`）。
+- **无论是否使用它，运行都是字节级的。**防火墙测试在两个引擎上运行真实的 `starter-pirate` `createGame()` 商家循环——一个启用了适配器并在检查点处结算，另一个没有启用——并断言这两个世界是深度相等的。种子 0 重播不受影响。
 
-**集成级别——游戏可以根据其设计需求尽可能深入地将其整合。**
-防火墙是一个*确定性*边界，而不是一个反集成规则；上述不变性在所有级别都成立：
+**集成级别——游戏可以根据其设计尽可能深入地集成它。**防火墙是一个*确定性*边界，而不是反集成规则；上述不变性在每个级别都成立：
 
-| 级别 | 哪些部分依赖于适配器 | 适用情况 |
+| 级别 | 哪些部分依赖于适配器 | 适用性 |
 |-------|-----------------------------|------|
-| **L0 — External observer** | 游戏内部没有任何内容；适配器从外部在检查点处连接，并且游戏对此一无所知。 | 对现有游戏进行改造（发布的盗贼演示）。 |
-| **L1——游戏驱动的检查点** | 游戏自身的存档/城镇/元进度流程会在定义的时刻调用适配器。 | 一个想要有意的分账本时刻的游戏。 |
-| **L2 — Ledger-native design** | 游戏的经济或身份是围绕链上所有权（持久的发行者、真实的交易市场）设计的。 | 一个以分账本为先导的商家游戏。 |
+| **L0 — External observer** | 游戏内部没有依赖；适配器从外部在检查点处连接，游戏对此一无所知。 | 改造现有游戏（发布的盗版演示）。 |
+| **L1——游戏驱动的检查点** | 游戏自己的保存/城镇/元进度流程在定义的时刻调用适配器。 | 希望在特定时刻进行链上操作的游戏。 |
+| **L2 — Ledger-native design** | 游戏经济或身份的设计围绕链上所有权（持久发行者、真实市场）。 | 以分账本为先的商家游戏。 |
 
-保持重放操作安全的关键区别**不是**“哪个包导入了适配器”，而是“调用是否在循环内部”。 游戏包可以自由地导入和驱动适配器，只要每个调用都在种子驱动的重放循环之外的检查点处进行即可。
+保持重播安全的关键区别**不是**“哪个包导入了适配器”，而是“调用是否在循环内”。游戏包可以自由导入和驱动适配器，只要每个调用都在种子驱动的重播循环之外的检查点处进行。
 
-**Three play modes.** `offline` (default — no chain, the engine as it ships) ·
-`ledger` (coin/items backed by testnet balances, settled at checkpoints) ·
-`diary` (play offline, then anchor the run's state hash on-ledger for a
-tamper-evident receipt).
+**三种游戏模式。** `offline`（默认——无链，即发布的引擎）· `ledger`（由测试网络余额支持的硬币/物品，在检查点处结算）· `diary`（离线游玩，然后将运行的状态哈希锚定在链上，以获得防篡改的收据）。
 
-**账本上的内容。** `coin` → 通过信任线发行的货币 IOU；消耗品 → 可替代的令牌；检查点的净交易差额 → 通过 **XLS-85 令牌托管** 进行结算的转账。独特的装备以 **XLS-20 NFT**（v3.3）的形式发布，通过 **XLS-46 `NFTokenModify`**，文物增长会原地更新可变 NFT 的元数据——从 v3.4 开始，这由实际的游戏行为驱动。抽象区域经济体（`economy-core`）*不会*受到影响——它仍然是一个纯模拟。
+**账本上的内容。** `coin` → 一种基于信任关系的已发行货币借据；
+消耗品 → 可替代的令牌；检查点的净交易差额 → 通过 **XLS-85 令牌托管** 进行结算的转账。独特的装备以 **XLS-20 NFT**（v3.3）的形式出现，通过 **XLS-46 `NFTokenModify`**，文物成长会原地更新可变 NFT 的元数据——从 v3.4 开始，由实际游戏行为驱动。抽象区域经济（`economy-core`）*不会*受到影响——它仍然是一个纯粹的模拟。
 
-**安全保障。**仅限测试网络，并具有一个**在代码中不可能实现的主网**结构保护（而不是配置标志）；钱包种子位于 git 忽略的 secrets 侧文件，绝不在存档文件中；结算是幂等的，并且在重试路径上可以保证资源守恒；证明会验证**真实的分账本备忘录**（而不是引擎自身的字符串）；如果无法访问链，则运行将继续进行，并标记为*未锚定*。
+**安全保障。** 仅限测试网络，具有**在代码中无法绕过的**结构性保护（不是配置标志）；钱包种子存储在 git 忽略的单独文件中，绝不在存档文件中；结算是幂等的，并且在重试路径上是安全的；证明验证**真实的链上备忘录**（而不是引擎自身的字符串）；如果无法访问链，则运行将继续进行，并标记为*未锚定*。
 
-**Proven live.** A real `starter-pirate` merchant run — sell a cutlass, buy a
-cannon-shell — settles on XRPL testnet via token escrow, then `reconcile()`
-confirms on-ledger balances and memos against the engine's economy (conservation
-holds for every token). The ledger is a different system family than the engine,
-so the engine cannot fake it — reconciliation is a genuine external verifier.
-Testnet only; assets are game-scoped receipts, not securities.
+**已验证的实际应用。** 一次真实的 `starter-pirate` 商家运行——出售一把弯刀，购买一枚炮弹——通过令牌托管在 XRPL 测试网上进行结算，然后 `reconcile()` 确认账本上的余额和备忘录与引擎的经济系统是否一致（每个令牌都符合保存规则）。账本是一个与引擎不同的系统，因此引擎无法伪造——对账是一个真正的外部验证器。仅限测试网络；资产是游戏范围内的收据，而不是证券。
 
 ---
 
 ## 战斗系统
 
-五种行动（攻击、防御、撤退、准备、重新定位），四种战斗状态（防御、失去平衡、暴露、逃跑），四种交战状态（交战、保护、后排、孤立）。三种属性维度驱动每个公式，因此快速的决斗者与强壮的重击者或沉稳的哨兵玩起来的方式不同。
+五个动作（攻击、防御、脱离、准备、重新定位），四种战斗状态（防御、失去平衡、暴露、逃跑），四种交战状态（交战、保护、后排、孤立）。三个统计维度驱动每个公式，因此快速的决斗者与强壮的重击者或沉稳的哨兵的玩法不同。
 
-AI 对手使用统一的决策评分——战斗行动和技能在一个单一的评估中竞争，并具有可配置的阈值，以防止过度使用次要技能。
+AI 对手使用统一的决策评分——战斗动作和能力在一个单一的评估中竞争，并具有可配置的阈值，以防止边缘能力过度使用。
 
-Pack authors use `buildCombatStack()` to wire combat from a stat mapping, resource profile, and bias tags. See the [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) and [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md).
+包作者使用 `buildCombatStack()` 将战斗与统计映射、资源配置文件和偏差标签连接起来。请参阅 [战斗概述](site/src/content/docs/handbook/49a-combat-overview.md) 和 [包作者指南](site/src/content/docs/handbook/55-combat-pack-guide.md)。
 
 ---
 
-## 技能
+## 能力
 
-具有成本、属性检定、冷却时间和类型化效果（伤害、治疗、状态应用、清除）的特定于游戏类型的技能系统。状态效果使用 11 个标签的语义词汇，并具有抗性和脆弱性配置文件。AI 感知的选择评分会考虑自我/范围/单目标路径。
+具有成本、统计检查、冷却时间和类型化效果（伤害、治疗、状态应用、清除）的特定于游戏类型的能力系统。状态效果使用具有抵抗/脆弱性配置的 11 标签语义词汇。AI 感知的选择评分会评估自我/范围/单目标路径。
 
 ```typescript
 const warCry: AbilityDefinition = {
@@ -280,45 +270,45 @@ const warCry: AbilityDefinition = {
 
 | 包 | 目的 |
 |---------|---------|
-| [`@ai-rpg-engine/core`](packages/core) | 确定性模拟运行时——世界状态、事件、随机数生成器、时间流逝、行动解析。 |
-| [`@ai-rpg-engine/modules`](packages/modules) | 30 多个可组合的模块——战斗、感知、认知、派系、谣言、移动、伙伴、NPC 行为、战略地图、物品识别、突发机会、剧情检测、最终游戏触发器。 |
-| [`@ai-rpg-engine/content-schema`](packages/content-schema) | 用于世界内容的规范模式和验证器。 |
-| [`@ai-rpg-engine/character-profile`](packages/character-profile) | 角色发展、受伤、里程碑、声望。 |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | 原型选择、构建生成、起始装备。 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源和文物增长——包括 `item-chronicle-core`，这是一个可选模块，用于记录来自真实游戏中的装备历史，以便物品获得称号和等级。 |
-| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | 跨会话记忆、关系效果、战役状态。 |
-| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | 谣言生命周期、变异机制、传播跟踪。 |
-| [`@ai-rpg-engine/presentation`](packages/presentation) | 叙事计划模式、渲染协议、语音配置文件。 |
-| [`@ai-rpg-engine/audio-director`](packages/audio-director) | 提示调度、优先级、静音处理、冷却逻辑。 |
-| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | 声音包清单、基于内容的注册表。 |
-| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | 包注册、评分标准、包发现。 |
-| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | 用于存储肖像、图标和媒体的基于内容寻址的存储。 |
-| [`@ai-rpg-engine/image-gen`](packages/image-gen) | 具有可插拔提供程序的无头肖像生成。 |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | 可选的 AI 创作——构建原型、提供反馈、引导工作流程、调整参数、进行实验。 |
-| [`@ai-rpg-engine/cli`](packages/cli) | CLI：运行游戏、构建示例世界、检查存档。 |
-| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | 终端渲染器和输入层。 |
-| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | 商业启动器——账本适配器的参考包，不依赖于它。 |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | 追捕者新手任务——以环线为起点，以及这座城市的一半将为你敞开大门。 |
-| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **可选**——选择加入 XRPL 测试网络结算，用于玩家拥有的可交易层（硬币/库存/交易），通过在检查点处使用 XLS-85 令牌托管进行结算，完全位于确定性核心之外。 |
+| [`@ai-rpg-engine/core`](packages/core) | 确定性模拟运行时——世界状态、事件、RNG、刻度、动作解析 |
+| [`@ai-rpg-engine/modules`](packages/modules) | 30 多个可组合的模块——战斗、感知、认知、派系、谣言、移动、伙伴、NPC 代理、战略地图、物品识别、新兴机会、弧线检测、游戏结束触发器 |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | 用于世界内容的规范模式和验证器 |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | 角色发展、受伤、里程碑、声望 |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | 原型选择、构建生成、初始装备 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源和文物成长——包括 `item-chronicle-core`，这是一个可选模块，它会记录来自实际游戏的装备历史，以便物品获得称号和等级 |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | 跨会话内存、关系效果、战役状态 |
+| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | 谣言生命周期、变异机制、传播跟踪 |
+| [`@ai-rpg-engine/presentation`](packages/presentation) | 叙事计划模式、渲染合同、语音配置文件 |
+| [`@ai-rpg-engine/audio-director`](packages/audio-director) | 提示调度、优先级、静音、冷却逻辑 |
+| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | 音效包清单、基于内容的注册表 |
+| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | 包注册、评分标准、包发现 |
+| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | 用于肖像、图标、媒体的基于内容的存储 |
+| [`@ai-rpg-engine/image-gen`](packages/image-gen) | 具有可插拔提供程序的无头肖像生成 |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | 可选的 AI 创作——脚手架、评论、引导工作流程、调整、实验 |
+| [`@ai-rpg-engine/cli`](packages/cli) | CLI：运行游戏、创建初始项目、检查存档 |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | 终端渲染器和输入层 |
+| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | 商业启动器——账本适配器的参考包，不依赖于它 |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | 盗贼启动器——以追逐为循环，并确定哪个城市的一半会为你打开一扇门 |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **可选**——用于玩家拥有的可交易层（货币/库存/交易）的 XRPL 测试网络结算，通过检查点的 XLS-85 令牌托管进行，完全独立于确定性核心 |
 
-### 示例世界
+### 启动示例
 
-这 10 个示例世界是**组合示例**——它们演示了如何将引擎模块组合成完整的游戏。每个示例都展示了不同的模式（属性映射、资源配置文件、交战配置、技能集）。请参阅每个示例世界的 README 文件，了解“已演示的模式”和“可以借鉴的内容”。
+这 12 个启动世界是**组合示例**——它们演示了如何将引擎模块组合成完整的游戏。每个示例都展示了不同的模式（统计映射、资源配置文件、交战配置、能力集）。请参阅每个启动器的 README，了解“演示的模式”和“可以借鉴的内容”。
 
-| 入门 | 类型 | 关键模式 |
+| 启动器 | 类型 | 关键模式 |
 |---------|-------|-------------|
-| [`starter-fantasy`](packages/starter-fantasy) | 黑暗奇幻 | 减少战斗，注重对话 |
-| [`starter-cyberpunk`](packages/starter-cyberpunk) | 赛博朋克 | 资源、参与角色 |
-| [`starter-detective`](packages/starter-detective) | 维多利亚时代的神秘故事 | 以社交为先，强调感知 |
+| [`starter-fantasy`](packages/starter-fantasy) | 黑暗奇幻 | 最小化战斗，以对话为驱动 |
+| [`starter-cyberpunk`](packages/starter-cyberpunk) | 赛博朋克 | 资源、交战角色 |
+| [`starter-detective`](packages/starter-detective) | 维多利亚时代的神秘 | 首先关注社交，侧重于感知 |
 | [`starter-pirate`](packages/starter-pirate) | 海盗 | 海军 + 近战，多区域 |
-| [`starter-zombie`](packages/starter-zombie) | 僵尸生存 | 稀缺性、感染资源 |
-| [`starter-weird-west`](packages/starter-weird-west) | 怪异西部 | 阵营偏见，安全区恢复 |
-| [`starter-colony`](packages/starter-colony) | 科幻殖民地 | 瓶颈点、伏击区域 |
-| [`starter-ronin`](packages/starter-ronin) | 封建日本 | 隐藏通道、多个保护角色 |
-| [`starter-merchant`](packages/starter-merchant) | 商业 | 义务作为循环，战斗以惩罚的形式定价 |
-| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | 追捕 | 为了金钱而追捕目标；暴力行为公开且不被禁止。 |
-| [`starter-vampire`](packages/starter-vampire) | 吸血鬼恐怖 | 血液资源，社交操控 |
-| [`starter-gladiator`](packages/starter-gladiator) | 历史上的角斗士 | 竞技场战斗，观众的喜爱 |
+| [`starter-zombie`](packages/starter-zombie) | 僵尸生存 | 稀缺性，感染资源 |
+| [`starter-weird-west`](packages/starter-weird-west) | 怪异西部 | 包偏差，安全区恢复 |
+| [`starter-colony`](packages/starter-colony) | 科幻殖民地 | 瓶颈，埋伏区 |
+| [`starter-ronin`](packages/starter-ronin) | 封建日本 | 隐藏通道，多个保护者角色 |
+| [`starter-merchant`](packages/starter-merchant) | 商业 | 以义务为循环，战斗价格定为惩罚 |
+| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | 追逐 | 为了金钱而追捕人；暴力是公开的，而不是被禁止的 |
+| [`starter-vampire`](packages/starter-vampire) | 吸血鬼恐怖 | 血液资源，社会操纵 |
+| [`starter-gladiator`](packages/starter-gladiator) | 历史角斗士 | 竞技场战斗，人群的青睐 |
 
 ---
 
@@ -326,16 +316,16 @@ const warCry: AbilityDefinition = {
 
 | 资源 | 描述 |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | 搭建新的游戏——使用 CLI 或手动模板方式 |
+| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | 创建一个新的游戏——CLI 或手动模板 |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | 通过组合引擎模块来构建你自己的游戏 |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | 每个实体的规则解析——混合游戏风格的战斗、`applyProfile`、配置文件模板、`profile` CLI |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | 选择加入分账本结算——确定性防火墙、L0/L1/L2 集成级别、游戏模式、安全保障以及经过实际测试的盗贼演示。 |
+| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | 每个实体的规则解析——混合战斗风格，`applyProfile`，配置文件模板，`profile` CLI |
+| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | 选择加入链上结算——确定性防火墙，L0/L1/L2 集成级别，游戏模式，安全保障，以及经过实际验证的海盗演示 |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | 六个战斗支柱，五个动作，一目了然的状态 |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | 逐步构建 `buildCombatStack`，状态映射，资源配置 |
+| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | 逐步构建战斗堆栈，属性映射，资源配置文件 |
 | [Handbook](site/src/content/docs/handbook/index.md) | 全面的手册——包含所有系统，以及 4 个附录 |
-| [Composition Model](docs/composition-model.md) | 6 个可重用的层及其组合方式 |
-| [Examples](docs/examples/) | 可运行的 TypeScript 示例（类型检查 + 在 CI 中进行行为测试）——每个实体的混合队伍、共享配置文件、跨世界、从零开始 |
-| [Design Document](docs/DESIGN.md) | 架构深入分析——动作流水线，真相与呈现 |
+| [Composition Model](docs/composition-model.md) | 6 个可重用的层以及它们的组合方式 |
+| [Examples](docs/examples/) | 可运行的 TypeScript 示例（类型检查 + 在 CI 中进行行为测试）——每个实体的混合队伍，共享配置文件，跨世界，从零开始 |
+| [Design Document](docs/DESIGN.md) | 架构深入分析——动作流水线，事实与呈现 |
 | [Philosophy](PHILOSOPHY.md) | 确定性世界，基于证据的设计，AI 作为助手 |
 | [Changelog](CHANGELOG.md) | 发布历史 |
 
@@ -345,7 +335,7 @@ const warCry: AbilityDefinition = {
 
 ### 我们目前的进展
 
-Both composition spines are complete — 6412 tests across 326 files, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v3.0 makes the world live: named NPCs come alive with goals, trust/fear/greed/loyalty relationships, obligation ledgers, and consequence chains; the social layer earns passively and spends across twenty-one new diplomacy/sabotage verbs; the economy is genre-flavored per starter; and the leverage you earn finally reaches the campaign endings it gates. A Phase-9 audit caught the headline wired-but-inert in shipped content — the fix ships a named NPC in every starter.**
+两个构建核心已完成——326 个文件中共有 6412 个测试，所有 12 个启动器均在 `buildCombatStack` **和** `buildWorldStack` 上，在打印的种子下实现确定性的字节级完全一致的重播，完整的 AI 决策评分，以及一个可以构建、运行、验证和检查的 CLI。**v3.0 使世界栩栩如生：命名的 NPC 拥有目标、信任/恐惧/贪婪/忠诚关系、义务记录和后果链；社交层被动地获得收益，并在二十一个新的外交/破坏动词中进行支出；经济根据每个启动器的类型进行调整；你获得的杠杆最终达到了它所控制的战役结局。在第 9 阶段的审计中发现了一个主要问题，即已发布的内容中存在已连接但未激活的部分——修复程序会为每个启动器添加一个命名的 NPC。**
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
@@ -356,50 +346,50 @@ Both composition spines are complete — 6412 tests across 326 files, all 12 sta
 - v2.9.0 — Close the loops: `buy` + merchant stock and crafting complete the economy; companions take independent turns; four social verbs (bribe / intimidate / petition / seed) run on a leverage economy funded by opportunity rewards; opportunities resolve with expiry + favor-fallout consequence; and equipment, quests, recruitables, and starting coin roll out uniformly to all ten starters
 - **v3.0.0 — Make the world live: the npc-agency producer lights named NPCs (goals / relationships / obligation ledgers / consequence chains) plus a story NPC in every starter; the social surface grows to 25 verbs (diplomacy + sabotage) with passive leverage income and dialogue that reads social state; per-starter genre-flavored stock + recipes; the leverage endings (victory / puppet-master / quiet-retirement) become reachable; repair/modify menu rows, escort opportunities, and an `audit-content` dev CLI — shipped through a Phase-9 audit that caught two dead-wires the green test suite hid**
 
-### 下一步（v2.8 的框架）
+### 下一步（v3.0 构建核心）
 
-- **Living NPCs** — the persisted npc-agency producer that lights the Director's PEOPLE section: named NPCs with goals, relationship breakpoints, obligation ledgers, and consequence chains, plus companion-morale favor-fallout and the departure-risk path the reaction system already carries
-- Genre-flavored merchant stock and crafting recipes (per-starter genre threading over the universal fallback that ships today), and the `repair`/`modify` menu surface
-- The leverage economy's next layer — passive income beyond opportunity rewards, and social verbs beyond the shipped four (diplomacy / sabotage groups) — plus the dialogue condition/effect vocabulary that reads the new social state
-- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
-- API documentation sync — ensure every handbook page reflects the latest APIs
+- **活着的 NPC** — 持久的 NPC 代理生成器，它点亮了导演的“人物”部分：命名的 NPC 拥有目标、关系断点、义务记录和后果链，以及伙伴士气、偏袒/失败和反应系统已经包含的离开风险路径
+- 具有类型特征的商店库存和制作配方（每个启动器的类型线程，而不是今天发布的通用回退），以及 `repair`/`modify` 菜单界面
+- 杠杆经济的下一层——超越机会奖励的被动收入，以及超越已发布的四个（外交/破坏组）的社交动词——以及读取新的社交状态的对话条件/效果词汇
+- 多人游戏——两个 *人类* 玩家共享一个世界（网络层，故意延迟；共享配置文件今天作为 [`shared-profiles.ts`](docs/examples/shared-profiles.ts) 发布）
+- 可序列化的公式覆盖——每个配置文件的公式调整（受公式 DSL 的限制；配置文件今天包含属性映射，而不是闭包）
+- API 文档同步——确保每个手册页面都反映最新的 API
 
 ### 目标：插件配置文件
 
-The engine's end goal is **user-defined profiles** — portable bundles that slot into any game. A profile packages a stat mapping, resource behavior, AI bias tags, and abilities into a single importable unit. As of v2.5, entities in one world can each carry their own profile and resolve combat per-entity — a `might` fighter and a `will` mystic share a party, each bringing their own playstyle.
+引擎的最终目标是 **用户定义的配置文件**——可移植的包，可以插入任何游戏。配置文件将属性映射、资源行为、AI 偏差标签和能力打包到一个可导入的单元中。从 v2.5 开始，一个世界中的实体可以各自携带自己的配置文件，并按每个实体解析战斗——一个 `might` 战士和一个 `will` 术士共享一个队伍，每个队员都带来自己的游戏风格。
 
-The schema, the `applyProfile` loader, per-entity ability resolution, and cross-profile validation are all shipped. What remains is multiplayer — letting two *human* players (not just two entities) share a world — which is a networking layer. See [Profile Roadmap](docs/profile-roadmap.md) and [feature-architecture.md](docs/feature-architecture.md) for the design.
+架构、`applyProfile` 加载器、每个实体的能力解析和跨配置文件验证都已经发布。剩下的就是多人游戏——让两个 *人类* 玩家（而不仅仅是两个实体）共享一个世界——这是一个网络层。有关设计，请参阅 [配置文件路线图](docs/profile-roadmap.md) 和 [feature-architecture.md](docs/feature-architecture.md)。
 
 ---
 
 ## 理念
 
-AI RPG 引擎建立在三个想法之上：
+AI 角色扮演游戏引擎围绕以下三个理念构建：
 
-1. **确定性世界**——模拟结果必须是可重现的。
-2. **基于证据的设计**——应该通过模拟来测试世界机制。
-3. **AI 作为助手，而不是权威**——AI 工具可以帮助生成和评估设计，但不能取代确定性系统。
+1. **确定性世界**——模拟结果必须可重复。
+2. **基于证据的设计**——世界机制应通过模拟进行测试。
+3. **AI 作为助手，而非权威**——AI 工具帮助生成和评估设计，但不取代确定性系统。
 
-有关完整说明，请参阅 [PHILOSOPHY.md](PHILOSOPHY.md)。
+完整说明请参见 [PHILOSOPHY.md](PHILOSOPHY.md)。
 
 ---
 
 ## 安全性
 
-The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. Two **optional** layers add an outbound path, and only when you invoke them:
+核心引擎是一个**仅本地运行的模拟库**：没有遥测数据，没有网络连接，没有敏感信息。保存文件仅在明确请求时才会保存到 `.ai-rpg-engine/`。两个**可选**层添加了向外连接路径，并且只有在您调用它们时才会生效：
 
-- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).
-- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.
+- AI 层（`@ai-rpg-engine/ollama`）与**本地** Ollama 守护进程通信；其可选的 `webfetch`（用于 RAG）受到 SSRF 保护的限制（阻止回环/链路本地/CGNAT/云元数据以及 IPv6 隧道等）。
+- 分账本层（`@ai-rpg-engine/ledger-adapter`）连接到**XRPL 测试网络**——并且仅连接到测试网络：一个**代码中禁止连接到主网络**的结构性保护（而不是配置标志），在构建时拒绝任何非测试网络的主机。钱包种子存储在 git 忽略的单独文件中，绝不在保存文件中，并且确定性核心绝不会导入适配器。
 
-详情请参阅 [SECURITY.md](SECURITY.md)。
+详细信息请参见 [SECURITY.md](SECURITY.md)。
 
 ## 要求
 
 - Node.js >= 20
 - TypeScript（ESM 模块）
 
-## 许可协议
+## 许可证
 
 [MIT](LICENSE)
 

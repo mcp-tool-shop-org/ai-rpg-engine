@@ -14,31 +14,32 @@
 
 # AI RPGエンジン
 
-決定的なRPGシミュレーションを構築するためのTypeScriptツールキット。ステータスを定義し、モジュールを選択し、戦闘スタックを構成し、コンテンツを作成します。エンジンは、状態、イベント、乱数生成（RNG）、アクションの解決、およびAIによる意思決定を処理します。すべての実行結果は再現可能です。
+決定的なRPGシミュレーションを構築するためのTypeScriptツールキット。ステータスを定義し、モジュールを選択し、戦闘スタックを構成し、コンテンツを作成します。エンジンは、状態、イベント、乱数生成、アクションの解決、AIによる意思決定を処理します。すべての実行は再現可能です。
 
-これは完成したゲームではなく、**コンポジションエンジン**です。10個のスターターワールドは例であり、そこから学習して再構築できる分解可能なパターンです。ゲームでは、必要なエンジンのサブセットを使用します。
+これは、完成されたゲームではなく、**コンポジションエンジン**です。12個のスターターワールドは例であり、そこから学習して再構築できる、分解可能なパターンです。ゲームは、エンジンから必要なサブセットを使用します。
 
 ---
 
-## このツールの概要
+## これは何なのか
 
-- A **module library** — 30+ engine modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more
-- A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game
-- A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG
-- An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama
-- An **optional on-ledger layer** — `@ai-rpg-engine/ledger-adapter` backs a game's coin and tradeable items with real XRPL **testnet** tokens, settled at checkpoints, entirely outside the deterministic core (opt-in; a run is byte-identical without it)
+- **モジュールライブラリ** — 30以上のエンジンモジュールがあり、戦闘、知覚、認知、派閥、噂、移動、仲間などをカバー
+- **コンポジションツールキット** — `buildCombatStack()` で戦闘を約7行で構成、`new Engine({ modules })` でゲームを起動
+- **シミュレーションランタイム** — 決定的なティック、再生可能なアクションログ、シードされた乱数生成
+- **AIデザインスタジオ**（オプション） — スキャフォールディング、批評、バランス分析、調整、Ollamaを介した実験
+- **オプションのオンレジャーレイヤー** — `@ai-rpg-engine/ledger-adapter` は、ゲームのコインと取引可能なアイテムを実際のXRPL **テストネット**トークンで裏付け、チェックポイントで決済します。これは、決定的なコアとは完全に独立しています（オプション。これがない場合でも、実行はバイト単位で同一になります）。
 
-## このツールではないもの
+## これは何ではないのか
 
-- Not a single finished game — it ships 10 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
+- Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
 - Not a visual engine — it outputs structured events, not pixels
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## 現在のバージョン（v3.7.0）
+## 現在のステータス（v3.8.1）
 
 **What works and is tested:**
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -82,21 +83,21 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **6180 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-**What is rough or incomplete:**
-- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
-- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound; the commands are an integration hook for a GUI/web embedder
-- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
-- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
-- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
-- Documentation is extensive but not every handbook page reflects the very latest APIs
+**不完全または未完成な点:**
+- AIを活用したワールド構築スタジオ（Ollamaレイヤー）は、シミュレーションコアよりもテストが不十分であり、ローカルのOllamaデーモンが必要。これは完全にオプションであり、エンジンと`run`ループにはネットワークは不要。
+- ナレーション/オーディオスタックは、決定的なオーディオコマンドを生成するが、**ターミナルオーディオバックエンドは存在しない**。つまり、音は何も再生されない。これらのコマンドは、GUI/Web埋め込みのための統合フックである。
+- マルチプレイヤー（2人の人間プレイヤーが1つの世界を共有）は**実装されていない**。これはネットワークレイヤーであり、意図的にスコープ外である。現在のプロファイルは、単一のコントローラーを対象としている。
+- `replay --replay`は、再シミュレーションの代わりに保存データを復元する。v2.9以降、これは**決定的な**方向性であり、一時的なものではない。`Engine.serialize()`はすでに実績のある完全な状態のスナップショットであり、再シミュレーションでは、アクションログの外にあるワールドティック/エンカウンターの状態を追跡する必要がある。v2.9では、実績のある復元パスで複数のチェックポイント保存スロットが提供される。真のイベントソースによる再シミュレーションは計画されていない。
+- v3.1は、v3.0の3つの定義された制限を解除した。ジャンル固有の**初期リソース**、ジャンル固有の*修理*レシピ、および`deny`/`bury-scandal`メニューのインターフェースがすべて実装された。残る唯一の制限は、新しいジャンルの修理レシピに、作成者が定義した`statDelta`（小さなステータスボーナス）が含まれていることだが、`resolveRepair`はまだ適用されない。修理は*復元*、`modify`は*アップグレード*であるため、修理をアップグレードとして扱うことはコード内でマークされ、**v3.2/v3.3に延期**される。これは、意図的なメカニズムであり、静的で不活性なフィールドではない。また、`obligation-exists`には、作成者が定義したデモ（ブラザー・アルドリック）が1つ含まれている。この条件は、コンテンツ作成者がより多くのダイアログを制御できるように、ライブで設定されている。
+- ドキュメントは豊富だが、すべてのハンドブックページが最新のAPIを反映しているわけではない。
 
 ---
 
-## どのような外観をしているか
+## どのような見た目か
 
-The bundled terminal UI composes each turn into labeled sections — scene, status, log, and actions — with a glance-able HUD. Output is plain text by default and adds semantic color on a TTY (damage red, heals green, rejections yellow), honoring `NO_COLOR` and non-TTY pipes; every cue is carried in the text too, never color alone.
+バンドルされたターミナルUIは、各ターンをラベル付きのセクション（シーン、ステータス、ログ、アクション）に構成し、一目でわかるHUDを提供する。デフォルトではプレーンテキストで出力され、TTY（ダメージは赤、回復は緑、拒否は黄）で意味のある色を追加し、`NO_COLOR`と非TTYパイプを尊重する。すべてのキューはテキストに含められ、色のみでは伝達されない。
 
 ```text
 ── The Crypt Gate ──────────────────────────────────────────
@@ -129,9 +130,9 @@ The bundled terminal UI composes each turn into labeled sections — scene, stat
 
 ---
 
-## インストールしてプレイしましょう
+## インストールとプレイ
 
-ターミナルから、既存のゲームを起動するか、独自のゲームを作成することができます。
+ターミナルから、スターターゲームをプレイするか、独自のゲームを構築する。
 
 ```bash
 npm install -g @ai-rpg-engine/cli
@@ -141,11 +142,9 @@ ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
 ai-rpg-engine run ./my-game          # run a game you scaffolded
 ```
 
-The `run` loop is a real turn-based session: enemies act on their own AI
-profiles, abilities and XP are on the menu, you can save and resume, and a
-fight ends in victory or defeat. Every game is deterministic and replayable.
+`run`ループは、実際のターンベースのセッションである。敵は独自のAIプロファイルに基づいて行動し、アビリティと経験値はメニューに表示され、保存と再開が可能であり、戦闘は勝利または敗北で終了する。すべてのゲームは決定論的であり、何度でもプレイできる。
 
-必要に応じて、AIデザインスタジオは独自のコマンドとしてインストールされます。
+オプションとして、AIデザインスタジオを独自のコマンドとしてインストールできる。
 
 ```bash
 npm install -g @ai-rpg-engine/ollama
@@ -153,15 +152,15 @@ ai chat                              # scaffold, critique, and balance content
                                      # against a local Ollama model (see Ch. 36)
 ```
 
-スタジオは、ローカルの[Ollama](https://ollama.com)デーモンと通信します。まず、`ollama serve`と`ollama pull qwen2.5-coder`を実行してください。これは完全にオプションであり、エンジンと`run`ループにはネットワーク接続は必要ありません。
+スタジオは、ローカルの[Ollama](https://ollama.com)デーモンと通信する。最初に`ollama serve`と`ollama pull qwen2.5-coder`を実行する。これは完全にオプションであり、エンジンと`run`ループにはネットワークは不要。
 
-コンテナイメージは、CIおよびサンドボックス環境での実行用にGHCRに`ghcr.io/mcp-tool-shop-org/ai-rpg-engine`として公開されます。
+コンテナイメージは、CIおよびサンドボックス化された実行のために、GHCRに`ghcr.io/mcp-tool-shop-org/ai-rpg-engine`として公開される。
 
 ---
 
 ## クイックスタート
 
-コードを使って自分でゲームを開発したいですか？モジュールからエンジンを構築しましょう。
+コードで独自のゲームを構築したい場合は、エンジンをモジュールから構成する。
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
@@ -187,7 +186,7 @@ engine.submitAction('attack', { targetIds: ['skeleton-1'] });
 engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
 ```
 
-完全なワークフローについては、[コンポジションガイド](docs/handbook/57-composition-guide.md) を参照するか、新しいスターターをスキャフォールディングしてください。
+完全なワークフローについては、[構成ガイド](site/src/content/docs/handbook/57-composition-guide.md)を参照するか、新しいスターターを構築する。
 
 ```bash
 npx @ai-rpg-engine/cli create-starter my-game
@@ -199,46 +198,39 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | レイヤー | 役割 |
 |-------|------|
-| **Core Runtime** | 決定的なエンジン - ワールドの状態、イベント、アクション、ティック、RNG、再生 |
-| **Modules** | 30以上のコンポーザブルなシステム - 戦闘、知覚、認知、派閥、移動、仲間など。 |
-| **Content** | エンティティ、ゾーン、ダイアログ、アイテム、アビリティ、ステータス - 著者が作成。 |
-| **AI Studio** | オプションのOllamaレイヤー - スキャフォールディング、批評、バランス分析、調整、実験。 |
+| **Core Runtime** | 決定論的なエンジン — ワールドの状態、イベント、アクション、ティック、RNG、リプレイ |
+| **Modules** | 30以上の組み合わせ可能なシステム — 戦闘、知覚、認知、派閥、移動、仲間など |
+| **Content** | エンティティ、ゾーン、ダイアログ、アイテム、アビリティ、ステータス — 作成者が作成 |
+| **AI Studio** | オプションのOllamaレイヤー — スキャフォールディング、批判、バランス分析、調整、実験 |
 
 ---
 
-## XRPLレジャーアダプター（オプトイン）
+## XRPL台帳アダプター（オプション）
 
-`@ai-rpg-engine/ledger-adapter`は、ゲームの**プレイヤーが所有する取引可能なレイヤー**（つまり、`coin`残高と消費可能なインベントリで、`trade-core`の`buy`/`sell`動詞によってすでに操作されるもの）を**XRPLテストネット**にバインドする**オプションの**パッケージです。これにより、これらのアセットは実際のオンチェーン・トークンによって裏付けられ、チェックポイントで決済できます。アダプターがない場合、それは今日出荷されているオフラインエンジンそのものです。
+`@ai-rpg-engine/ledger-adapter`は、ゲームの**プレイヤーが所有する取引可能なレイヤー**（`coin`の残高と消費可能なインベントリで、`trade-core`の`buy`/`sell`の動詞によってすでに移動される）を**XRPLテストネット**にバインドする**オプションの**パッケージである。これにより、これらのアセットは実際のオンチェーンのトークンによって裏付けられ、チェックポイントで決済される。アダプターが存在しない場合、それは今日出荷されているオフラインエンジンそのものである。
 
-**決定性の不変性（最も重要な点）。** アダプターは *サイドチャネル* であり、シミュレーションの一部ではありません。
+**決定論の不変性（最も重要な点）。** アダプターは*サイドチャネル*であり、シミュレーションの一部ではない。
 
-- これは**決定的なティック内では決して呼び出されません**。**チェックポイント**でのみ（保存時、町/市場への入り口、チャプターの区切り）呼び出されます。
-- `@ai-rpg-engine/core`または`@ai-rpg-engine/modules`に、これを取り込むものはありません（エンジンに対する唯一の依存関係は、コンパイル時の`import type`です）。
-- **アダプターの有無にかかわらず、実行結果はバイト単位で同一になります。**ファイアウォールテストでは、実際の`starter-pirate``createGame()`マーチャントループを2つのエンジンで実行します。1つはアダプターが有効になっており、チェックポイントで決済されます。そして、2つのワールドが完全に等しいことを検証します。シード0のリプレイは変更されません。
+- **決定論的なティック内では決して呼び出されない**。**チェックポイント**（保存、町/市場への入り口、チャプターの区切り）でのみ呼び出される。
+- `@ai-rpg-engine/core`または`@ai-rpg-engine/modules`のいずれにも、アダプターをインポートするコードはない（唯一のエンジン依存関係は、コンパイル時の`import type`である）。
+- **アダプターの有無にかかわらず、実行はバイト単位で同一である。** ファイアウォールテストでは、実際の`starter-pirate` `createGame()`の商人ループを、アダプターが有効でチェックポイントで決済するエンジンとアダプターが無効の2つのエンジンで実行し、2つのワールドが完全に等しいことを確認する。シード0のリプレイは変更されない。
 
-**統合レベル — ゲームは、そのデザインに応じて、これを可能な限り深く組み込むことができます。** ファイアウォールは *決定性* の境界であり、統合を妨げるものではありません。上記の不変性はすべてのレベルで保持されます。
+**統合レベル — ゲームは、その設計に応じて、アダプターを必要なだけ深く統合する。** ファイアウォールは*決定論*の境界であり、統合を禁止するルールではない。上記の不変性は、すべてのレベルで維持される。
 
-| レベル | アダプターに依存するもの | 適合性 |
+| レベル | アダプターに依存するもの | 適合 |
 |-------|-----------------------------|------|
-| **L0 — External observer** | ゲーム内には何もありません。アダプターは外部からチェックポイントで接続され、ゲームはそのことを認識しません。 | 既存のゲームへの後付け（出荷済みの海賊デモ）。 |
-| **L1 — ゲーム駆動型のチェックポイント** | ゲーム自体の保存/町/メタプログレッションフローが、定義された時点でアダプターを呼び出します。 | 明確なレジャーモーメントを必要とするゲーム。 |
-| **L2 — Ledger-native design** | ゲームの経済またはアイデンティティは、オンチェーンでの所有権（永続的な発行者、実際の市場）を中心に設計されています。 | レジャーを重視したマーチャントゲーム。 |
+| **L0 — External observer** | ゲーム内には何も依存しない。アダプターは、チェックポイントで外部からアタッチされ、ゲームはそれを認識しない。 | 既存のゲーム（出荷される海賊デモ）への後付け。 |
+| **L1 — ゲーム駆動型のチェックポイント** | ゲーム自体の保存/町/メタプログレッションフローが、定義された時点でアダプターを呼び出す。 | ゲームが、意図的な台帳の瞬間を必要とする場合。 |
+| **L2 — Ledger-native design** | ゲームの経済またはアイデンティティは、オンチェーンの所有権（永続的な発行者、実際の市場）を中心に設計されている。 | 台帳を重視した商人ゲーム。 |
 
-再生を安全に保つための区別は、「どのパッケージがアダプターをインポートするか」ではなく、「呼び出しがティック内にあるかどうか」です。ゲームパッケージは、すべての呼び出しがシード駆動型の再生ループの外部にあるチェックポイントで行われる限り、アダプターを自由にインポートして制御できます。
+リプレイを安全に保つための区別は、「どのパッケージがアダプターをインポートするか」ではなく、「呼び出しがティック内にあるかどうか」である。ゲームパッケージは、アダプターを自由にインポートして駆動できるが、すべての呼び出しが、シード駆動のリプレイループ外のチェックポイントで実行される必要がある。
 
-**Three play modes.** `offline` (default — no chain, the engine as it ships) ·
-`ledger` (coin/items backed by testnet balances, settled at checkpoints) ·
-`diary` (play offline, then anchor the run's state hash on-ledger for a
-tamper-evident receipt).
+**3つのプレイモード。** `offline`（デフォルト — チェーンなし、出荷されるエンジン）· `ledger`（テストネットの残高によって裏付けられ、チェックポイントで決済されるコイン/アイテム）· `diary`（オフラインでプレイし、次に実行の状態ハッシュを台帳に固定して、改ざん防止のレシートを作成する）。
 
-**What's on the ledger.** `coin` → an issued-currency IOU over a trust line;
-consumable items → fungible tokens; a checkpoint's net trade delta → a settled
-transfer via **XLS-85 token escrow**. Unique equipment ships as **XLS-20 NFTs**
-(v3.3), with relic growth advancing a mutable NFT's metadata in place via
-**XLS-46 `NFTokenModify`** — driven by real play as of v3.4. The abstract district
-economy (`economy-core`) is *not* touched — it stays a pure simulation.
+**台帳に記録されるもの。** `coin` → トラストライン上の発行通貨の借用証；
+消耗品 → 交換可能なトークン；チェックポイントにおける純取引額の変化 → **XLS-85トークンエスクロー**による決済済み転送。ユニークな装備は**XLS-20 NFT**（v3.3）として出荷され、遺物の成長により、可変NFTのメタデータをその場で更新（**XLS-46 `NFTokenModify`**）。v3.4以降、実際のゲームプレイによって制御される。抽象的な地区経済（`economy-core`）は*変更されない* — 純粋なシミュレーションのまま。
 
-**安全対策。** テストネットのみを使用し、コード内に **メインネットでは不可能な構造的ガード**（構成フラグではありません）を設けています。ウォレットのシードは、gitignoreされた秘密のサイドカーに保存され、決して保存ファイルには保存されません。決済はべき等であり、再試行パスで安全に保たれます。証明は **実際のオンチェーンメモ** (エンジンの文字列ではない) を検証します。チェーンに到達できない場合、実行は単に続行され、*アンカリングされていない*とマークされます。
+**安全対策。** テストネットのみ。コード内に**メインネットでは不可能な**構造的なガード（設定フラグではない）を実装。ウォレットのシードは、Gitで無視される秘密のサイドカーに保存され、決してセーブファイルには保存されない。決済はべき等であり、再試行パス上では安全にリソースを保護する。証拠は**実際のオンチェーンメモ**（エンジン独自の文字列ではない）を検証する。チェーンにアクセスできない場合、実行は単に継続され、*アンカーされていない*とマークされる。
 
 **Proven live.** A real `starter-pirate` merchant run — sell a cutlass, buy a
 cannon-shell — settles on XRPL testnet via token escrow, then `reconcile()`
@@ -251,17 +243,17 @@ Testnet only; assets are game-scoped receipts, not securities.
 
 ## 戦闘システム
 
-5つのアクション（攻撃、防御、離脱、構え、再配置）、4つの戦闘状態（防御、体勢を崩す、露出、逃走）、4つのエンゲージメント状態（交戦、保護、後方、孤立）。3つのステータス次元がすべての数式を駆動するため、素早いデュエリストは重いブルースや落ち着いたセンチネルとは異なるプレイスタイルになります。
+5つのアクション（攻撃、防御、離脱、態勢、位置変更）、4つの戦闘状態（防御、体勢を崩す、無防備、逃走）、4つの交戦状態（交戦、防御、後方、孤立）。3つのステータス次元がすべての計算を駆動するため、素早い剣士は、重装の戦士や冷静な歩哨とは異なる動きをする。
 
-AI対戦相手は、統合された意思決定スコアリングを使用します - 戦闘アクションとアビリティが単一の評価で競合し、構成可能な閾値により、わずかなアビリティの乱用を防ぎます。
+AI対戦相手は、統一された意思決定スコアリングを使用する — 戦闘アクションと能力が単一の評価で競合し、設定可能な閾値により、些細な能力の過剰な使用を防ぐ。
 
-パックの作成者は、`buildCombatStack()`を使用して、ステータスマッピング、リソースプロファイル、およびバイアスタグから戦闘を構成します。[Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md)と[Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md)を参照してください。
+パックの作成者は、`buildCombatStack()`を使用して、ステータスマッピング、リソースプロファイル、およびバイアスタグから戦闘を構成する。 [戦闘の概要](site/src/content/docs/handbook/49a-combat-overview.md)および[パック作成者ガイド](site/src/content/docs/handbook/55-combat-pack-guide.md)を参照。
 
 ---
 
-## アビリティ
+## 能力
 
-ジャンル固有のアビリティシステムで、コスト、ステータスチェック、クールダウン、および型付きの効果（ダメージ、回復、ステータスの適用、浄化）を備えています。ステータス効果は、抵抗/脆弱性のプロファイルを持つ11タグのセマンティック語彙を使用します。AI対応の選択により、自己/AoE/単体ターゲットのパスをスコアリングします。
+ジャンルに特化した能力システム。コスト、ステータスチェック、クールダウン、および型付きの効果（ダメージ、回復、ステータス付与、浄化）を持つ。ステータス効果は、抵抗/脆弱性のプロファイルを持つ11タグのセマンティック語彙を使用する。AIは、自己/範囲/単一ターゲットのパスを認識して選択スコアを計算する。
 
 ```typescript
 const warCry: AbilityDefinition = {
@@ -283,106 +275,106 @@ const warCry: AbilityDefinition = {
 
 | パッケージ | 目的 |
 |---------|---------|
-| [`@ai-rpg-engine/core`](packages/core) | 決定的なシミュレーションランタイム - ワールドの状態、イベント、RNG、ティック、アクションの解決 |
-| [`@ai-rpg-engine/modules`](packages/modules) | 30以上のコンポーザブルなモジュール - 戦闘、知覚、認知、派閥、噂、移動、仲間、NPCエージェンシー、戦略マップ、アイテム認識、創発的な機会、アーク検出、ゲームエンドトリガー。 |
-| [`@ai-rpg-engine/content-schema`](packages/content-schema) | ワールドコンテンツの標準スキーマとバリデーター。 |
-| [`@ai-rpg-engine/character-profile`](packages/character-profile) | キャラクターの成長、負傷、重要な出来事、評判。 |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | アーキタイプ選択、ビルド生成、初期装備。 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Equipment types, item provenance, and relic growth — including `item-chronicle-core`, the opt-in module that records gear history from real play so items earn epithets and tiers |
-| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | セッションをまたいだ記憶、関係性の影響、キャンペーンの状態 |
-| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | 噂のライフサイクル、変異メカニズム、拡散状況の追跡 |
-| [`@ai-rpg-engine/presentation`](packages/presentation) | ナレーション計画の概要、レンダリング契約、音声プロファイル。 |
-| [`@ai-rpg-engine/audio-director`](packages/audio-director) | キューのスケジュール設定、優先順位、音量調整、クールダウン処理。 |
-| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | サウンドパックのマニフェスト、コンテンツアドレス指定レジストリ |
-| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | パックの登録、評価基準による採点、パックの発見 |
-| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | ポートレート、アイコン、メディアなどのコンテンツを識別子として管理するストレージシステム。 |
-| [`@ai-rpg-engine/image-gen`](packages/image-gen) | プラグイン可能なプロバイダーを利用した、顔のない人物画像の生成。 |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIによる文章作成機能：構成支援、批評、段階的なワークフロー、調整、実験 |
-| [`@ai-rpg-engine/cli`](packages/cli) | CLI：ゲームの実行、スタータープロジェクトの作成、セーブデータの確認 |
+| [`@ai-rpg-engine/core`](packages/core) | 決定論的なシミュレーションランタイム — ワールドの状態、イベント、乱数生成、ティック、アクションの解決 |
+| [`@ai-rpg-engine/modules`](packages/modules) | 30以上の組み合わせ可能なモジュール — 戦闘、知覚、認知、派閥、噂、移動、仲間、NPCの行動、戦略マップ、アイテム認識、偶発的な機会、アーク検出、ゲーム終了トリガー |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | ワールドコンテンツの標準的なスキーマとバリデーター |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | キャラクターの成長、負傷、マイルストーン、評判 |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | アーキタイプの選択、ビルドの生成、初期装備 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装備の種類、アイテムの起源、および遺物の成長 — これには、実際のゲームプレイから装備の履歴を記録し、アイテムが称号とレベルを獲得できるようにする、オプションのモジュール`item-chronicle-core`が含まれる |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | クロスセッションメモリ、関係の効果、キャンペーンの状態 |
+| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | 噂のライフサイクル、変異メカニズム、拡散の追跡 |
+| [`@ai-rpg-engine/presentation`](packages/presentation) | ナレーションプランのスキーマ、レンダリング契約、音声プロファイル |
+| [`@ai-rpg-engine/audio-director`](packages/audio-director) | キューのスケジュール、優先順位、ミュート、クールダウンロジック |
+| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | サウンドパックのマニフェスト、コンテンツアドレス指定可能なレジストリ |
+| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | パックの登録、評価基準、パックの検出 |
+| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | ポートレート、アイコン、メディアのコンテンツアドレス指定ストレージ |
+| [`@ai-rpg-engine/image-gen`](packages/image-gen) | プラグ可能なプロバイダーを備えたヘッドレスポートレート生成 |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIによる作成 — スキャフォールディング、批評、ガイド付きワークフロー、調整、実験 |
+| [`@ai-rpg-engine/cli`](packages/cli) | CLI：ゲームの実行、スターターの作成、セーブの検査 |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | ターミナルレンダラーと入力レイヤー |
-| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | マーチャントスターター — レジャーアダプターの参照パックであり、それに対する依存関係はありません。 |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | 窃盗犯を追跡する冒険の始まり。まるで終わりのないループのように、そして街のどのエリアがあなたに新たな道を開いてくれるのか。 |
-| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **オプション** — プレイヤーが所有する取引可能なレイヤー（コイン/インベントリ/取引）を、チェックポイントでXLS-85トークンスキューを介してXRPLテストネットに決済するためのオプトイン機能。これは完全に決定的なコアとは独立しています。 |
+| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | 商業スターター — 台帳アダプターの参照パックであり、それ自体には依存関係がない |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | 泥棒狩りスターター — ループとしての追跡、そして都市のどちら側があなたのためにドアを開けるか |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **オプション** — プレイヤーが所有する取引可能なレイヤー（コイン/インベントリ/取引）のための、チェックポイントでのXLS-85トークンエスクローを介した、オプションのXRPLテストネット決済。これは、決定論的なコアとは完全に独立している。 |
 
 ### スターターの例
 
-用意されている10個のスターターワールドは、あくまで**構成例**です。これらは、ゲームエンジンモジュールを組み合わせて完全なゲームを作成する方法を示しています。それぞれのワールドは異なるパターン（ステータスマッピング、リソースプロファイル、エンゲージメント設定、アビリティセット）を紹介しています。「各スターターワールドのREADME」には、「示されているパターン」と「参考にできる点」が記載されています。
+12個のスターターワールドは**構成の例**である — これらは、エンジンモジュールを組み合わせて完全なゲームを作成する方法を示す。それぞれ異なるパターン（ステータスマッピング、リソースプロファイル、交戦設定、能力セット）を示す。各スターターのREADMEを参照して、「示されたパターン」と「借用する内容」を確認する。
 
-| 前菜 | ジャンル | 主なパターン |
+| スターター | ジャンル | 主なパターン |
 |---------|-------|-------------|
-| [`starter-fantasy`](packages/starter-fantasy) | ダークファンタジー | 戦闘は最小限に、会話を重視した構成。 |
-| [`starter-cyberpunk`](packages/starter-cyberpunk) | サイバーパンク | リソース、関与すべき役割 |
-| [`starter-detective`](packages/starter-detective) | ヴィクトリア朝時代のミステリー | ソーシャルメディアを重視し、印象的な体験を提供する。 |
-| [`starter-pirate`](packages/starter-pirate) | 海賊 | 海戦＋近接戦闘、マルチゾーン |
-| [`starter-zombie`](packages/starter-zombie) | ゾンビサバイバル | 希少性、感染資源 |
-| [`starter-weird-west`](packages/starter-weird-west) | 奇妙な西部劇。 | 偏見をなくし、安全な環境を取り戻す。 |
-| [`starter-colony`](packages/starter-colony) | SFコロニー | 隘路、待ち伏せ地点 |
-| [`starter-ronin`](packages/starter-ronin) | 封建時代の日本 | 隠された通路、複数の防御役割 |
-| [`starter-merchant`](packages/starter-merchant) | マーチャント | ループとしての義務、ペナルティとして価格設定された戦闘 |
-| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | 追跡 | 金のために人々を追いかけること。暴力は公然と行われ、禁止されているわけではない。 |
-| [`starter-vampire`](packages/starter-vampire) | 吸血鬼ホラー。 | 血液資源、社会操作 |
-| [`starter-gladiator`](packages/starter-gladiator) | 古代の剣闘士 | アリーナでの戦闘、観客からの支持。 |
+| [`starter-fantasy`](packages/starter-fantasy) | ダークファンタジー | 最小限の戦闘、対話主導 |
+| [`starter-cyberpunk`](packages/starter-cyberpunk) | サイバーパンク | リソース、交戦ロール |
+| [`starter-detective`](packages/starter-detective) | ビクトリア朝のミステリー | ソーシャル優先、知覚重視 |
+| [`starter-pirate`](packages/starter-pirate) | 海賊 | 海戦+近接戦闘、マルチゾーン |
+| [`starter-zombie`](packages/starter-zombie) | ゾンビサバイバル | 希少性、感染リソース |
+| [`starter-weird-west`](packages/starter-weird-west) | 奇妙な西部劇 | パックのバイアス、安全地帯からの回復 |
+| [`starter-colony`](packages/starter-colony) | SFコロニー | 隘路、待ち伏せゾーン |
+| [`starter-ronin`](packages/starter-ronin) | 封建時代の日本 | 隠された通路、複数の保護者ロール |
+| [`starter-merchant`](packages/starter-merchant) | 商業 | 義務をループとして、戦闘をペナルティとして価格設定 |
+| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | 追跡 | お金のために人々を狩る。暴力は騒がしいが、禁止されているわけではない。 |
+| [`starter-vampire`](packages/starter-vampire) | ヴァンパイアホラー | 血のリソース、社会的操作 |
+| [`starter-gladiator`](packages/starter-gladiator) | 歴史的なグラディエーター | アリーナでの戦闘、群衆の支持 |
 
 ---
 
-## ドキュメント、文書
+## ドキュメント
 
 | リソース | 説明 |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | 新しいゲームの雛形を作成する——CLI（コマンドラインインターフェース）を使用するか、手動でテンプレートを設定するか。 |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | ゲームエンジンモジュールを組み合わせて、独自のゲームを作成しましょう。 |
+| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | 新しいゲームの雛形を作成 — CLIまたは手動のテンプレート |
+| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | エンジンモジュールを組み合わせて、独自のゲームを作成 |
 | [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | エンティティごとのルール解決 — 混合プレイスタイルの戦闘、`applyProfile`、プロファイルテンプレート、`profile` CLI |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | オプトインによるオンレジャー決済 — 決定性のファイアウォール、L0/L1/L2統合レベル、プレイモード、安全対策、および実証済みの海賊デモ |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | 戦闘の6つの要素、5つの行動、一目でわかる状況 |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | 段階的に「ビルド」を進め、戦闘スタックを構築し、ステータスをマッピングし、リソースプロファイルを定義します。 |
-| [Handbook](site/src/content/docs/handbook/index.md) | 包括的なハンドブック。すべてのシステムを網羅し、さらに付録が4つ追加されています。 |
-| [Composition Model](docs/composition-model.md) | 再利用可能な6つの層とその構成方法 |
-| [Examples](docs/examples/) | 実行可能なTypeScriptのサンプルコード（型チェックとCIによる動作テスト済み）— エンティティごとの混合パーティ、共有プロファイル、ワールド間の連携、ゼロから構築。 |
-| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細解説：アクションのパイプライン、実態と表示の違い |
-| [Philosophy](PHILOSOPHY.md) | 決定論的な世界、エビデンスに基づいた設計、AIをアシスタントとして活用 |
+| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | オプトインによるオンチェーン決済 — 決定性ファイアウォール、L0/L1/L2統合レベル、プレイモード、安全対策、および実証済みの海賊デモ |
+| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | 6つの戦闘の柱、5つのアクション、一目でわかるステータス |
+| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | 段階的なbuildCombatStack、ステータスマッピング、リソースプロファイル |
+| [Handbook](site/src/content/docs/handbook/index.md) | 包括的なハンドブック — すべてのシステム、および4つの付録 |
+| [Composition Model](docs/composition-model.md) | 6つの再利用可能なレイヤーとその組み合わせ方 |
+| [Examples](docs/examples/) | 実行可能なTypeScriptの例（型チェック済み + CIでの動作テスト済み） — エンティティごとの混合パーティー、共有プロファイル、クロスワールド、ゼロから |
+| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細 — アクションパイプライン、真実と表現 |
+| [Philosophy](PHILOSOPHY.md) | 決定性のある世界、エビデンスに基づいた設計、アシスタントとしてのAI |
 | [Changelog](CHANGELOG.md) | リリース履歴 |
 
 ---
 
 ## ロードマップ
 
-### 現在地はここです
+### 現在の状況
 
-Both composition spines are complete — 6412 tests across 326 files, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v3.0 makes the world live: named NPCs come alive with goals, trust/fear/greed/loyalty relationships, obligation ledgers, and consequence chains; the social layer earns passively and spends across twenty-one new diplomacy/sabotage verbs; the economy is genre-flavored per starter; and the leverage you earn finally reaches the campaign endings it gates. A Phase-9 audit caught the headline wired-but-inert in shipped content — the fix ships a named NPC in every starter.**
+両方の構成の主要部分が完了 — 326個のファイルにわたる6412個のテスト、すべての12個のスターターが`buildCombatStack`と`buildWorldStack`で利用可能、印刷されたシードに基づいて決定的なバイト単位での同一の再生、完全なAIの意思決定スコアリング、および雛形を作成、実行、検証、および検査するCLI。**v3.0は世界を活性化します。名前付きのNPCが目標、信頼/恐怖/貪欲/忠誠関係、義務台帳、および結果の連鎖を持って生き生きと動き出します。ソーシャルレイヤーは受動的に収益を上げ、21の新しい外交/妨害動詞を使用して消費します。経済はスターターごとにジャンルに合わせて調整され、獲得した優位性が最終的にキャンペーンの終盤に到達します。フェーズ9の監査で、出荷されたコンテンツに「接続されているが機能しない」という問題が発見されました。修正版では、すべてのスターターに名前付きのNPCが追加されます。**
 
-**Recent release arc (v2.4.0–v3.0.0):**
-- v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
-- v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass
-- v2.6.0 — The `run` command became a real game: enemies act on their own AI profiles, victory/defeat, save/resume, abilities and XP on the menu, the `ai` studio bin, and the narration stack
-- v2.7.0 — The world reacts and there's a reason to return: heat → pressures → narrated consequences, zone-entry encounters, a quest loop + Journal, equipment in combat, seeded replayable runs, live endgame inputs, `buildWorldStack`, the Director's Ledger, and a save-migration seam
-- v2.8.0 — Act on the world you live in: a live trade economy + `sell` verb, companions you recruit and fight beside, and a Director's Ledger reading the whole board — one write-wire per system lit ~12 consumers that shipped dark
-- v2.9.0 — Close the loops: `buy` + merchant stock and crafting complete the economy; companions take independent turns; four social verbs (bribe / intimidate / petition / seed) run on a leverage economy funded by opportunity rewards; opportunities resolve with expiry + favor-fallout consequence; and equipment, quests, recruitables, and starting coin roll out uniformly to all ten starters
-- **v3.0.0 — Make the world live: the npc-agency producer lights named NPCs (goals / relationships / obligation ledgers / consequence chains) plus a story NPC in every starter; the social surface grows to 25 verbs (diplomacy + sabotage) with passive leverage income and dialogue that reads social state; per-starter genre-flavored stock + recipes; the leverage endings (victory / puppet-master / quiet-retirement) become reachable; repair/modify menu rows, escort opportunities, and an `audit-content` dev CLI — shipped through a Phase-9 audit that caught two dead-wires the green test suite hid**
+**最近のリリース（v2.4.0〜v3.0.0）：**
+- v2.4.0 — パーティー戦闘（味方ターゲティング/回復/バフ/蘇生、ステータス効果システム（修正子+DoT/HoT+リアクティブトリガー）、プラグインプロファイルフェーズ1、コンテンツ`validate`/`scaffold` CLI）
+- v2.5.0 — エンティティごとのルール解決（混合プレイスタイルの戦闘）、`applyProfile`ローダー+エンティティごとの能力、プロファイルテンプレート+`profile` CLI、および完全なヘルスチェック
+- v2.6.0 — `run`コマンドが実際のゲームになりました。敵は独自のAIプロファイルに基づいて行動し、勝利/敗北、保存/再開、メニューに能力と経験値、`ai`スタジオビン、およびナレーションスタックが含まれます。
+- v2.7.0 — 世界が反応し、戻ってくる理由があります。熱→圧力→ナレーションによる結果、ゾーンエントリーエンカウンター、クエストループ+ジャーナル、戦闘中の装備、シードされた再生可能な実行、ライブエンドゲーム入力、`buildWorldStack`、ディレクターの台帳、および保存移行のシーム
+- v2.8.0 — 自分が住む世界に影響を与える：ライブ取引経済+`sell`動詞、一緒に募集して戦う仲間、およびディレクターの台帳がボード全体を読み取る〜1つの書き込みワイヤーが12個のシステムに接続され、出荷された暗い状態
+- v2.9.0 — ループを閉じる：`buy`+商人在庫とクラフトが経済を完成させます。仲間は独立したターンを実行します。4つのソーシャル動詞（賄賂/威嚇/嘆願/種）が、機会報酬によって資金提供される優位性経済で実行されます。機会は期限切れ+好意の低下の結果で解決し、装備、クエスト、募集可能なキャラクター、および開始時のコインがすべて10個のスターターに均等に配布されます。
+- **v3.0.0 — 世界を活性化する：NPCエージェンシープロデューサーが、目標/関係/義務台帳/結果の連鎖を持つ名前付きのNPCを活性化し、すべてのスターターにストーリーNPCを追加します。ソーシャルレイヤーは25の動詞（外交+妨害）に拡張され、受動的な優位性収入とソーシャル状態を読み取るダイアログが含まれます。スターターごとのジャンルに合わせた在庫+レシピ。優位性の終盤（勝利/操り人形/静かな引退）に到達可能になります。修理/変更メニュー行、護衛の機会、および`audit-content`開発CLI — フェーズ9の監査で、グリーンテストスイートが隠していた2つのデッドワイヤーが発見され、修正版が出荷されました。**
 
-### 次（v3.0の構成要素）
+### 次（v3.0の主要部分）
 
-- **Living NPCs** — the persisted npc-agency producer that lights the Director's PEOPLE section: named NPCs with goals, relationship breakpoints, obligation ledgers, and consequence chains, plus companion-morale favor-fallout and the departure-risk path the reaction system already carries
-- Genre-flavored merchant stock and crafting recipes (per-starter genre threading over the universal fallback that ships today), and the `repair`/`modify` menu surface
-- The leverage economy's next layer — passive income beyond opportunity rewards, and social verbs beyond the shipped four (diplomacy / sabotage groups) — plus the dialogue condition/effect vocabulary that reads the new social state
-- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
-- API documentation sync — ensure every handbook page reflects the latest APIs
+- **生きているNPC** — ディレクターの「人々」セクションを活性化する、永続的なNPCエージェンシープロデューサー：目標、関係のブレークポイント、義務台帳、および結果の連鎖を持つ名前付きのNPC、およびすでに存在する反応システムによって処理される仲間士気、好意の低下、および離脱リスクのパス
+- ジャンルに合わせた商人在庫とクラフトレシピ（今日の出荷される普遍的なフォールバックに比べて、スターターごとにジャンルを調整）、および`repair`/`modify`メニューの表面
+- 優位性経済の次のレイヤー — 機会報酬を超えた受動的な収入、および出荷された4つの（外交/妨害グループ）を超えたソーシャル動詞 — さらに、新しいソーシャル状態を読み取るダイアログ条件/効果語彙
+- マルチプレイヤー — 1つの世界を共有する2人の*人間*プレイヤー（ネットワークレイヤー、意図的に延期されています。共有プロファイルは、[`shared-profiles.ts`](docs/examples/shared-profiles.ts)として本日出荷されます）
+- シリアライズ可能な式の上書き — プロファイルごとの式調整（式DSLでブロックされています。プロファイルは今日、クロージャではなくステータスマッピングを保持します）
+- APIドキュメントの同期 — すべてのハンドブックページが最新のAPIを反映していることを確認します
 
-### 目的地：プラグインプロファイル
+### 目的：プラグインプロファイル
 
-The engine's end goal is **user-defined profiles** — portable bundles that slot into any game. A profile packages a stat mapping, resource behavior, AI bias tags, and abilities into a single importable unit. As of v2.5, entities in one world can each carry their own profile and resolve combat per-entity — a `might` fighter and a `will` mystic share a party, each bringing their own playstyle.
+エンジンの最終的な目標は、**ユーザー定義のプロファイル**です。これは、任意のゲームにスロットインできる、ポータブルなバンドルです。プロファイルは、ステータスマッピング、リソースの動作、AIのバイアスタグ、および能力を、1つのインポート可能なユニットにパッケージ化します。v2.5では、1つの世界のエンティティはそれぞれ独自のプロファイルを保持し、エンティティごとに戦闘を解決できます。たとえば、`might`のファイターと`will`のミスティックがパーティーを共有し、それぞれが独自のプレイスタイルを持ちます。
 
-The schema, the `applyProfile` loader, per-entity ability resolution, and cross-profile validation are all shipped. What remains is multiplayer — letting two *human* players (not just two entities) share a world — which is a networking layer. See [Profile Roadmap](docs/profile-roadmap.md) and [feature-architecture.md](docs/feature-architecture.md) for the design.
+スキーマ、`applyProfile`ローダー、エンティティごとの能力解決、およびクロスプロファイル検証はすべて出荷されています。残っているのは、2人の*人間*プレイヤー（単なる2つのエンティティではなく）が1つの世界を共有できるようにするマルチプレイヤーです。これはネットワークレイヤーです。[プロファイルロードマップ](docs/profile-roadmap.md)および[feature-architecture.md](docs/feature-architecture.md)を参照してください。
 
 ---
 
 ## 哲学
 
-AI RPGエンジンは、以下の3つのコンセプトに基づいて構築されています。
+AI RPGエンジンは、以下の3つのアイデアを中心に構築されています。
 
-1. **決定論的な世界** — シミュレーションの結果は再現可能でなければならない。
-2. **証拠に基づいた設計** — 世界のメカニズムはシミュレーションを通じてテストされるべきである。
-3. **AIはアシスタントであり、権威ではない** — AIツールは設計の生成と評価を支援するが、決定論的なシステムに取って代わるものではない。
+1. **決定論的な世界** — シミュレーションの結果は再現可能でなければなりません。
+2. **証拠に基づいた設計** — 世界のメカニズムは、シミュレーションを通じてテストされるべきです。
+3. **AIはアシスタントであり、権威ではない** — AIツールは、設計の生成と評価を支援しますが、決定論的なシステムを置き換えるものではありません。
 
 詳細については、[PHILOSOPHY.md](PHILOSOPHY.md) を参照してください。
 
@@ -390,17 +382,17 @@ AI RPGエンジンは、以下の3つのコンセプトに基づいて構築さ�
 
 ## セキュリティ
 
-The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. Two **optional** layers add an outbound path, and only when you invoke them:
+コアエンジンは、**ローカルでのみ動作するシミュレーションライブラリ**です。テレメトリ、ネットワーク、秘密情報は一切使用しません。セーブファイルは、明示的に要求された場合にのみ、`.ai-rpg-engine/` に保存されます。2つの**オプション**のレイヤーが、アウトバウンドパスを追加します。これは、ユーザーがそれらを起動した場合にのみ有効になります。
 
 - The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).
 - The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.
 
-詳細は [SECURITY.md](SECURITY.md) を参照してください。
+詳細については、[SECURITY.md](SECURITY.md) を参照してください。
 
 ## 要件
 
 - Node.js >= 20
-- TypeScript (ESMモジュール)
+- TypeScript（ESMモジュール）
 
 ## ライセンス
 
@@ -408,4 +400,4 @@ The core engine is a **local-only simulation library**: no telemetry, no network
 
 ---
 
-<a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a> によって作成されました。
+<a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>によって作成されました。

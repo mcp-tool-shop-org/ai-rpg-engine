@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.8.1] - 2026-08-31
+
+**The host no longer invents the Engine.** A Godot attach, a studio session, and a JSON pack can hash, preview, list legal verbs, save/load, and boot catalogs without copying CLI internals. 7893 tests.
+
+### Added
+
+- Engine host surface: `hash` / `present` / `queryEvents` / `preview` / `getAvailableActions*` / `advanceRound`.
+- Sidecar: `listActions`, Engine.serialize save/load (rng + actionLog), GDScript method coverage, N-writer queue, default ADVANCE to `Engine.advanceRound(1)`.
+- Studio: `emit-pack`, session import, chargen verbs, entity AI + placements, pack-backed ReplayProducer with the playable module stack.
+- JSON packs: catalog lift from `PackEntry.content`, `ContentPack.meta`, live `EntityBlueprint` fields, `ruleProfiles` intake (unresolved names stay dropped, not refused).
+- CLI: sidecar attach by path, scaffold entity/item/hazard, `profile validate --json`.
+- Media: batch scene/icon + variants, music stems, quota pin/LRU, rumor board + stance, inpaint and ControlNet/IP-Adapter identity.
+- Ledger: diary `HASH:` memo, diary NFT no-op, player→counterparty unique-gear transfer.
+
+### Changed
+
+- Time-of-day and four social operands evaluate in the shared condition table. Dialogue no longer silent-trues the remaining C3 families.
+- `getEntityLoadout` stays a pure read. Live reputation, journal events, and relic notoriety have real writers.
+
+### Fixed
+
+- SSRF shared-address-space block (RFC 6598) no longer ships a dotted CGNAT literal.
+- Serial-verify pins from the feature pass: SessionArtifacts extra buckets, generateStream flood caps, SIM_AFFECTING_KEYS unexpanded (world-forge hasher).
+
 ## [3.8.0] - 2026-07-28
 
 **Opportunities that leave real marks.** v3.7 made the strategic layer fire — offers spawn,
