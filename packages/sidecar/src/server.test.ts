@@ -378,13 +378,14 @@ function dualLoopback(fanout: boolean): {
   };
 
   const pair = () => {
-    let client!: SidecarClient; // eslint-disable-line prefer-const -- closes over construction
-    let server!: SidecarServer; // eslint-disable-line prefer-const -- closes over construction
-    server = new SidecarServer(
-      { engine, engineVersion: '3.8.0-test', onWorldCommitted: () => notifyPeers(server) },
-      (m) => client.handle(m),
+    const box: { client?: SidecarClient; server?: SidecarServer } = {};
+    box.server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test', onWorldCommitted: () => notifyPeers(box.server!) },
+      (m) => box.client!.handle(m),
     );
-    client = new SidecarClient((msg) => server.handle(msg));
+    box.client = new SidecarClient((msg) => box.server!.handle(msg));
+    const server = box.server;
+    const client = box.client;
     servers.push(server);
     return { server, client };
   };

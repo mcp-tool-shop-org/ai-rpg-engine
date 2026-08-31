@@ -163,8 +163,7 @@ export function startSocketServer(
     };
 
     // The two calls `stdio.ts` promised, with a different pair of streams.
-    let session!: SidecarServer; // eslint-disable-line prefer-const -- closes over construction
-    session = new SidecarServer(
+    const session = new SidecarServer(
       {
         ...options,
         onWorldCommitted: () => {
