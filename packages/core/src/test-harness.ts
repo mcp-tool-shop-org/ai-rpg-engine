@@ -6,6 +6,7 @@ import type {
   ZoneState,
   GameManifest,
   ResolvedEvent,
+  FactionState,
 } from './types.js';
 import { Engine } from './engine.js';
 
@@ -17,6 +18,7 @@ export type HarnessOptions = {
   startZone?: string;
   seed?: number;
   globals?: Record<string, string | number | boolean>;
+  factions?: Record<string, FactionState>;
   /** When true, each submitAction also runs one Engine.advanceRound(). */
   advanceRoundAfterSubmit?: boolean;
 };
@@ -68,6 +70,13 @@ export function createTestEngine(options: HarnessOptions): TestEngine {
   if (options.globals) {
     for (const [k, v] of Object.entries(options.globals)) {
       engine.store.state.globals[k] = v;
+    }
+  }
+
+  // Set factions
+  if (options.factions) {
+    for (const [k, v] of Object.entries(options.factions)) {
+      engine.store.state.factions[k] = v;
     }
   }
 
