@@ -207,6 +207,16 @@ async function walkFiles(root: string): Promise<string[]> {
       if (out.length >= MAX_FILES) break;
     }
   }
+  // F-bceff599 (wave-4, content-packs' filed design F-b04d6f1e): entries
+  // were pushed in whatever order readdir() returned them, which Node does
+  // NOT guarantee -- directories are pushed onto a stack and popped LIFO on
+  // top of that. Every "last file wins" merge downstream (pushUnique,
+  // mergePackJson's object-merges, ingest's case 'faction') then rode
+  // readdir's unspecified order, so the actual winner was an accident of
+  // the filesystem's enumeration, not a reproducible fact about the file
+  // set. Sort the final list so re-runs of the same file set resolve
+  // collisions identically across machines and filesystems.
+  out.sort();
   return out;
 }
 
