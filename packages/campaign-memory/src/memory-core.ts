@@ -7,15 +7,17 @@
 // This module is the missing EngineModule — same inject-and-persist pattern
 // as createItemChronicleCore.
 //
-// OPT-IN. Subscribe to combat/kill/gift/rescue/betrayal events, journal.record
-// with zone occupants as witnesses, bank.remember + applyRelationshipEffect
-// per witness/target, persist via registerNamespace so Engine.serialize
-// round-trips it.
+// OPT-IN. Subscribe to combat/kill/gift/rescue/betrayal plus the live engine
+// events that already exist (item.acquired/item.lost, companion join/leave,
+// opportunity.*, death on combat.entity.defeated), journal.record with zone
+// occupants as witnesses, bank.remember + applyRelationshipEffect per
+// witness/target, copy attitude onto EntityState.relations, persist via
+// registerNamespace so Engine.serialize round-trips it.
 //
 // Distinct from still-open F-c1949ae0 (consolidate overwrites MemoryFragment.tick)
 // — this file never calls consolidate.
 
-import type { EngineModule, EntityState, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
+import type { EngineModule, EntityState, ResolvedEvent, ScalarValue, WorldState } from '@ai-rpg-engine/core';
 import type { CampaignMemoryConfig, NpcMemoryState, RecordCategory, SerializedJournal } from './types.js';
 import { CAMPAIGN_MEMORY_VERSION } from './types.js';
 import { CampaignJournal } from './journal.js';
@@ -35,17 +37,45 @@ export type CampaignMemoryCoreConfig = {
   memory?: CampaignMemoryConfig;
 };
 
-const EVENT_CATEGORY: Record<string, RecordCategory> = {
-  'combat.entity.defeated': 'kill',
+/**
+ * Live engine events → RecordCategory. combat.entity.defeated journals both
+ * kill (killer's deed) and death (victim's fate for buildFinaleOutline).
+ * item.acquired with a fromEntityId is a give (inventory-core), which must
+ * move gift-trust; a bare pickup is item-acquired.
+ *
+ * F-c1949ae0 (consolidate) is still not called from this file.
+ */
+const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]> = {
+  'combat.entity.defeated': ['kill', 'death'],
   'campaign.kill': 'kill',
   'campaign.gift': 'gift',
   'item.gifted': 'gift',
   'social.gift': 'gift',
+  'item.acquired': 'item-acquired',
+  'item.lost': 'item-lost',
   'campaign.rescue': 'rescue',
   'social.rescue': 'rescue',
   'campaign.betrayal': 'betrayal',
   'social.betrayal': 'betrayal',
+  'companion.recruited': 'companion-joined',
+  'companion.joined': 'companion-joined',
+  'companion.departed': 'companion-departed',
+  'opportunity.accepted': 'opportunity-accepted',
+  'opportunity.completed': 'opportunity-completed',
+  'opportunity.abandoned': 'opportunity-abandoned',
+  'opportunity.expired': 'opportunity-failed',
+  'opportunity.failed': 'opportunity-failed',
 };
+
+function categoriesFor(event: ResolvedEvent): RecordCategory[] {
+  if (event.type === 'item.acquired') {
+    const fromId = event.payload?.fromEntityId;
+    return [typeof fromId === 'string' && fromId.length > 0 ? 'gift' : 'item-acquired'];
+  }
+  const mapped = EVENT_CATEGORY[event.type];
+  if (!mapped) return [];
+  return typeof mapped === 'string' ? [mapped] : [...mapped];
+}
 
 const EMPTY_JOURNAL: SerializedJournal = { version: CAMPAIGN_MEMORY_VERSION, records: [] };
 
@@ -133,23 +163,117 @@ function isAlive(entity: EntityState | undefined): boolean {
 
 function describeEvent(category: RecordCategory, actorName: string, targetName: string | undefined): string {
   if (category === 'kill') return `${actorName} killed ${targetName ?? 'someone'}`;
+  if (category === 'death') return `${targetName ?? 'someone'} died`;
   if (category === 'gift') return `${actorName} gave a gift${targetName ? ` to ${targetName}` : ''}`;
   if (category === 'rescue') return `${actorName} rescued ${targetName ?? 'someone'}`;
   if (category === 'betrayal') return `${actorName} betrayed ${targetName ?? 'someone'}`;
+  if (category === 'companion-joined') return `${targetName ?? actorName} joined the party`;
+  if (category === 'companion-departed') return `${targetName ?? actorName} left the party`;
+  if (category === 'item-acquired') return `${actorName} acquired an item`;
+  if (category === 'item-lost') return `${actorName} lost an item`;
   return `${actorName} — ${category}`;
 }
 
 function significanceFor(category: RecordCategory): number {
-  if (category === 'kill' || category === 'betrayal') return 0.9;
-  if (category === 'rescue') return 0.8;
-  if (category === 'gift') return 0.6;
+  if (category === 'kill' || category === 'betrayal' || category === 'death') return 0.9;
+  if (category === 'rescue' || category === 'companion-joined' || category === 'companion-departed') return 0.8;
+  if (category === 'gift' || category === 'opportunity-completed') return 0.6;
   return 0.5;
 }
 
 function emotionalCharge(category: RecordCategory, perspective: 'target' | 'witness'): number {
   const base =
-    category === 'kill' || category === 'betrayal' ? -0.8 : category === 'rescue' || category === 'gift' ? 0.6 : 0;
+    category === 'kill' || category === 'betrayal' || category === 'death' || category === 'companion-departed'
+      ? -0.8
+      : category === 'rescue' || category === 'gift' || category === 'companion-joined' || category === 'opportunity-completed'
+        ? 0.6
+        : 0;
   return perspective === 'witness' ? base * 0.5 : base;
+}
+
+function resolveActorTarget(
+  event: ResolvedEvent,
+  category: RecordCategory,
+): { actorId: string | undefined; targetId: string | undefined } {
+  const payload = event.payload ?? {};
+  const npcId = stringPayload(payload, 'npcId');
+  const fromId = stringPayload(payload, 'fromEntityId');
+  const toId = stringPayload(payload, 'toEntityId');
+  const entityId = stringPayload(payload, 'entityId');
+
+  if (category === 'kill' || category === 'death') {
+    return {
+      actorId: stringPayload(payload, 'defeatedBy') ?? event.actorId ?? stringPayload(payload, 'actorId'),
+      targetId: entityId ?? stringPayload(payload, 'targetId'),
+    };
+  }
+
+  if (category === 'gift' || category === 'item-acquired' || category === 'item-lost') {
+    if (fromId) {
+      return { actorId: fromId, targetId: entityId ?? toId ?? event.actorId };
+    }
+    if (category === 'item-lost') {
+      return { actorId: entityId ?? event.actorId ?? stringPayload(payload, 'actorId'), targetId: toId };
+    }
+    return {
+      actorId: event.actorId ?? stringPayload(payload, 'actorId') ?? entityId,
+      targetId: stringPayload(payload, 'targetId') ?? toId,
+    };
+  }
+
+  if (category === 'companion-joined' || category === 'companion-departed') {
+    return {
+      actorId: event.actorId ?? stringPayload(payload, 'actorId'),
+      targetId: npcId ?? stringPayload(payload, 'targetId'),
+    };
+  }
+
+  return {
+    actorId: event.actorId ?? stringPayload(payload, 'actorId') ?? stringPayload(payload, 'defeatedBy'),
+    targetId: stringPayload(payload, 'targetId') ?? npcId ?? entityId,
+  };
+}
+
+/**
+ * Mirror four-axis NPC attitude onto EntityState so cognition/HUD can read
+ * it without importing this package (F-d1973aae). Compact: relations[subject]
+ * is trust; the other axes live under custom['rel.<subject>.<axis>'].
+ */
+function copyAttitude(bank: NpcMemoryBank, world: WorldState): void {
+  const entity = world.entities[bank.entityId];
+  if (!entity) return;
+  const relations: Record<string, ScalarValue> = { ...(entity.relations ?? {}) };
+  const custom: Record<string, ScalarValue> = { ...(entity.custom ?? {}) };
+  for (const subjectId of bank.knownSubjects()) {
+    const rel = bank.getRelationship(subjectId);
+    relations[subjectId] = rel.trust;
+    custom[`rel.${subjectId}.trust`] = rel.trust;
+    custom[`rel.${subjectId}.fear`] = rel.fear;
+    custom[`rel.${subjectId}.admiration`] = rel.admiration;
+    custom[`rel.${subjectId}.familiarity`] = rel.familiarity;
+  }
+  entity.relations = relations;
+  entity.custom = custom;
+}
+
+/** Compact PEOPLE lines: "Guard → Aldric: trust -0.15, fear 0.25". */
+export function formatNpcAttitudes(world: WorldState): string[] {
+  const state = peekState(world);
+  if (!state) return [];
+  const lines: string[] = [];
+  for (const entityId of Object.keys(state.banks).sort()) {
+    const bank = getNpcMemory(world, entityId);
+    if (!bank) continue;
+    const name = world.entities[entityId]?.name ?? entityId;
+    for (const subjectId of bank.knownSubjects().sort()) {
+      const rel = bank.getRelationship(subjectId);
+      const subject = world.entities[subjectId]?.name ?? subjectId;
+      lines.push(
+        `${name} → ${subject}: trust ${rel.trust.toFixed(2)}, fear ${rel.fear.toFixed(2)}, admiration ${rel.admiration.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}`,
+      );
+    }
+  }
+  return lines;
 }
 
 function recordLiveEvent(
@@ -159,14 +283,8 @@ function recordLiveEvent(
   config: CampaignMemoryCoreConfig,
 ): void {
   const payload = event.payload ?? {};
-  const actorId =
-    (category === 'kill' ? stringPayload(payload, 'defeatedBy') : undefined) ??
-    event.actorId ??
-    stringPayload(payload, 'actorId');
+  const { actorId, targetId } = resolveActorTarget(event, category);
   if (!actorId) return;
-
-  const targetId =
-    (category === 'kill' ? stringPayload(payload, 'entityId') : undefined) ?? stringPayload(payload, 'targetId');
 
   const actor = world.entities[actorId];
   const target = targetId ? world.entities[targetId] : undefined;
@@ -187,7 +305,11 @@ function recordLiveEvent(
   const journal = loadJournal(state);
   const actorName = (stringPayload(payload, 'defeatedByName') ?? actor?.name ?? actorId);
   const targetName =
-    (category === 'kill' ? stringPayload(payload, 'entityName') : undefined) ?? target?.name ?? targetId;
+    (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
+    stringPayload(payload, 'npcName') ??
+    stringPayload(payload, 'toName') ??
+    target?.name ??
+    targetId;
 
   const record = journal.record({
     tick: event.tick,
@@ -211,6 +333,7 @@ function recordLiveEvent(
     const bank = loadBank(state, targetId, config.memory);
     bank.remember(record, record.significance, emotionalCharge(category, 'target'));
     applyRelationshipEffect(bank, record, 'target');
+    copyAttitude(bank, world);
     persistBank(bank);
   }
 
@@ -218,6 +341,7 @@ function recordLiveEvent(
     const bank = loadBank(state, witnessId, config.memory);
     bank.remember(record, record.significance * 0.8, emotionalCharge(category, 'witness'));
     applyRelationshipEffect(bank, record, 'witness');
+    copyAttitude(bank, world);
     persistBank(bank);
   }
 
@@ -226,8 +350,9 @@ function recordLiveEvent(
 
 /**
  * Live campaign-memory EngineModule. Opt-in: a pack adds this to its module
- * list to journal kills/gifts/rescues/betrayals with zone witnesses and to
- * move the four-axis relationship model during play.
+ * list to journal kills/gifts/rescues/betrayals plus live item/companion/
+ * opportunity/death events with zone witnesses and to move the four-axis
+ * relationship model during play.
  *
  * Does NOT call consolidate (F-c1949ae0 — decay-clock overwrite — left to a
  * later health amend).
@@ -244,9 +369,10 @@ export function createCampaignMemoryCore(config: CampaignMemoryCoreConfig = {}):
       } satisfies CampaignMemoryModuleState);
 
       for (const type of Object.keys(EVENT_CATEGORY)) {
-        const category = EVENT_CATEGORY[type]!;
         ctx.events.on(type, (event, world) => {
-          recordLiveEvent(world, event, category, config);
+          for (const category of categoriesFor(event)) {
+            recordLiveEvent(world, event, category, config);
+          }
         });
       }
     },
