@@ -843,26 +843,40 @@ export function applyContentPack(
     if (itemPlacements.length > 0) applied.itemPlacements = count;
   }
 
-  // --- ruleProfiles (core WorldState, F-0987c369) ---
+  // --- ruleProfiles (core WorldState, F-0987c369; merge semantics F-9930b9b6) ---
   // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
-  // already wrote EntityState.ruleProfileId). When the map is present, clone it
-  // onto the store. A missing id is dropped[] only — never flips ok.
+  // already wrote EntityState.ruleProfileId). When the map is present, MERGE it
+  // onto the store — never replace, same as factions below (F-9930b9b6 — this
+  // block used to wipe the store wholesale, the exact overlay-wipe failure mode
+  // the factions fix beside it was written this wave to prevent) — so an
+  // overlay pack layers over rule profiles a host already registered
+  // (createGame code, or an earlier pack) rather than deleting them. A missing
+  // id is dropped[] only — never flips ok. The unresolved check reads the
+  // store AFTER the merge, so an entity's ruleProfileId resolves against
+  // host-registered profiles too, not just the ones this specific pack
+  // declared — the whole point of merging.
   if (pack.ruleProfiles !== undefined) {
     const cloned = cloneRuleProfiles(pack.ruleProfiles, dropped);
     if (cloned !== undefined) {
-      engine.store.state.ruleProfiles = cloned;
+      // Merged into a local first (rather than reading engine.store.state.
+      // ruleProfiles back out below) because that field is OPTIONAL on
+      // WorldState — a local Record<string, PackRuleProfile> keeps the
+      // post-merge unresolved-check a plain, always-defined lookup.
+      const merged = { ...engine.store.state.ruleProfiles, ...cloned };
+      engine.store.state.ruleProfiles = merged;
       applied.ruleProfiles = Object.keys(cloned).length;
       if (Array.isArray(entities)) {
         for (let i = 0; i < entities.length; i++) {
           const bp = entities[i];
           if (!isRecord(bp) || typeof bp.ruleProfileId !== 'string') continue;
-          if (cloned[bp.ruleProfileId] === undefined) {
+          if (merged[bp.ruleProfileId] === undefined) {
             dropped.push({
               path: `entities[${i}](${idOf(bp)}).ruleProfileId`,
               reason: 'needs-module-vocabulary',
               detail:
-                `unresolved ruleProfileId "${bp.ruleProfileId}" — pack.ruleProfiles has no entry for this id. ` +
-                'The pointer is copied; the registry is not. Dropped, not refused (does not flip applyContentPack.ok).',
+                `unresolved ruleProfileId "${bp.ruleProfileId}" — pack.ruleProfiles (merged with any ` +
+                'host-registered ruleProfiles) has no entry for this id. The pointer is copied; the registry ' +
+                'is not. Dropped, not refused (does not flip applyContentPack.ok).',
             });
           }
         }
@@ -873,9 +887,10 @@ export function applyContentPack(
   // --- factions (core WorldState, F-d54f4d67) ---
   // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
   // already wrote EntityState.faction). When the map is present, MERGE it onto
-  // the store — never replace, unlike ruleProfiles above — so an overlay pack
-  // layers over factions a host already registered (createGame code, or an
-  // earlier pack) rather than wiping them. A missing id is dropped[] only —
+  // the store — never replace, same as ruleProfiles above (F-9930b9b6 closed
+  // the asymmetry this comment used to name) — so an overlay pack layers over
+  // factions a host already registered (createGame code, or an earlier pack)
+  // rather than wiping them. A missing id is dropped[] only —
   // never flips ok. The unresolved check reads the store AFTER the merge, so an
   // entity's faction resolves against host-registered factions too, not just
   // the ones this specific pack declared — the whole point of merging.

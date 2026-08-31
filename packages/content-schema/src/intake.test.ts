@@ -943,6 +943,36 @@ describe('F-0987c369 — pack.ruleProfiles clones onto WorldState.ruleProfiles',
     expect(pack.ruleProfiles!.healer.statMapping.attack).toBe('will');
   });
 
+  it('MERGES onto ruleProfiles a host already registered, never replaces the map (F-9930b9b6)', () => {
+    const engine = bootEngine();
+    engine.store.state.ruleProfiles = {
+      brute: { statMapping: { attack: 'vigor', precision: 'vigor', resolve: 'vigor' } },
+    };
+    const r = applyContentPack(engine, {
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.ruleProfiles!.brute).toBeDefined();
+    expect(engine.store.state.ruleProfiles!.healer).toBeDefined();
+  });
+
+  it('an entity ruleProfileId resolving only against a HOST-registered profile is not reported unresolved (F-9930b9b6)', () => {
+    const engine = bootEngine();
+    engine.store.state.ruleProfiles = {
+      brute: { statMapping: { attack: 'vigor', precision: 'vigor', resolve: 'vigor' } },
+    };
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'ogre', type: 'npc', name: 'Ogre', ruleProfileId: 'brute' }],
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('ruleProfileId'))).toBeUndefined();
+  });
+
   it('a missing ruleProfileId lands in dropped[] only — does not flip ok', () => {
     const engine = bootEngine();
     const r = applyContentPack(engine, {

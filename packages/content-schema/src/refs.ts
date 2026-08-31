@@ -190,9 +190,11 @@ export type ContentPack = {
   manifest?: GameManifest;
   /**
    * Optional RuleProfile registry keyed by {@link EntityBlueprint.ruleProfileId}.
-   * Overlay packs omit this — apply then keeps copy-the-string on the id.
-   * When present, applyContentPack clones it onto WorldState.ruleProfiles.
-   * statMapping only (formulaOverrides reserved — closures cannot round-trip).
+   * Overlay packs omit this — apply then keeps copy-the-string on the id,
+   * unchanged. When present, applyContentPack clones it and MERGES it onto
+   * WorldState.ruleProfiles (never replaces — an overlay pack must layer
+   * over rule profiles a host already registered; F-9930b9b6). statMapping
+   * only (formulaOverrides reserved — closures cannot round-trip).
    * Not sim-affecting.
    */
   ruleProfiles?: Record<string, PackRuleProfile>;
