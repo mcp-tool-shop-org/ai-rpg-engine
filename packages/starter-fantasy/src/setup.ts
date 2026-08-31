@@ -210,8 +210,13 @@ export function createGame(seed?: number): Engine {
     throw new Error(`applyContentPack failed:\n${detail}`);
   }
 
-  engine.store.state.playerId = 'player';
-  engine.store.state.locationId = 'chapel-entrance';
+  // F-bc7b8ab1: no manual playerId/locationId stamp needed here — pack.entities
+  // carries exactly one type:'player' entity ('player', placed at
+  // 'chapel-entrance' in content.ts), so applyContentPack's own identity
+  // stamp (F-67786a6c) already derived both onto the store above. The
+  // pre-fix-style override this replaced was redundant with, and could
+  // silently diverge from, the pack's own placement data. Pinned in
+  // setup.test.ts.
 
   // Listen for pilgrim gift — give healing draught after dialogue
   engine.store.events.on('dialogue.ended', (event) => {
