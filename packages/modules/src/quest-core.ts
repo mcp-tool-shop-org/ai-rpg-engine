@@ -64,9 +64,10 @@
 //     is future work; `quest.offered` (payload `autoAccepted: true`) is the
 //     honest event name for the moment the journal takes the quest.
 //   - `QuestDefinition.failConditions` (quest-level ConditionSpec[]) are
-//     validated but NOT evaluated — terminal quest failure needs a surface
-//     for "the quest is lost" that this slice does not mint. Stage-level
-//     `fail` triggers (the failStage branch) ARE live.
+//     evaluated on every event via condition-eval's evaluateCondition. The
+//     first ok:true marks the quest failed and emits `quest.failed`, which
+//     stops further offer/track. Stage-level `fail` triggers (the failStage
+//     branch) remain a separate, live path.
 //   - Trigger `event` strings match event types exactly (no wildcards) — the
 //     same contract progression-core's reward eventPattern subscriptions use.
 
@@ -87,6 +88,7 @@ import {
 } from '@ai-rpg-engine/content-schema';
 import { addCurrency } from './progression-core.js';
 import { giveItem } from './inventory-core.js';
+import { evaluateCondition as evaluateCompiledCondition } from './condition-eval.js';
 
 // ---------------------------------------------------------------------------
 // Vocabulary (exported so tests and content tooling pin names, not strings)
@@ -253,8 +255,8 @@ export function validateQuestRuntimeContent(quests: QuestDefinition[]): string[]
       }
     }
 
-    // failConditions: validated by the schema pass; explicitly a documented
-    // ceiling at runtime (see file header) — nothing to check here.
+    // failConditions: schema-validated ConditionSpec[]; evaluated at runtime
+    // through condition-eval (unknown types fail-closed there).
   }
 
   return problems;
@@ -411,6 +413,57 @@ function completeQuest(
   }, 'high');
 }
 
+function failQuest(
+  world: WorldState,
+  quest: QuestDefinition,
+  instance: QuestState,
+  cause: ResolvedEvent,
+  ctx: ModuleRegistrationContext,
+  reason: string,
+): void {
+  instance.status = 'failed';
+  if (instance.currentStage) {
+    instance.stageStatuses[instance.currentStage] = 'failed';
+  }
+  emitQuestEvent(ctx, cause, 'quest.failed', {
+    questId: quest.id,
+    questName: quest.name,
+    reason,
+  }, 'high');
+}
+
+/**
+ * First failCondition that evaluates ok:true loses the quest. Empty array /
+ * missing field is a no-op. Uses condition-eval's fail-closed evaluator so
+ * unknown types never auto-fail a journal.
+ */
+function failActiveQuestsIfNeeded(
+  event: ResolvedEvent,
+  world: WorldState,
+  questsById: Map<string, QuestDefinition>,
+  ctx: ModuleRegistrationContext,
+): void {
+  for (const quest of questsById.values()) {
+    const instance = world.quests[quest.id];
+    if (!instance || instance.status !== 'active') continue;
+    const conditions = quest.failConditions;
+    if (!conditions || conditions.length === 0) continue;
+    for (const spec of conditions) {
+      const verdict = evaluateCompiledCondition(spec, world, world.playerId);
+      if (!verdict.ok) continue;
+      failQuest(
+        world,
+        quest,
+        instance,
+        event,
+        ctx,
+        verdict.reason ?? `failCondition "${spec.type}" held`,
+      );
+      break;
+    }
+  }
+}
+
 /**
  * Grant a completed quest's rewards to the player. Returns the human summary
  * strings the quest.completed payload (and its rendered line) carries.
@@ -555,6 +608,11 @@ function processQuestEvent(
   questsById: Map<string, QuestDefinition>,
   ctx: ModuleRegistrationContext,
 ): void {
+  // Quest-level loss is a world-state predicate (a flag, a faction-rep floor),
+  // not a player verb — evaluate before the attribution gate so a system /
+  // NPC-attributed event can still lose the journal.
+  failActiveQuestsIfNeeded(event, world, questsById, ctx);
+
   // Attribution gate (see file header): player-attributed or system events
   // only. NPC actions never write the player's journal.
   if (event.actorId !== undefined && event.actorId !== world.playerId) return;
@@ -591,6 +649,11 @@ function processQuestEvent(
       break;
     }
   }
+
+  // Newly offered this event (or a stage advance that didn't complete) can
+  // already satisfy a failCondition — catch it on the same drain, not the
+  // next unrelated event.
+  failActiveQuestsIfNeeded(event, world, questsById, ctx);
 }
 
 // ---------------------------------------------------------------------------

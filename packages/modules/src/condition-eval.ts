@@ -45,9 +45,8 @@
 //                     player stats are vigor/instinct/will. This engine has no
 //                     level concept at all.
 //   party-level     ✗ NO INPUT — derived from player-level.
-//   time-of-day     ✗ NO INPUT — nothing tracks time of day; `world.meta.tick` is
-//                     a counter, not a clock. (C3/P4 gives `Zone.timeOfDay` a
-//                     channel, which is what will supply this one.)
+//   time-of-day     ✓ Zone.scene.timeOfDay (C3/P4) — resolveSceneDescriptor
+//                     spreads the same key; missing scene/timeOfDay fail-closes.
 //   random-probability ⊘ REFUSED for gates by design, not for want of an input.
 
 import type { WorldState, EntityState } from '@ai-rpg-engine/core';
@@ -91,8 +90,6 @@ export const UNEVALUABLE_OPERANDS: Readonly<Record<string, string>> = {
     'this engine has no character level — progression-core tracks currencies and unlocked nodes, and entity stats are vigor/instinct/will. Gate on a stat, an item or a flag instead.',
   'party-level':
     'derived from character level, which this engine does not have (see player-level).',
-  'time-of-day':
-    'nothing in the engine tracks time of day; world.meta.tick is a counter, not a clock. Zone.timeOfDay reaches the runtime at C3/P4 and will supply this operand.',
 };
 
 /**
@@ -347,6 +344,35 @@ export function evaluateCondition(
       return present
         ? { ok: true, evaluable: true }
         : { ok: false, evaluable: true, reason: `no party member is "${id}"` };
+    }
+
+    case 'time-of-day': {
+      // C3/P4: Zone.scene.timeOfDay is the live operand. resolveSceneDescriptor
+      // spreads the same authored key; reading it here stays pure (no namespace
+      // attach). Missing scene / missing timeOfDay fail-closes with a named reason.
+      const expected = str(params, 'equals') ?? str(params, 'value');
+      if (!expected) {
+        return { ok: false, evaluable: false, reason: 'time-of-day needs `equals` or `value`' };
+      }
+      const zoneId = actor.zoneId;
+      if (!zoneId) {
+        return { ok: false, evaluable: false, reason: 'time-of-day: acting entity has no zone' };
+      }
+      const zone = world.zones[zoneId];
+      if (!zone) {
+        return { ok: false, evaluable: false, reason: `time-of-day: no zone "${zoneId}"` };
+      }
+      const timeOfDay = zone.scene?.timeOfDay;
+      if (typeof timeOfDay !== 'string' || timeOfDay.length === 0) {
+        return {
+          ok: false,
+          evaluable: false,
+          reason: `time-of-day: zone "${zoneId}" has no scene.timeOfDay`,
+        };
+      }
+      return timeOfDay === expected
+        ? { ok: true, evaluable: true }
+        : { ok: false, evaluable: true, reason: `time of day is "${timeOfDay}", not "${expected}"` };
     }
 
     default:

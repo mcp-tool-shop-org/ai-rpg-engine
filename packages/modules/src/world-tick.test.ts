@@ -67,14 +67,16 @@ import {
   type CompanionState,
 } from './companion-core.js';
 import { createCognitionCore } from './cognition-core.js';
-import { createFactionCognition } from './faction-cognition.js';
+import { createFactionCognition, getFactionCognition } from './faction-cognition.js';
 import {
   getPersistedNpcProfiles,
   getPersistedNpcObligations,
+  getPersistedNpcChains,
   createObligation,
   setPersistedNpcState,
   type LoyaltyBreakpoint,
 } from './npc-agency.js';
+import { setPlayerRumorState, type PlayerRumor } from './player-rumor.js';
 import { MORALE_FLOOR_FALLBACK } from './companion-reactions.js';
 import { getLeverageState } from './player-leverage.js';
 import { createProgressionCore, addCurrency } from './progression-core.js';
@@ -1806,6 +1808,117 @@ describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
     const b = run();
     expect(a).toEqual(b);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it('F-5f47efd6: a fearsome rumor spread to three factions spawns revenge-attempt at heat wake, and the origin-faction NPC lists the claim', () => {
+    const rumor: PlayerRumor = {
+      id: 'pr-garrison',
+      claim: 'slaughtered the garrison',
+      subjectDescriptor: 'the stranger',
+      sourceEvent: 'milestone',
+      originFactionId: 'guild',
+      confidence: 0.8,
+      distortion: 0,
+      mutationCount: 0,
+      valence: 'fearsome',
+      spreadTo: ['guild', 'watch', 'navy'],
+      originTick: 0,
+    };
+    const npc = makeNamedNpc('herald', 'Herald', 'zone-a', { tags: ['npc', 'named'] });
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [{ factionId: 'guild', entityIds: ['herald'] }] }),
+        createCompanionCore(),
+        createWorldTick(),
+      ],
+      entities: [makePlayer(), npc],
+      zones,
+      globals: { [HEAT_KEY]: HEAT_WAKE_THRESHOLD },
+    });
+    setPlayerRumorState(engine.world, { rumors: [rumor] });
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(result.spawned.some((p) => p.kind === 'revenge-attempt')).toBe(true);
+    const profile = getPersistedNpcProfiles(engine.world).find((p) => p.npcId === 'herald');
+    expect(profile).toBeDefined();
+    expect(profile!.knownRumors).toContain('slaughtered the garrison');
+  });
+
+  it('F-780f3717: allied → hostile schedules warn then accuse after two waits; a quiet allied NPC never grows a chain', () => {
+    const npc = makeNamedNpc('rival', 'Rival', 'zone-a', {
+      tags: ['npc', 'named'],
+      relations: { 'player-trust': 70 },
+    });
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [{ factionId: 'watch', entityIds: ['rival'] }] }),
+        createCompanionCore(),
+        createWorldTick(),
+      ],
+      entities: [makePlayer(), npc],
+      zones,
+    });
+
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(getPersistedNpcProfiles(engine.world)[0].breakpoint).toBe('allied');
+    expect(getPersistedNpcChains(engine.world)).toEqual([]);
+
+    engine.world.entities.rival.relations = { 'player-trust': -40, 'player-fear': 50 };
+    // Keep regular deriveNpcGoals from minting an accuse (loyalty > 60 + knownRumors
+    // after the chain's own warn rumor) — the chain is the path under test.
+    getFactionCognition(engine.world, 'watch').cohesion = 0.4;
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' }); // collapse — chain minted, delay 2
+    expect(getPersistedNpcProfiles(engine.world)[0].breakpoint).toBe('hostile');
+    expect(getPersistedNpcChains(engine.world).some((c) => c.kind === 'retaliation' && !c.resolved)).toBe(true);
+    expect(engine.world.eventLog.some((e) => e.type === 'npc.action.resolved')).toBe(false);
+
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' }); // wait 1
+    expect(engine.world.eventLog.some((e) => e.type === 'npc.action.resolved')).toBe(false);
+
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' }); // wait 2 — warn
+    const verbs = engine.world.eventLog
+      .filter((e) => e.type === 'npc.action.resolved')
+      .map((e) => e.payload.verb);
+    expect(verbs).toEqual(['warn']);
+
+    for (let i = 0; i < 4; i++) {
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+    }
+    const later = engine.world.eventLog
+      .filter((e) => e.type === 'npc.action.resolved')
+      .map((e) => e.payload.verb);
+    expect(later).toEqual(['warn', 'accuse']);
+  });
+
+  it('F-780f3717: a quiet allied NPC never grows a chain', () => {
+    const npc = makeNamedNpc('friend', 'Friend', 'zone-a', {
+      tags: ['npc', 'named'],
+      relations: { 'player-trust': 70 },
+    });
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [{ factionId: 'watch', entityIds: ['friend'] }] }),
+        createCompanionCore(),
+        createWorldTick(),
+      ],
+      entities: [makePlayer(), npc],
+      zones,
+    });
+    for (let i = 0; i < 3; i++) {
+      if (i > 0) engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+    }
+    expect(getPersistedNpcProfiles(engine.world)[0].breakpoint).toBe('allied');
+    expect(getPersistedNpcChains(engine.world)).toEqual([]);
+    expect(engine.world.eventLog.some((e) => e.type === 'npc.action.resolved')).toBe(false);
   });
 });
 

@@ -19,6 +19,8 @@ import { createDialogueCore } from './dialogue-core.js';
 import { getLeverageState } from './player-leverage.js';
 import { createObligation, setPersistedNpcState } from './npc-agency.js';
 import type { NpcObligationLedger } from './npc-agency.js';
+import { createFactionCognition } from './faction-cognition.js';
+import { createCognitionCore } from './cognition-core.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -119,6 +121,34 @@ describe('dialogue-core: speakHandler', () => {
     expect(entered).toBeDefined();
     expect(entered!.payload.nodeId).toBe('entry');
     expect(entered!.payload.text).toBe('Welcome, traveler.');
+  });
+
+  it('F-6f730726: speak at reputation -60 attaches the unwelcome dialogueBias; rep 0 does not', () => {
+    const guildModules = () => [
+      createCognitionCore(),
+      createDialogueCore([dialogue]),
+      createFactionCognition({ factions: [{ factionId: 'guild', entityIds: ['merchant'] }] }),
+    ];
+    const unwelcome = createTestEngine({
+      modules: guildModules(),
+      entities: [player, npc],
+      zones,
+      globals: { reputation_guild: -60 },
+    });
+    const cold = unwelcome.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(cold.payload.text).toBe('Welcome, traveler.');
+    expect(cold.payload.dialogueBias).toBe('This one is not welcome here.');
+
+    const neutral = createTestEngine({
+      modules: guildModules(),
+      entities: [player, npc],
+      zones,
+    });
+    const warm = neutral.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(warm.payload.text).toBe('Welcome, traveler.');
+    expect(warm.payload.dialogueBias).toBeUndefined();
   });
 
   it('finds dialogue by explicit dialogueId parameter', () => {

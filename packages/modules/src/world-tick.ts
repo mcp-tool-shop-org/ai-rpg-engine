@@ -119,12 +119,10 @@
 // Determinism: no randomness anywhere — every branch reads world state, and
 // faction/district enumeration is sorted, so same world in ⇒ same events out.
 //
-// Honest ceilings (documented, not oversights): playerRumors is passed empty —
-// rumor-propagation's belief-transport records are a different shape from
-// PlayerRumor and inventing valence/spread here would fake a system that
-// doesn't exist yet, so the rumor-gated spawn rules stay dormant. Step 5a's
-// own npc-agency tick passes the SAME undefined playerRumors for the same
-// reason. Economy inputs (F-d0b5edb5/F-6008456f): district economies now
+// Honest ceilings (documented, not oversights): playerRumors is the live
+// getPlayerRumorState(world).rumors ledger — the same PlayerRumor[] evaluatePressures
+// and buildNpcProfile already consume (revenge-attempt / navy-bounty / camp-panic,
+// NPC knownRumors). Economy inputs (F-d0b5edb5/F-6008456f): district economies now
 // tick every round (step 0b below) and buildPressureInputs sets
 // districtEconomies from the same store, so the 4 economy-driven pressure
 // kinds (supply-crisis, trade-war, black-market-boom, crafting-shortage) can
@@ -196,15 +194,23 @@ import {
   isNamedNpc,
   buildAllNpcProfiles,
   runNpcAgencyTick,
+  resolveNpcAction,
   tickObligations,
   createObligation,
   addObligation,
   getPersistedNpcProfiles,
   getPersistedNpcObligations,
   getPersistedNpcLastActions,
+  getPersistedNpcChains,
   setPersistedNpcState,
+  evaluateConsequenceChainTrigger,
+  buildConsequenceChain,
+  tickConsequenceChain,
+  shouldResolveChainStep,
+  resolveConsequenceChainStep,
   type LoyaltyBreakpoint,
   type NpcObligationLedger,
+  type ConsequenceChain,
 } from './npc-agency.js';
 import { computeDistrictMood, computeDistrictModifiers, type DistrictMood } from './district-mood.js';
 import {
@@ -1045,7 +1051,7 @@ export function buildPressureInputs(
   const districtEconomies = new Map(Object.entries(getEconomyCoreState(world).districts));
 
   return {
-    playerRumors: [], // documented ceiling — see file header
+    playerRumors: getPlayerRumorState(world).rumors,
     reputation,
     milestones: state.milestones,
     factionStates,
@@ -1521,7 +1527,7 @@ const NPC_RUMOR_SOURCES = new Set<NpcRumorSource>([
 /**
  * Gate + drive npc-agency.ts's runNpcAgencyTick for one round, applying every
  * returned NpcEffect and persisting the round's profiles/last-actions/
- * obligation ledgers to world.modules['npc-agency'].
+ * obligation ledgers / active consequence chains to world.modules['npc-agency'].
  *
  * SEED-0 IDENTITY (non-negotiable): a world with NO named NPCs must be
  * byte-identical to today — no npc-agency namespace created, no events, no
@@ -1583,6 +1589,16 @@ function runNpcAgencyStep(
   const namedNpcsPresent = Object.values(world.entities).some((e) => isNamedNpc(e, world.playerId));
   if (!namedNpcsPresent) return; // SEED-0 identity — read and write nothing
 
+  // Last tick's breakpoints (still on the namespace — we have not overwritten
+  // it yet) are the "previous" half of evaluateConsequenceChainTrigger.
+  const previousBreakpoints = new Map(
+    getPersistedNpcProfiles(world).map((p) => [p.npcId, p.breakpoint] as const),
+  );
+  // Tick EXISTING chains first so a chain minted this round with delayTurns:2
+  // needs two subsequent waits, and a delayTurns:0 step can still fire the
+  // same round it is built (shouldResolve sees 0 without a same-tick decrement).
+  let chains: ConsequenceChain[] = getPersistedNpcChains(world).map(tickConsequenceChain);
+
   // Age the obligation ledgers BEFORE building this round's profiles/goals —
   // the same "age the lifecycle, then evaluate against the aged version"
   // order tickPressures/tickOpportunities already use for their own state.
@@ -1591,10 +1607,48 @@ function runNpcAgencyStep(
     obligationLedgers.set(npcId, tickObligations(ledger));
   }
 
-  // playerRumors: undefined — the SAME honest ceiling buildPressureInputs'
-  // own playerRumors: [] already documents in this file's header.
-  const profiles = buildAllNpcProfiles(world, world.playerId, active, undefined, obligationLedgers);
-  const results = runNpcAgencyTick(world, world.playerId, active, currentTick, undefined, obligationLedgers);
+  const playerRumors = getPlayerRumorState(world).rumors;
+  const profiles = buildAllNpcProfiles(world, world.playerId, active, playerRumors, obligationLedgers);
+  const results = runNpcAgencyTick(world, world.playerId, active, currentTick, playerRumors, obligationLedgers);
+
+  // Breakpoint-shift / obligation triggers → delayed verbs through the SAME
+  // resolveNpcAction apply path the regular tick already uses.
+  const chainKeys = new Set(chains.map((c) => `${c.npcId}:${c.kind}`));
+  for (const profile of profiles) {
+    const prev = previousBreakpoints.get(profile.npcId) ?? profile.breakpoint;
+    const kind = evaluateConsequenceChainTrigger(
+      profile,
+      prev,
+      obligationLedgers.get(profile.npcId),
+    );
+    if (!kind) continue;
+    const key = `${profile.npcId}:${kind}`;
+    if (chainKeys.has(key)) continue;
+    chainKeys.add(key);
+    chains.push(buildConsequenceChain(profile.npcId, kind, kind, currentTick));
+  }
+  chains.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const nextChains: ConsequenceChain[] = [];
+  for (const chain of chains) {
+    if (!shouldResolveChainStep(chain)) {
+      nextChains.push(chain);
+      continue;
+    }
+    const stepped = resolveConsequenceChainStep(chain);
+    if (!stepped) {
+      nextChains.push(chain);
+      continue;
+    }
+    const npc = world.entities[chain.npcId];
+    results.push(resolveNpcAction({
+      npcId: chain.npcId,
+      verb: stepped.verb,
+      targetEntityId: world.playerId,
+      description: `${npc?.name ?? chain.npcId} ${stepped.description}`,
+    }, world));
+    nextChains.push(stepped.chain);
+  }
+  chains = nextChains;
 
   // Party state and opportunities are each read once and committed once —
   // the SAME batched-commit shape applyCompanionReactions above uses, so N
@@ -1842,8 +1896,9 @@ function runNpcAgencyStep(
   // of every NPC that ever acted, including ones since dead or unnamed.
   const currentNpcIds = new Set(profiles.map((p) => p.npcId));
   const prunedLastActions = [...lastActionsByNpc.values()].filter((r) => currentNpcIds.has(r.action.npcId));
+  const prunedChains = chains.filter((c) => currentNpcIds.has(c.npcId));
 
-  setPersistedNpcState(world, profiles, prunedLastActions, obligationLedgers);
+  setPersistedNpcState(world, profiles, prunedLastActions, obligationLedgers, prunedChains);
 }
 
 // ---------------------------------------------------------------------------

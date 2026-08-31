@@ -1232,6 +1232,7 @@ type NpcAgencyNamespace = {
   profiles?: unknown;
   lastActions?: unknown;
   obligationLedgers?: unknown;
+  activeChains?: unknown;
 };
 
 /** Peek the persisted namespace WITHOUT attaching (mirrors world-tick.ts's peekState contract). */
@@ -1285,23 +1286,40 @@ export function getPersistedNpcObligations(world: WorldState): Map<string, NpcOb
 }
 
 /**
+ * Non-attaching read of persisted consequence chains. [] when absent or
+ * malformed. world-tick.ts's per-round step is the production writer.
+ */
+export function getPersistedNpcChains(world: WorldState): ConsequenceChain[] {
+  const value = peekNpcAgencyNamespace(world)?.activeChains;
+  return Array.isArray(value)
+    ? value.filter((v): v is ConsequenceChain => typeof v === 'object' && v !== null && typeof (v as ConsequenceChain).npcId === 'string')
+    : [];
+}
+
+/**
  * Persist this round's NPC agency state. The ONLY writer (world-tick.ts's
  * per-round step) gates this call on "at least one named NPC exists this
  * round" — SEED-0 identity depends on this function never being invoked for
  * a world with none. A full overwrite (not a tolerant merge like
  * opportunity-core's setPersistedOpportunities) is safe and simpler here —
  * no sibling module shares this namespace.
+ *
+ * `activeChains` is optional so sibling writers that only touch obligation
+ * ledgers (opportunity-resolution) preserve whatever chains world-tick last
+ * persisted. Passing the array (including `[]`) is a full replace.
  */
 export function setPersistedNpcState(
   world: WorldState,
   profiles: NpcProfile[],
   lastActions: NpcActionResult[],
   obligationLedgers: Map<string, NpcObligationLedger>,
+  activeChains?: ConsequenceChain[],
 ): void {
   world.modules['npc-agency'] = {
     profiles,
     lastActions,
     obligationLedgers: Object.fromEntries(obligationLedgers),
+    activeChains: activeChains ?? getPersistedNpcChains(world),
   };
 }
 

@@ -36,9 +36,10 @@ export type ReputationConsequence = {
    */
   accessLevel: 'denied' | 'restricted' | 'normal' | 'privileged';
   /**
-   * One-liner for prompt injection describing faction attitude. No production
-   * caller yet (F-4684385c) — reserved for a future dialogue consumer
-   * (targeted v3.0), same status as accessLevel above.
+   * One-liner describing faction attitude. dialogue-core enterNode attaches
+   * this on `dialogue.node.entered` when the speaker has a faction and the
+   * string is non-empty. The middle band is `''` — authored node.text stays
+   * untouched (F-6f730726). Access gating stays getFactionAccess / F-7d2c4c59.
    */
   dialogueBias: string;
 };

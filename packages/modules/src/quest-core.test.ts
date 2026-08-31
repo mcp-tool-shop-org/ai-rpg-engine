@@ -507,6 +507,34 @@ describe('fail branch (failStage routing)', () => {
   });
 });
 
+describe('quest-level failConditions (F-71c542ed)', () => {
+  const doomedHunt: QuestDefinition = {
+    ...huntQuest,
+    id: 'doomed-hunt',
+    name: 'The Doomed Hunt',
+    failConditions: [{ type: 'has-flag', params: { id: 'target-escaped' } }],
+  };
+
+  it('activating a quest with a has-flag failCondition, then setting the flag, fails the quest and emits quest.failed', () => {
+    const engine = makeEngine([doomedHunt]);
+    enterZone(engine, 'wilds');
+    expect(engine.world.quests['doomed-hunt'].status).toBe('active');
+
+    engine.world.globals['target-escaped'] = true;
+    engine.store.emitEvent('world.flag.changed', { key: 'target-escaped' });
+
+    expect(engine.world.quests['doomed-hunt'].status).toBe('failed');
+    const failed = eventsOfType(engine, 'quest.failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].payload.questId).toBe('doomed-hunt');
+    expect(failed[0].presentation).toEqual({ channels: ['narrator'], priority: 'high' });
+
+    // Stop track: further progress events do not advance a failed quest.
+    kill(engine, 'wolf-1');
+    expect(questProgressCount(engine.world.quests['doomed-hunt'], 'cull')).toBe(0);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Serialization — mid-quest round trip
 // ---------------------------------------------------------------------------

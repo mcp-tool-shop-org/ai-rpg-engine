@@ -49,10 +49,14 @@ import {
 } from './companion-core.js';
 import { evaluateCompanionReactions, type ReactionTrigger } from './companion-reactions.js';
 import { getFactionCognition } from './faction-cognition.js';
-// Type-only (F-92dd2068 — the anti-retrofit modifier slot): no behavior
-// coupling to npc-agency.ts, just the shape a future wave's
-// computeRelationshipModifiers output will pass in.
-import type { RelationshipModifiers } from './npc-agency.js';
+import {
+  computeRelationshipModifiers,
+  getPersistedNpcProfiles,
+  getPersistedNpcObligations,
+  getNetObligationWeight,
+  type RelationshipModifiers,
+  type NpcProfile,
+} from './npc-agency.js';
 import { composeLeverageModifiers } from './leverage-modifiers.js';
 
 // Minimal shape of profile hints needed for leverage gain computation.
@@ -457,14 +461,11 @@ export function getSabotageRequirements(subAction: PlayerSabotageVerb): Leverage
 // --- Relationship Modifiers (F-92dd2068: the anti-retrofit modifier slot) ---
 //
 // Every resolve*Action below takes an OPTIONAL trailing `modifiers` param.
-// Absent (the only case any production caller exercises today —
-// createPlayerLeverageCore never threads a real NPC relationship in this
-// wave), it defaults to this neutral struct: multiplying any cost by 1.0 and
-// applying a 0.0 side-effect chance is a byte-identical no-op, so all 15
-// pre-existing resolve*Action unit tests keep passing unchanged. The slot
-// exists so a FUTURE wave that wires npc-agency.ts's
-// computeRelationshipModifiers into the verb layer only has to pass a value
-// in — no resolve*Action signature changes, no retrofit.
+// Absent (target-less seed/disguise, or no persisted npc-agency profile for
+// the target), it defaults to this neutral struct: multiplying any cost by
+// 1.0 and applying a 0.0 side-effect chance is a byte-identical no-op.
+// Verb handlers look up a persisted NPC profile / faction representative and
+// pass computeRelationshipModifiers when one exists (F-efc91702).
 const NEUTRAL_MODIFIERS: RelationshipModifiers = {
   costMultiplier: 1.0,
   reputationMultiplier: 1.0,
@@ -1586,6 +1587,39 @@ function rejectLeverageAction(action: ActionIntent, reason: string): ResolvedEve
   return [makeEvent(action, 'action.rejected', { verb: action.verb, reason })];
 }
 
+/**
+ * Look up the persisted npc-agency profile for a verb target: the NPC id
+ * itself, or a named representative of that faction. Undefined when the
+ * target is missing or no named NPC has been persisted — callers pass that
+ * through as the resolve*Action default so a target-less seed/disguise
+ * (and every pre-profile world) stays byte-identical to NEUTRAL_MODIFIERS.
+ */
+function npcProfileForTarget(world: WorldState, targetId: string | undefined): NpcProfile | undefined {
+  if (!targetId) return undefined;
+  const profiles = getPersistedNpcProfiles(world);
+  const direct = profiles.find((p) => p.npcId === targetId);
+  if (direct) return direct;
+  return profiles
+    .filter((p) => p.factionId === targetId)
+    .sort((a, b) => (a.npcId < b.npcId ? -1 : a.npcId > b.npcId ? 1 : 0))[0];
+}
+
+function relationshipModifiersForTarget(
+  world: WorldState,
+  targetId: string | undefined,
+): RelationshipModifiers | undefined {
+  const representative = npcProfileForTarget(world, targetId);
+  if (!representative) return undefined;
+  const ledger = getPersistedNpcObligations(world).get(representative.npcId);
+  const net = ledger ? getNetObligationWeight(ledger, world.playerId) : 0;
+  return computeRelationshipModifiers(
+    representative.breakpoint,
+    representative.dominantAxis,
+    net,
+    representative.relationship.trust,
+  );
+}
+
 /** Shared shape for all seven resolveSocialAction-backed verbs (bribe,
  *  intimidate, petition-authority, call-in-favor, recruit-ally, disguise,
  *  stake-claim) — all resolve through the SAME 'social' cost/cooldown group.
@@ -1615,10 +1649,12 @@ function socialVerbHandler(
   const actor = world.entities[action.actorId];
   if (!actor) return rejectLeverageAction(action, LEVERAGE_ACTOR_MISSING);
 
-  const targetFactionId = action.targetIds?.[0];
-  if (requireTargetFaction && !targetFactionId) {
+  const rawTarget = action.targetIds?.[0];
+  if (requireTargetFaction && !rawTarget) {
     return rejectLeverageAction(action, 'no target faction specified');
   }
+  const targetProfile = npcProfileForTarget(world, rawTarget);
+  const targetFactionId = targetProfile?.factionId ?? rawTarget;
 
   const currentTick = action.issuedAtTick;
   const custom = actor.custom ?? {};
@@ -1640,7 +1676,7 @@ function socialVerbHandler(
     playerReputation,
     cognition ? { alertLevel: cognition.alertLevel, cohesion: cognition.cohesion } : undefined,
     currentTick,
-    undefined,
+    relationshipModifiersForTarget(world, rawTarget),
     // The verb layer composes; the resolver above stays a pure function of
     // plain numbers and never learns what a companion or a district mood is.
     // See leverage-modifiers.ts for why that seam is its own module.
@@ -1736,7 +1772,14 @@ function seedHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   }
 
   const leverageState = getLeverageState(custom);
-  const resolution = resolveRumorAction('seed', targetFactionId, leverageState, currentTick, claim);
+  const resolution = resolveRumorAction(
+    'seed',
+    targetFactionId,
+    leverageState,
+    currentTick,
+    claim,
+    relationshipModifiersForTarget(world, targetFactionId),
+  );
   if (!resolution.success) {
     return rejectLeverageAction(action, resolution.failReason ?? 'cannot seed a rumor');
   }
@@ -1878,7 +1921,14 @@ function rumorSpawnVerbHandler(
   }
 
   const leverageState = getLeverageState(custom);
-  const resolution = resolveRumorAction(subAction, targetFactionId, leverageState, currentTick, claim);
+  const resolution = resolveRumorAction(
+    subAction,
+    targetFactionId,
+    leverageState,
+    currentTick,
+    claim,
+    relationshipModifiersForTarget(world, targetFactionId),
+  );
   if (!resolution.success) {
     return rejectLeverageAction(action, resolution.failReason ?? `cannot ${subAction}`);
   }
@@ -1974,7 +2024,14 @@ function rumorManipulationVerbHandler(
 
   const leverageState = getLeverageState(custom);
   const targetFactionId = action.targetIds?.[0];
-  const resolution = resolveRumorAction(subAction, targetFactionId, leverageState, currentTick);
+  const resolution = resolveRumorAction(
+    subAction,
+    targetFactionId,
+    leverageState,
+    currentTick,
+    undefined,
+    relationshipModifiersForTarget(world, targetFactionId),
+  );
   if (!resolution.success) {
     return rejectLeverageAction(action, resolution.failReason ?? `cannot ${subAction}`);
   }
@@ -2055,6 +2112,7 @@ function diplomacyVerbHandler(
     playerReputation,
     { alertLevel: cognition.alertLevel, cohesion: cognition.cohesion },
     currentTick,
+    relationshipModifiersForTarget(world, targetFactionId),
   );
   if (!resolution.success) {
     return rejectLeverageAction(action, resolution.failReason ?? `cannot ${rejectVerbLabel}`);
@@ -2163,6 +2221,7 @@ function sabotageVerbHandler(
     targetFactionId,
     leverageState,
     currentTick,
+    relationshipModifiersForTarget(world, targetFactionId),
   );
   if (!resolution.success) {
     return rejectLeverageAction(action, resolution.failReason ?? `cannot ${rejectVerbLabel}`);

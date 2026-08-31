@@ -577,6 +577,7 @@ export {
   getPersistedNpcProfiles,
   getPersistedNpcLastActions,
   getPersistedNpcObligations,
+  getPersistedNpcChains,
   setPersistedNpcState,
 } from './npc-agency.js';
 export type {

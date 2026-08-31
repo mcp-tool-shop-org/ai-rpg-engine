@@ -15,6 +15,13 @@ import {
   createPlayerLeverageCore,
 } from './player-leverage.js';
 import { getReputationConsequence } from './social-consequence.js';
+import {
+  setPersistedNpcState,
+  createObligation,
+  addObligation,
+  type NpcProfile,
+  type LoyaltyBreakpoint,
+} from './npc-agency.js';
 import type { LeverageHints, LeverageState, LeverageEffect } from './player-leverage.js';
 import { getPlayerRumorState, formatRumorForDirector } from './player-rumor.js';
 import { setPartyState, createPartyState } from './companion-core.js';
@@ -677,6 +684,69 @@ describe('F-92dd2068: a non-neutral modifier scales a cost', () => {
     // finding's "existing tests unchanged" claim. The real proof is the full
     // file passing — see the gate results in this domain's summary.
     expect(true).toBe(true);
+  });
+});
+
+describe('F-efc91702: computeRelationshipModifiers reaches leverage verb handlers', () => {
+  function stubProfile(
+    npcId: string,
+    factionId: string,
+    breakpoint: LoyaltyBreakpoint,
+    trust: number,
+  ): NpcProfile {
+    return {
+      npcId,
+      name: npcId,
+      factionId,
+      goals: [],
+      relationship: { trust, fear: 0, greed: 30, loyalty: 80 },
+      breakpoint,
+      dominantAxis: 'trust',
+      leverageAngle: 'test',
+      knownRumors: [],
+      underPressure: false,
+    };
+  }
+
+  function bribeCost(profile: NpcProfile, obligated: boolean): number {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    const ledgers = new Map();
+    if (obligated) {
+      ledgers.set(
+        profile.npcId,
+        addObligation(
+          { obligations: [] },
+          createObligation('favor', 'npc-owes-player', profile.npcId, 'player', 3, 'warn', 0, null),
+        ),
+      );
+    }
+    setPersistedNpcState(engine.world as WorldState, [profile], [], ledgers);
+    engine.submitAction('bribe', { targetIds: [profile.npcId] });
+    return getLeverageState((engine.world as WorldState).entities['player'].custom ?? {}).favor;
+  }
+
+  it('bribing an allied obligated NPC costs less favor than bribing a hostile one', () => {
+    const alliedLeft = bribeCost(stubProfile('ally', 'guild', 'allied', 70), true);
+    const hostileLeft = bribeCost(stubProfile('foe', 'raiders', 'hostile', -50), false);
+    // Remaining favor: allied spent less, so more remains.
+    expect(alliedLeft).toBeGreaterThan(hostileLeft);
+    expect(alliedLeft).toBeGreaterThan(85); // cheaper than the unaugmented 15
+    expect(hostileLeft).toBeLessThan(85);   // more expensive than 15
+  });
+
+  it('a target-less disguise stays at the unaugmented cost (NEUTRAL_MODIFIERS default)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('disguise', {});
+    // disguise costs influence 5 at 1.0
+    expect(getLeverageState((engine.world as WorldState).entities['player'].custom ?? {}).influence).toBe(95);
   });
 });
 

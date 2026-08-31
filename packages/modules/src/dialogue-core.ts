@@ -16,11 +16,13 @@ import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg
 // (nor does anything in their own dependency chains — cognition-core.ts,
 // faction-cognition.ts, pressure-system.ts, player-rumor.ts), so this is a
 // one-directional edge, not a cycle.
-import { getLeverageState, applyLeverageDeltas } from './player-leverage.js';
+import { getLeverageState, applyLeverageDeltas, getStoredFactionAccess } from './player-leverage.js';
 import { evaluateCondition as evaluateCompiledCondition } from './condition-eval.js';
 import type { LeverageCurrency } from './player-leverage.js';
 import { deriveNpcRelationship, getPersistedNpcObligations } from './npc-agency.js';
 import type { NpcRelationship, NpcObligationLedger, ObligationDirection } from './npc-agency.js';
+import { getReputationConsequence } from './social-consequence.js';
+import { getEntityFaction } from './faction-cognition.js';
 
 export type DialogueState = {
   activeDialogue: string | null;
@@ -227,6 +229,8 @@ function enterNode(
     ?.filter(c => !c.condition || evaluateCondition(c.condition, world))
     .map((c, i) => ({ id: c.id, text: c.text, index: i })) ?? [];
 
+  const dialogueBias = dialogueBiasForSpeaker(world, node.speaker || dState.speakerId);
+
   const events: ResolvedEvent[] = [
     makeEvent(action, 'dialogue.node.entered', {
       nodeId: node.id,
@@ -234,6 +238,7 @@ function enterNode(
       text,
       choices: availableChoices,
       hasChoices: availableChoices.length > 0,
+      ...(dialogueBias ? { dialogueBias } : {}),
     }, {
       presentation: {
         channels: ['dialogue'],
@@ -354,6 +359,19 @@ function factionReputationFor(world: WorldState, factionId: string): number {
   const globalValue = world.globals[`reputation_${factionId}`];
   const accrued = typeof globalValue === 'number' && Number.isFinite(globalValue) ? globalValue : 0;
   return baseline + accrued;
+}
+
+/**
+ * Faction-band one-liner for a speaker. Empty when the speaker has no
+ * faction or the band is the middle (authored node.text stays untouched).
+ */
+function dialogueBiasForSpeaker(world: WorldState, speakerId: string | null | undefined): string {
+  if (!speakerId) return '';
+  const factionId = getEntityFaction(world, speakerId);
+  if (!factionId) return '';
+  const player = world.entities[world.playerId];
+  const stored = getStoredFactionAccess(player?.custom, factionId);
+  return getReputationConsequence(factionReputationFor(world, factionId), stored).dialogueBias;
 }
 
 function evaluateCondition(
