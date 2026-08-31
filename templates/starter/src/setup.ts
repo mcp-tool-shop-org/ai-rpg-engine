@@ -150,7 +150,11 @@ export function createGame(seed?: number): Engine {
     });
 
     // Author data → runtime. JSON hosts: extractSessionContent(pack) →
-    // construct modules (buildWorldStack({ districts: session.districts })) →
+    // construct modules (traversalCore/statusCore/combatCore/inventoryCore/
+    // cognitionCore/environmentCore/districtCore/encounterSpawn +
+    // presence/length-gated quests/dialogues/abilities/equipment — NOT
+    // buildWorldStack; see content-schema's extractSessionContent JSDoc for
+    // the full recipe, F-c9309691) →
     // applyContentPack({ profiles, channels: createStandardChannels() }).
     // Import createStandardChannels from @ai-rpg-engine/modules — do not
     // auto-inject. This factory still wires named catalogs at construction;
@@ -163,9 +167,17 @@ export function createGame(seed?: number): Engine {
         throw new Error(`applyContentPack failed:\n${detail}`);
     }
 
-    // Set player context
-    engine.store.state.playerId = 'player';
-    engine.store.state.locationId = 'start';
+    // F-bc7b8ab1: no manual playerId/locationId stamp needed here —
+    // content.ts's placements[] places pack's single type:'player' entity at
+    // 'start', so applyContentPack's own identity stamp (F-67786a6c) already
+    // derived both onto the store above. Don't add one back for your own
+    // starting zone either: if your pack authors exactly one type:'player'
+    // entity with a placement, the stamp tracks it for free — a hand-written
+    // override here is the exact pattern that can silently diverge from
+    // content.ts once you move the starting zone. Only fall back manually
+    // for a pack that declares zero or several type:'player' entities (the
+    // stamp is deliberately ambiguous-safe: it never guesses):
+    // if (!engine.store.state.playerId) engine.store.state.playerId = 'player';
 
     return engine;
 }

@@ -843,26 +843,40 @@ export function applyContentPack(
     if (itemPlacements.length > 0) applied.itemPlacements = count;
   }
 
-  // --- ruleProfiles (core WorldState, F-0987c369) ---
+  // --- ruleProfiles (core WorldState, F-0987c369; merge semantics F-9930b9b6) ---
   // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
-  // already wrote EntityState.ruleProfileId). When the map is present, clone it
-  // onto the store. A missing id is dropped[] only — never flips ok.
+  // already wrote EntityState.ruleProfileId). When the map is present, MERGE it
+  // onto the store — never replace, same as factions below (F-9930b9b6 — this
+  // block used to wipe the store wholesale, the exact overlay-wipe failure mode
+  // the factions fix beside it was written this wave to prevent) — so an
+  // overlay pack layers over rule profiles a host already registered
+  // (createGame code, or an earlier pack) rather than deleting them. A missing
+  // id is dropped[] only — never flips ok. The unresolved check reads the
+  // store AFTER the merge, so an entity's ruleProfileId resolves against
+  // host-registered profiles too, not just the ones this specific pack
+  // declared — the whole point of merging.
   if (pack.ruleProfiles !== undefined) {
     const cloned = cloneRuleProfiles(pack.ruleProfiles, dropped);
     if (cloned !== undefined) {
-      engine.store.state.ruleProfiles = cloned;
+      // Merged into a local first (rather than reading engine.store.state.
+      // ruleProfiles back out below) because that field is OPTIONAL on
+      // WorldState — a local Record<string, PackRuleProfile> keeps the
+      // post-merge unresolved-check a plain, always-defined lookup.
+      const merged = { ...engine.store.state.ruleProfiles, ...cloned };
+      engine.store.state.ruleProfiles = merged;
       applied.ruleProfiles = Object.keys(cloned).length;
       if (Array.isArray(entities)) {
         for (let i = 0; i < entities.length; i++) {
           const bp = entities[i];
           if (!isRecord(bp) || typeof bp.ruleProfileId !== 'string') continue;
-          if (cloned[bp.ruleProfileId] === undefined) {
+          if (merged[bp.ruleProfileId] === undefined) {
             dropped.push({
               path: `entities[${i}](${idOf(bp)}).ruleProfileId`,
               reason: 'needs-module-vocabulary',
               detail:
-                `unresolved ruleProfileId "${bp.ruleProfileId}" — pack.ruleProfiles has no entry for this id. ` +
-                'The pointer is copied; the registry is not. Dropped, not refused (does not flip applyContentPack.ok).',
+                `unresolved ruleProfileId "${bp.ruleProfileId}" — pack.ruleProfiles (merged with any ` +
+                'host-registered ruleProfiles) has no entry for this id. The pointer is copied; the registry ' +
+                'is not. Dropped, not refused (does not flip applyContentPack.ok).',
             });
           }
         }
@@ -873,9 +887,10 @@ export function applyContentPack(
   // --- factions (core WorldState, F-d54f4d67) ---
   // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
   // already wrote EntityState.faction). When the map is present, MERGE it onto
-  // the store — never replace, unlike ruleProfiles above — so an overlay pack
-  // layers over factions a host already registered (createGame code, or an
-  // earlier pack) rather than wiping them. A missing id is dropped[] only —
+  // the store — never replace, same as ruleProfiles above (F-9930b9b6 closed
+  // the asymmetry this comment used to name) — so an overlay pack layers over
+  // factions a host already registered (createGame code, or an earlier pack)
+  // rather than wiping them. A missing id is dropped[] only —
   // never flips ok. The unresolved check reads the store AFTER the merge, so an
   // entity's faction resolves against host-registered factions too, not just
   // the ones this specific pack declared — the whole point of merging.
@@ -1044,38 +1059,90 @@ export function applyContentPack(
  * `applyContentPack` writes into a booted world. These two are read at
  * construction time and handed to the things that close over them:
  *
- * JSON-pack boot recipe (F-82b17cb3 / F-5b62643f): extractSessionContent →
+ * JSON-pack boot recipe (F-82b17cb3 / F-5b62643f / F-c9309691): extractSessionContent →
  * construct modules from the bag → applyContentPack({ profiles, channels }).
  * applyContentPack stays UNROUTED for dialogues/quests/abilities/statuses
  * (those modules freeze their registries at construction). items also live
  * here so a host can hand them to createEquipmentCore; apply still resolves
  * entity inventory/equipment against pack.items. districts / encounterAnchors
  * / hazardDefinitions are construction-time slices AND module-intake keys —
- * pass session.districts into buildWorldStack, and inject
- * createStandardChannels() so apply still routes via channels (do not
- * auto-inject; do not import @ai-rpg-engine/modules into this package).
- * `manifest` (F-df51e0bf) is lifted here too and belongs in the `new Engine()`
- * call below — `EngineOptions.manifest` is REQUIRED with no default, so a
- * recipe that omits it is missing a required constructor argument, not just
- * skipping an optional one.
+ * inject createStandardChannels() so apply still routes encounterAnchors /
+ * hazardDefinitions via channels (do not auto-inject; do not import
+ * @ai-rpg-engine/modules into this package). `manifest` (F-df51e0bf) is
+ * lifted here too and belongs in the `new Engine()` call below —
+ * `EngineOptions.manifest` is REQUIRED with no default, so a recipe that
+ * omits it is missing a required constructor argument, not just skipping an
+ * optional one.
+ *
+ * ⚠ F-c9309691 — the recipe below does NOT call `buildWorldStack()`. The
+ * documented recipe used to (`...buildWorldStack({ quests: session.quests ??
+ * [], districts: session.districts ?? [] }).modules`) and could not
+ * construct, two independent ways: (1) `WorldStackConfig.quests` is a
+ * {@link QuestCoreConfig}-shaped object (`{ gameId, quests }`), never a bare
+ * array — `session.quests ?? []` is truthy even when empty (`[]` is truthy in
+ * JS), so `buildWorldStack`'s own `if (config.quests)` guard always fired and
+ * handed a bare array straight to `createQuestCore`, which reads
+ * `config.quests` off it (`undefined`) and throws iterating it, quest content
+ * or not; (2) `buildWorldStack`'s faction-cognition / rumor-propagation /
+ * belief-provenance modules require `cognition-core` and `perception-filter`
+ * registered BEFORE the stack (world-stack.ts's own file-header contract),
+ * and this seam has no host UI to wire perception through. The list below
+ * mirrors `@ai-rpg-engine/ollama`'s `loadPlayableModules` instead — the
+ * engine's own tested minimal playable stack — proven end-to-end in
+ * packages/starter-fantasy/src/json-boot-recipe.test.ts:
  *
  * ```ts
- * import { buildWorldStack, createStandardChannels } from '@ai-rpg-engine/modules';
+ * import {
+ *   traversalCore, statusCore, combatCore, inventoryCore,
+ *   createCognitionCore, createEnvironmentCore, createDistrictCore,
+ *   createEncounterSpawn, createQuestCore, createDialogueCore,
+ *   createAbilityCore, createProgressionCore, createWorldTick,
+ *   createStandardChannels, registerStatusDefinitions, applyStatus, removeStatus,
+ * } from '@ai-rpg-engine/modules';
+ * import { createEquipmentCore } from '@ai-rpg-engine/equipment';
  *
  * const session = extractSessionContent(pack);
+ * const gameId = (session.manifest as { id?: string } | undefined)?.id ?? hostManifest.id;
  * registerStatusDefinitions(session.statuses ?? []);
  * const engine = new Engine({
  *   manifest: session.manifest ?? hostManifest,
  *   ruleset: session.ruleset ?? hostRuleset,
  *   modules: [
- *     createDialogueCore(session.dialogues ?? []),
- *     createAbilityCore({ abilities: session.abilities ?? [] }),
+ *     traversalCore,
+ *     statusCore,
+ *     // Presence-gated, NOT length-gated (contrast quests below): an
+ *     // authored `abilities: []` still constructs the module — matches
+ *     // loadPlayableModules's own Array.isArray guard.
+ *     ...(session.abilities ? [createAbilityCore({ abilities: session.abilities })] : []),
+ *     combatCore,
+ *     inventoryCore,
+ *     createCognitionCore(),
+ *     createEnvironmentCore(),
+ *     createDistrictCore({ districts: session.districts ?? [] }),
+ *     createEncounterSpawn({ gameId, encounters: [], entityTemplates: [], zoneTables: {} }),
+ *     // Length-gated, NOT presence-gated: QuestCoreConfig is { gameId,
+ *     // quests }, never a bare array, and an empty array must not construct
+ *     // the module (see the ⚠ note above — this guard IS the fix).
+ *     ...(session.quests && session.quests.length > 0
+ *       ? [createQuestCore({ gameId, quests: session.quests })]
+ *       : []),
+ *     ...(session.dialogues && session.dialogues.length > 0
+ *       ? [createDialogueCore(session.dialogues)]
+ *       : []),
  *     createProgressionCore({ trees: session.progressionTrees ?? [] }),
- *     createEquipmentCore({ catalog: { items: session.items ?? [] } }),
- *     ...buildWorldStack({
- *       quests: session.quests ?? [],
- *       districts: session.districts ?? [],
- *     }).modules,
+ *     createWorldTick(),
+ *     // Optional: only when the pack authors an item catalog.
+ *     // EquipmentCoreConfig REQUIRES both `catalog` AND `statuses` (neither
+ *     // is `?` — equipment-core.ts:746-751, EquipmentStatusOps); `statuses`
+ *     // is the same { registerDefinitions, apply, remove } triple every
+ *     // starter wires from this engine build's own module ops (see e.g.
+ *     // starter-fantasy/src/setup.ts).
+ *     ...(session.items
+ *       ? [createEquipmentCore({
+ *           catalog: { items: session.items },
+ *           statuses: { registerDefinitions: registerStatusDefinitions, apply: applyStatus, remove: removeStatus },
+ *         })]
+ *       : []),
  *   ],
  * });
  * applyContentPack(engine, pack, { profiles, channels: createStandardChannels() });
@@ -1149,6 +1216,37 @@ export type SessionContent = {
   advisories: ValidationError[];
 };
 
+/**
+ * Structural GameManifest check (F-2f4bfcdf), mirrored from pack-registry's
+ * discover.ts `isManifest()` (id/title/version/engineVersion/ruleset all
+ * present as the right primitive type — id additionally non-empty — and
+ * modules an array) so a structurally incomplete session.manifest degrades
+ * to an advisory here the same way it already does on the catalog/listing
+ * path, instead of being handed straight into `new Engine({ manifest:
+ * session.manifest, ... })` below — EngineOptions.manifest is REQUIRED, and
+ * WorldStore's constructor does `gameId: options.manifest.id` with no
+ * validation of its own (packages/core/src/world.ts), silently producing
+ * `world.meta.gameId = undefined` threaded through every gameId-keyed
+ * registry otherwise.
+ *
+ * content-schema must not import @ai-rpg-engine/pack-registry (this package
+ * sits BELOW it in the layering), so the check is duplicated here rather than
+ * imported. Diff against pack-registry/src/discover.ts's isManifest() when
+ * either changes — same fields, same rules, kept in lockstep by this comment
+ * on both sides.
+ */
+function isManifestShape(v: unknown): boolean {
+  return (
+    isRecord(v) &&
+    typeof v.id === 'string' && v.id.length > 0 &&
+    typeof v.title === 'string' &&
+    typeof v.version === 'string' &&
+    typeof v.engineVersion === 'string' &&
+    typeof v.ruleset === 'string' &&
+    Array.isArray(v.modules)
+  );
+}
+
 export function extractSessionContent(pack: ContentPack): SessionContent {
   const raw = pack as unknown as Record<string, unknown>;
   const advisories: ValidationError[] = [];
@@ -1211,8 +1309,15 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
 
   // F-df51e0bf: EngineOptions.manifest is REQUIRED with no default. Lifted the
   // identical advisory-skip shape as ruleset just above.
+  //
+  // F-2f4bfcdf: the shape check is the full GameManifest structural check
+  // (isManifestShape, mirroring pack-registry's isManifest()), not merely
+  // isRecord — every OTHER branch in this function enforces its own shape
+  // (buildCatalog/progressionTrees/archetypes/backgrounds/ruleset above) and
+  // manifest guards a REQUIRED Engine constructor argument, so it must be at
+  // least as strict, not the shallowest check in the group.
   if (raw.manifest !== undefined) {
-    if (raw.manifest === null || typeof raw.manifest !== 'object' || Array.isArray(raw.manifest)) {
+    if (!isManifestShape(raw.manifest)) {
       advisories.push({
         path: 'pack.manifest',
         message: 'must be a GameManifest object — skipped.',

@@ -197,8 +197,11 @@ export function createGame(seed?: number): Engine {
     ],
   });
 
-  // JSON hosts: extractSessionContent(pack) → construct modules
-  // (buildWorldStack({ districts: session.districts })) →
+  // JSON hosts: extractSessionContent(pack) → construct modules (traversalCore
+  // /statusCore/combatCore/inventoryCore/cognitionCore/environmentCore/
+  // districtCore/encounterSpawn + presence/length-gated quests/dialogues/
+  // abilities/equipment — NOT buildWorldStack; see content-schema's
+  // extractSessionContent JSDoc for the full recipe, F-c9309691) →
   // applyContentPack({ profiles, channels: createStandardChannels() }).
   // createStandardChannels is imported from @ai-rpg-engine/modules, not
   // content-schema. This factory still wires named catalogs at construction;
@@ -210,8 +213,13 @@ export function createGame(seed?: number): Engine {
     throw new Error(`applyContentPack failed:\n${detail}`);
   }
 
-  engine.store.state.playerId = 'player';
-  engine.store.state.locationId = 'chapel-entrance';
+  // F-bc7b8ab1: no manual playerId/locationId stamp needed here — pack.entities
+  // carries exactly one type:'player' entity ('player', placed at
+  // 'chapel-entrance' in content.ts), so applyContentPack's own identity
+  // stamp (F-67786a6c) already derived both onto the store above. The
+  // pre-fix-style override this replaced was redundant with, and could
+  // silently diverge from, the pack's own placement data. Pinned in
+  // setup.test.ts.
 
   // Listen for pilgrim gift — give healing draught after dialogue
   engine.store.events.on('dialogue.ended', (event) => {

@@ -687,6 +687,42 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     ]);
   });
 
+  it('F-2f4bfcdf: a structurally incomplete pack.manifest (missing required GameManifest fields) is advisory-skipped, not carried', () => {
+    // {title: 'Foo'} is a non-null, non-array object — the OLD check (isRecord
+    // only) accepted this and handed it straight to `new Engine({ manifest:
+    // session.manifest, ... })`, where WorldStore does `gameId:
+    // options.manifest.id` with no validation of its own, silently producing
+    // `world.meta.gameId = undefined`. pack-registry's discover.ts isManifest()
+    // already refuses/stubs the identical field for the catalog/listing path;
+    // this mirrors that same structural check locally (content-schema must not
+    // import pack-registry).
+    const session = extractSessionContent({ manifest: { title: 'Foo' } } as unknown as ContentPack);
+    expect(session.manifest).toBeUndefined();
+    expect(session.advisories).toEqual([
+      { path: 'pack.manifest', message: 'must be a GameManifest object — skipped.' },
+    ]);
+  });
+
+  it('F-2f4bfcdf: a pack.manifest with an empty-string id is advisory-skipped (mirrors isManifest\'s id.length > 0 check)', () => {
+    const session = extractSessionContent({
+      manifest: { id: '', title: 'G', version: '1.0.0', engineVersion: '3.8.0', ruleset: 'r', modules: [] },
+    } as unknown as ContentPack);
+    expect(session.manifest).toBeUndefined();
+    expect(session.advisories).toEqual([
+      { path: 'pack.manifest', message: 'must be a GameManifest object — skipped.' },
+    ]);
+  });
+
+  it('F-2f4bfcdf: a pack.manifest whose modules field is not an array is advisory-skipped', () => {
+    const session = extractSessionContent({
+      manifest: { id: 'g', title: 'G', version: '1.0.0', engineVersion: '3.8.0', ruleset: 'r', modules: 'nope' },
+    } as unknown as ContentPack);
+    expect(session.manifest).toBeUndefined();
+    expect(session.advisories).toEqual([
+      { path: 'pack.manifest', message: 'must be a GameManifest object — skipped.' },
+    ]);
+  });
+
   it('F-82b17cb3: extractSessionContent surfaces dialogues/quests/abilities/statuses/items', () => {
     const session = extractSessionContent({
       dialogues: [{ id: 'd' }],
@@ -941,6 +977,36 @@ describe('F-0987c369 — pack.ruleProfiles clones onto WorldState.ruleProfiles',
     expect(engine.world.entities['aldric'].ruleProfileId).toBe('healer');
     engine.store.state.ruleProfiles!.healer.statMapping.attack = 'vigor';
     expect(pack.ruleProfiles!.healer.statMapping.attack).toBe('will');
+  });
+
+  it('MERGES onto ruleProfiles a host already registered, never replaces the map (F-9930b9b6)', () => {
+    const engine = bootEngine();
+    engine.store.state.ruleProfiles = {
+      brute: { statMapping: { attack: 'vigor', precision: 'vigor', resolve: 'vigor' } },
+    };
+    const r = applyContentPack(engine, {
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.ruleProfiles!.brute).toBeDefined();
+    expect(engine.store.state.ruleProfiles!.healer).toBeDefined();
+  });
+
+  it('an entity ruleProfileId resolving only against a HOST-registered profile is not reported unresolved (F-9930b9b6)', () => {
+    const engine = bootEngine();
+    engine.store.state.ruleProfiles = {
+      brute: { statMapping: { attack: 'vigor', precision: 'vigor', resolve: 'vigor' } },
+    };
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'ogre', type: 'npc', name: 'Ogre', ruleProfileId: 'brute' }],
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('ruleProfileId'))).toBeUndefined();
   });
 
   it('a missing ruleProfileId lands in dropped[] only — does not flip ok', () => {

@@ -93,3 +93,21 @@ describe('fantasy setup — cross-instance state isolation', () => {
       .not.toBe(a.store.state.entities['ash-ghoul'].resources);
   });
 });
+
+describe('fantasy setup — identity stamp owns playerId/locationId (F-bc7b8ab1)', () => {
+  it('boots with playerId "player" and locationId "chapel-entrance" from applyContentPack\'s own identity stamp, with no manual override line', () => {
+    // Pin, not a bug fix: this must read identically before and after
+    // removing setup.ts's post-applyContentPack `engine.store.state.playerId
+    // = 'player'; engine.store.state.locationId = 'chapel-entrance';` lines —
+    // pack.entities carries exactly one type:'player' entity ('player'),
+    // placed at 'chapel-entrance' (content.ts), so applyContentPack's own
+    // identity stamp (F-67786a6c) already derives the same values. The
+    // manual lines were the pre-fix-style override the stamp was written to
+    // obsolete; a content author who moves the starting zone without
+    // updating the matching literal here would have gotten silent
+    // divergence — the stamp tracks the change for free.
+    const engine = createGame(42);
+    expect(engine.store.state.playerId).toBe('player');
+    expect(engine.store.state.locationId).toBe('chapel-entrance');
+  });
+});

@@ -305,3 +305,23 @@ describe('starter template — cross-instance state isolation', () => {
             .not.toBe(a.world.entities['grunt'].resources);
     });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// IDENTITY STAMP (F-bc7b8ab1)
+// Pin, not a bug fix: this must read identically before and after removing
+// setup.ts's post-applyContentPack `engine.store.state.playerId = 'player';
+// engine.store.state.locationId = 'start';` lines — content.ts's
+// placements[] places { entityId: 'player', zoneId: 'start' }, and pack
+// carries exactly one type:'player' entity, so applyContentPack's own
+// identity stamp (F-67786a6c) already derives the same values. The manual
+// lines were the pre-fix-style override the stamp was written to obsolete —
+// this is the scaffold every new game is copied from, so the leftover
+// pattern would otherwise keep propagating into new starters.
+// ═══════════════════════════════════════════════════════════════════
+describe('starter template — identity stamp owns playerId/locationId (F-bc7b8ab1)', () => {
+    it('boots with playerId "player" and locationId "start" from applyContentPack\'s own identity stamp, with no manual override line', () => {
+        const engine = createGame(1);
+        expect(engine.world.playerId).toBe('player');
+        expect(engine.world.locationId).toBe('start');
+    });
+});
