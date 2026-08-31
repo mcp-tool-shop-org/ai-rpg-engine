@@ -344,7 +344,7 @@ describe('loadContent', () => {
       ruleProfiles: {
         healer: { statMapping: { attack: 'will' } },
       },
-    } as ContentPack);
+    } as unknown as ContentPack);
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('precision') || e.path.includes('statMapping'))).toBe(true);
   });
