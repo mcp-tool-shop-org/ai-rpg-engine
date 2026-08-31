@@ -12,7 +12,7 @@ import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 export const manifest: GameManifest = {
   id: 'ashfall-dead',
   title: 'Ashfall Dead',
-  version: '3.9.0',
+  version: '3.10.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'zombie-minimal',
   modules: [
@@ -746,7 +746,7 @@ export const packMeta: PackMetadata = {
   tones: ['tense', 'gritty'],
   tags: ['zombie', 'survival', 'scavenging', 'infection'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.9.0',
+  version: '3.10.0',
   description: 'Survive in a zombie-ravaged city. Manage infection, scavenge supplies, and make impossible choices about who lives.',
   narratorTone: 'survival horror, desperate, tense, bleak',
 };

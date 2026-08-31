@@ -11,7 +11,7 @@ import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyR
 export const manifest: GameManifest = {
   id: 'jade-veil',
   title: 'Jade Veil',
-  version: '3.9.0',
+  version: '3.10.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'ronin-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
@@ -723,7 +723,7 @@ export const packMeta: PackMetadata = {
   tones: ['atmospheric', 'tense'],
   tags: ['feudal', 'ronin', 'investigation', 'honor', 'poison', 'court'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.9.0',
+  version: '3.10.0',
   description: 'Investigate a lord\'s poisoning in a feudal castle where every accusation costs honor. Navigate court politics, duel suspects, and find the truth before dawn.',
   narratorTone: 'feudal court, restrained, precise, weighted with consequence',
 };

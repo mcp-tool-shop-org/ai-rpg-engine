@@ -127,7 +127,7 @@ the renderer.
 
 | Method | Purpose |
 |---|---|
-| `initialize` | Capability handshake. Required first. Returns `packId` / `playerId` additively. |
+| `initialize` | Capability handshake. Required first. Returns `packId` / `playerId` / `locationId` additively, plus `packIntake` (the pack gate's `dropped[]`/`advisories`) when there is something to report — cleared on `load`. |
 | `snapshot` | The whole world, as a delta from empty. Optional `omitEventLog` / `collections` window the resync. |
 | `submitAction` | Submit a player intent. Optional `actorId` (else `world.playerId`). Observers (`writes: false`) are refused. |
 | `advance` | Advance the world without a player action. Observers refused. |

@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.10.0] - 2026-08-31
+
+**The world reaches the player.** v3.7–v3.9 built hints, stings, party state, and
+advisories; almost none of it reached a player's eyes, ears, or a sidecar client's
+wire. This release is the consumer surface.
+
+### Added
+- **All eight narrator-voice hints render.** In the dialogue frame: `textureHint`
+  and `dialogueBias` above the speaker, `dialogueHint` as the speaker-line manner
+  parenthetical, and `partyPresence` / `pressureHint` / `opportunityHint` as
+  footer asides after the choices. In the event log: `moodHint` on zone entry and
+  `situationHint` on inspect. Plain text, 60-column wrapped, byte-absent when a
+  producer is quiet, `NO_COLOR`/non-TTY byte-identical.
+- **`combat.encounter.cleared`** — the authoritative victory event, emitted once
+  when the player's zone has no living hostiles (alive-player gate: a mutual kill
+  reads as defeat; same-tick de-dup: a multi-kill AoE fires it once). Mapped to
+  `music_victory_sting` through `TurnPresenter` via `deriveStingCue` (player
+  defeat outranks a same-turn clearance) and journaled by campaign memory with
+  the surviving party. `deriveTone`/`deriveUiEffects` re-key triumph off the new
+  event — a companion's death no longer renders as a triumphant beat.
+- **The party line on the always-on HUD** — `RenderOptions.partyLine`, composed
+  by the CLI (`buildPartyStatusLine`) from live world state, byte-absent with no
+  party.
+- **Tone-aware zone music** — zone entry carries the raw district `tone` beside
+  `moodHint`; `districtToneToSoundMood` bridges it to the mood-tagged registry
+  (`music_dread` over `ambient_drone` for a grim district), falling through
+  per-field to the documented `scene.enter` targets. A boot-time invariant pins
+  every bridge-emitted mood to a real `CORE_SOUND_PACK` entry.
+- **The spoken-output contract** — `NarrationPlan.asides` carries dialogue
+  fragments (texture, bias, party, pressure, opportunity) in reading order, the
+  spoken line itself exactly once via `plan.speaker`; `SpeakerCue.emotion`
+  carries `dialogueHint` verbatim ('neutral' fallback). `--start` boots now emit
+  the synthesized `world.zone.entered` (`emitZoneEnteredForPlacement`) so the
+  starting zone's surfaces are real from the first frame.
+- **Pack intake on the wire** — `InitializeResult.packIntake` (additive) carries
+  the four-check gate's `dropped[]`/`advisories` to `--listen` clients, present
+  only when non-empty, invalidated on `LOAD`; the GDScript mirror needs no
+  change.
+- **The `/build` staged-writes batch consent** — every step's write accumulates
+  in a per-plan staging pool; emit-pack is structurally unreachable until the
+  batch is flushed through one consent ("N file(s) staged — write all?");
+  decline discards all and resets the discarded steps; undo is CREATE-aware
+  (deletes a created file instead of hunting a backup that never existed);
+  batches are flow-tagged so `/build` and `/tune` cannot clobber each other;
+  the REPL warns on exit when staged content would be lost; scaffold output
+  lands namespaced under `content/<kind>/`; the emit-pack walk is sorted so
+  id collisions resolve identically on every filesystem. Scaffolded faction
+  YAML now survives `ingest()` into `pack.factions`.
+- **`resolveEntityFaction`** — faction identity resolves from the membership
+  registry when a pack populates it, else the entity's own authored `faction`
+  (the signal `affiliationOf` already trusts). Un-inverts district intruder
+  tracking (members no longer read as intruders), revives surveillance, item
+  recognition outside controlled districts, companion faction-route leverage,
+  NPC faction effects, rumor propagation, and the inspector's faction column.
+- **A played-session e2e** (`consumer-surface-seen.test.ts`) — a real session
+  through the real engine and renderer asserting every surface above is in the
+  visible frames, and byte-absent when producers are quiet.
+
+### Changed
+- The nine starter listeners that fired a victory fanfare on **every** kill are
+  deleted; the victory cue arrives once, from the authoritative event, in all
+  12 starters. Removing one event per kill shifted the deterministic event
+  stream; scripted-session baselines are re-derived and the RNG-audit contract
+  regenerated.
+- Stings merge into the scheduled audio in comparator order
+  (`AudioDirector.scheduleStingInto` + exported `compareAudioCommands`) instead
+  of appending last.
+- `combat.entity.defeated` stamps `defeatZoneId` from the victim unconditionally
+  (hazard-sourced kills included); `encounterRef` on the cleared event derives
+  from the defeated entity's spawn-stamped encounter id.
+- The five hardcoded stamina gates honor `CombatStackConfig`'s documented
+  contract — omitting `resourceProfile` no longer rejects actions in packs that
+  author no stamina resource (all 12 starters author it; nothing shipped
+  changes).
+
+### Recorded
+- **P1(bounty-on-ramp):** `bounty` lost natural reachability to the listener
+  cleanup — it fires in 0/12 packs while its synthetic control passes. Four
+  natural-session bounty tests are parked under the tag with unskip conditions;
+  `faction-summons` (single producer: `bounty`/expired) waits behind the retune.
+
 ## [3.9.0] - 2026-08-31
 
 **The pack you author is the game you play.** v3.8.1 gave hosts the Engine surface; this
