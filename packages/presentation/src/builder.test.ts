@@ -493,13 +493,18 @@ describe('buildNarrationPlan: dialogue asides (TTS pipeline expansion)', () => {
     expect(plan.asides).toBeUndefined();
   });
 
-  it('a non-presentable dialogue.node.entered (bookkeeping, no presentation block) is excluded', () => {
+  it('a non-presentable dialogue.node.entered (bookkeeping, no presentation block) yields neither asides nor a speaker cue (F-25e3c162)', () => {
     const bookkeeping: NarrationSourceEvent = {
       type: 'dialogue.node.entered',
       payload: { nodeId: 'x', speaker: 'X', text: 'should not speak' },
     };
     const plan = buildNarrationPlan({ sceneText: 'ignored', events: [bookkeeping] });
     expect(plan.asides).toBeUndefined();
+    // F-25e3c162: deriveSpeaker must gate on presentable() like every
+    // sibling derivation over the same event set (deriveTone, deriveUrgency,
+    // deriveStingCue, dialogueAsides) -- a bookkeeping-only dialogue node
+    // must not populate plan.speaker any more than it populates plan.asides.
+    expect(plan.speaker).toBeUndefined();
   });
 
   it('multiple dialogue nodes in one turn contribute their surrounding fragments in event order (F-f1c74adc: spoken lines excluded from both)', () => {

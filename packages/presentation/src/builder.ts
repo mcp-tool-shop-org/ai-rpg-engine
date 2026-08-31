@@ -289,11 +289,20 @@ function dialogueAsides(event: NarrationSourceEvent): string[] {
   return asides;
 }
 
-/** The most recent dialogue node in the turn, as a SpeakerCue (or undefined). */
+/**
+ * The most recent dialogue node in the turn, as a SpeakerCue (or undefined).
+ *
+ * F-25e3c162: gated on presentable(), matching every sibling derivation over
+ * this same event set (deriveTone, deriveUrgency, deriveStingCue, and this
+ * file's dialogueAsides) — a bookkeeping-only dialogue.node.entered (no
+ * presentation block) must not populate plan.speaker any more than it can
+ * populate plan.asides.
+ */
 function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.type !== DIALOGUE_NODE_EVENT) continue;
+    if (!presentable(event)) continue;
     const text = event.payload?.text;
     const speaker = event.payload?.speaker;
     if (typeof text !== 'string' || text.length === 0) continue;
