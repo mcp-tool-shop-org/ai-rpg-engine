@@ -226,6 +226,33 @@ describe('runAuditContent', () => {
   // regions/bosses/encounters), mirroring director.ts's own Rule 1.
   // ---------------------------------------------------------------------
 
+  it('--json prints the six audit sections as data with no box-drawing (F-e393db3c)', () => {
+    const file = writeFile('minimal-json.json', {
+      entities: [{ id: 'hero', tags: ['player'], stats: { vigor: 5 }, resources: { hp: 20, maxHp: 20 } }],
+    });
+    const out = capture();
+    const code = runAuditContent([file, '--json'], { log: out.log, error: out.log });
+    expect(code).toBe(0);
+    const parsed = JSON.parse(out.text()) as {
+      ok: boolean;
+      summary: unknown;
+      projectAudit: unknown;
+      regions: unknown[];
+      encounterAnalysis: unknown[];
+      encounterDetail: unknown[];
+      bosses: unknown[];
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.summary).toBeTruthy();
+    expect(parsed.projectAudit).toBeTruthy();
+    expect(Array.isArray(parsed.regions)).toBe(true);
+    expect(Array.isArray(parsed.encounterAnalysis)).toBe(true);
+    expect(Array.isArray(parsed.encounterDetail)).toBe(true);
+    expect(Array.isArray(parsed.bosses)).toBe(true);
+    expect(out.text()).not.toMatch(/[─┌┐└┘│╔╗╚╝]/);
+    expect(out.text()).not.toContain('──');
+  });
+
   it('a minimal (entities-only) file loads and reports zeroed SUMMARY/PROJECT AUDIT with no invented sections', () => {
     const file = writeFile('minimal.json', {
       entities: [{ id: 'hero', tags: ['player'], stats: { vigor: 5 }, resources: { hp: 20, maxHp: 20 } }],

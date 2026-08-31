@@ -1668,6 +1668,28 @@ describe('HUD vitals wrap to SCREEN_WIDTH (F-1d24d0ce)', () => {
   });
 });
 
+describe('Status HUD identity/stats (F-16a9449d)', () => {
+  it("a hero with might:4 shows 'Might 4'; empty custom does not grow an Identity label", () => {
+    const world = makeWorld();
+    world.entities['hero'].stats = { might: 4, instinct: 2 };
+    world.entities['hero'].custom = { archetypeId: 'grave-walker', title: 'Ash Knight' };
+    const text = stripAnsi(renderScene(world, PLAIN));
+    expect(text).toContain('Might 4');
+    expect(text).toContain('Identity: Ash Knight · Grave Walker');
+    const hud = text.split('\n').filter((l) => !l.startsWith('──'));
+    for (const line of hud) {
+      expect(line.length).toBeLessThanOrEqual(SCREEN_WIDTH);
+    }
+
+    const bare = makeWorld();
+    bare.entities['hero'].stats = {};
+    delete bare.entities['hero'].custom;
+    const bareText = stripAnsi(renderScene(bare, PLAIN));
+    expect(bareText).not.toMatch(/Identity/);
+    expect(bareText).not.toContain('Might');
+  });
+});
+
 describe('humanize ungrown item ids (F-bfd20ef8)', () => {
   it("a fresh hero carrying rusted-mace shows 'Rusted Mace' on HUD and Use, not the kebab id", () => {
     const world = makeWorld();

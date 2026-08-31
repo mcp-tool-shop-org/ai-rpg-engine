@@ -63,9 +63,14 @@ function printValidateHelp(log: (msg: string) => void): void {
   log('  --manifest <path>  also check engineVersion and contentHash from a manifest.json');
   log('                     (--manifest=<path> is accepted too)');
   log('  --no-gate          structural validation only (pre-C1 behaviour)');
+  log('  --json             print one JSON object {ok, errors, advisories, checks, ...}');
   log('');
   log('Example:');
   log('  ai-rpg-engine validate ./content/content-pack.json --manifest ./content/manifest.json');
+}
+
+function wantsJsonFlag(args: string[]): boolean {
+  return args.includes('--json') || args.some((a) => a.startsWith('--json='));
 }
 
 /**
@@ -74,6 +79,7 @@ function printValidateHelp(log: (msg: string) => void): void {
  */
 export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): number {
   const { log, error } = deps;
+  const json = wantsJsonFlag(args);
 
   if (args.includes('--help') || args.includes('-h')) {
     printValidateHelp(log);
@@ -87,6 +93,14 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
   const manifest = readFlag(args, '--manifest');
   const manifestPath = manifest.raw;
   if (manifest.present && (manifestPath === undefined || manifestPath === '' || manifestPath.startsWith('-'))) {
+    if (json) {
+      log(JSON.stringify({
+        ok: false,
+        errors: [{ path: 'args', message: '[VALIDATE_MANIFEST_MISSING] --manifest needs a path.' }],
+        advisories: [],
+      }));
+      return 1;
+    }
     error('✗ [VALIDATE_MANIFEST_MISSING] --manifest needs a path.');
     error('  Hint: ai-rpg-engine validate ./content-pack.json --manifest ./manifest.json');
     return 1;
@@ -98,6 +112,14 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
   const positional = args.filter((a, i) => !a.startsWith('-') && i !== manifest.valueSlot);
   const file = positional[0];
   if (!file) {
+    if (json) {
+      log(JSON.stringify({
+        ok: false,
+        errors: [{ path: 'args', message: '[VALIDATE_FILE_MISSING] Missing <file.json>.' }],
+        advisories: [],
+      }));
+      return 1;
+    }
     error('✗ [VALIDATE_FILE_MISSING] Missing <file.json>.');
     error('  Hint: provide a path to a JSON content pack, e.g. ai-rpg-engine validate ./content/zones.json');
     printValidateHelp(log);
@@ -105,6 +127,52 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
   }
 
   const result = loadContentFromFile(file);
+
+  if (json) {
+    const errors = [...result.errors];
+    const advisories = [...result.advisories];
+    let checks: ReturnType<typeof runLoadGate>['checks'] | undefined;
+    if (result.errors.length === 0 && !args.includes('--no-gate')) {
+      const ctx: GateContext = { engineVersion: ENGINE_VERSION };
+      if (manifestPath !== undefined) {
+        try {
+          const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            log(JSON.stringify({
+              ok: false,
+              errors: [...errors, { path: 'gate.manifest', message: `"${manifestPath}" is not a JSON object.` }],
+              advisories,
+              file,
+            }));
+            return 1;
+          }
+          ctx.manifest = parsed as GateContext['manifest'];
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          log(JSON.stringify({
+            ok: false,
+            errors: [...errors, { path: 'gate.manifest', message: `could not read "${manifestPath}": ${reason}` }],
+            advisories,
+            file,
+          }));
+          return 1;
+        }
+      }
+      const gate = runLoadGate(result.pack, ctx);
+      checks = gate.checks;
+      errors.push(...gate.errors);
+      advisories.push(...gate.advisories);
+    }
+    log(JSON.stringify({
+      ok: errors.length === 0,
+      errors,
+      advisories,
+      ...(checks ? { checks } : {}),
+      summary: result.summary,
+      file,
+    }));
+    return errors.length === 0 ? 0 : 1;
+  }
 
   // --- Errors (block; nonzero exit) ---
   if (result.errors.length > 0) {
