@@ -419,6 +419,33 @@ describe('assembleContentPack', () => {
     expect(result.pack.factions?.chapel_order?.name).toBe('Chapel Order (second)');
   });
 
+  // F-bceff599 (wave-4, content-packs' filed design F-b04d6f1e): walkFiles'
+  // traversal previously rode readdir()'s unspecified order, so "a later
+  // file wins" actually meant "whichever the filesystem happened to
+  // enumerate last" -- an accident of OS directory-entry order, not of
+  // authorship or write recency. Write the alphabetically-LATER file to
+  // disk FIRST (creation order is the OPPOSITE of sort order); if the
+  // winner still matches sorted-path order, the walk is proven to sort
+  // rather than ride creation/readdir order.
+  it('resolves a same-id collision by sorted path order, independent of write order', async () => {
+    await writeFile(join(root, 'z-chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order (written first, sorts last)',
+      'members:',
+      '  - guard_1',
+    ].join('\n'));
+    await writeFile(join(root, 'a-chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order (written second, sorts first)',
+      'members:',
+      '  - guard_2',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    // a-chapel-order.yaml sorts before z-chapel-order.yaml, so the sorted
+    // walk must apply z-chapel-order.yaml LAST regardless of write order.
+    expect(result.pack.factions?.chapel_order?.name).toBe('Chapel Order (written first, sorts last)');
+  });
+
   // mergePackJson: re-walking an existing pack JSON that already carries
   // ruleProfiles/itemPlacements must not silently drop them. (classifyDocument's
   // pack-json detection keys off entities/zones/quests, so a realistic

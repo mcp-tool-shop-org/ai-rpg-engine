@@ -1826,5 +1826,19 @@ export function formatTuningStatus(state: TuningState): string {
   lines.push('');
   lines.push(`Progress: ${executed}/${total} steps`);
 
+  // F-9b4e71c6: tuning's side of the same gap chat-build-planner.ts's
+  // formatBuildStatus fixed -- plan.warnings (a same-suggestedPath
+  // restaging collision, pushed at push-time by executeTuningStep) was read
+  // only by the plan-display formatter, shown before any step has run and
+  // therefore before any collision could have happened yet. /tune-status is
+  // where a user actually looks mid-plan.
+  if (state.plan.warnings.length > 0) {
+    lines.push('');
+    lines.push('Warnings:');
+    for (const w of state.plan.warnings) {
+      lines.push(`  ⚠ ${w}`);
+    }
+  }
+
   return lines.join('\n');
 }

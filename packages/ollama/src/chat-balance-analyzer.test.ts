@@ -989,6 +989,23 @@ describe('formatTuningStatus', () => {
     expect(output).toContain('○');
     expect(output).toContain('Progress: 1/');
   });
+
+  // F-9b4e71c6 (wave-4): tuning's side of the same gap -- plan.warnings was
+  // read only inside the plan-display formatter (chat-balance-analyzer.ts's
+  // formatTuningPlan / around the plan-preview path), never in
+  // formatTuningStatus (the /tune-status renderer), so a same-suggestedPath
+  // collision warning appended mid-plan was invisible under the normal
+  // /tune -> /tune-step... flow.
+  it('surfaces a plan.warnings entry appended after the plan was created', () => {
+    const plan = generateTuningPlan('increase paranoia', makeSession());
+    const state = createTuningState(plan);
+    state.plan.warnings.push(
+      "Step 2 restaged content/rooms/x.yaml, replacing step 1's staged content -- check both steps generated distinct ids.",
+    );
+    const output = formatTuningStatus(state);
+    expect(output).toContain('Warnings:');
+    expect(output).toContain('restaged content/rooms/x.yaml');
+  });
 });
 
 // ========================================

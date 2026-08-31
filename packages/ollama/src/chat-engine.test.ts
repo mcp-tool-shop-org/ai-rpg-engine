@@ -12,6 +12,7 @@ import {
 } from './chat-engine.js';
 import { createBuildState, type BuildPlan, type BuildStep } from './chat-build-planner.js';
 import { createTuningState, type TuningPlan, type TuningStep } from './chat-balance-analyzer.js';
+import { createSession, saveSession } from './session.js';
 
 function mockClient(response: string): OllamaTextClient {
   return {
@@ -515,7 +516,10 @@ describe('build steps stage into activeBuild.stagedWrites (F-591fae03)', () => {
     const entries = Object.values(engine.activeBuild!.stagedWrites);
     expect(entries).toHaveLength(1);
     expect(entries[0].content).toContain('staged-room');
-    expect(entries[0].suggestedPath).toBe('staged-room.yaml');
+    // F-164ac208 (wave-4): scaffold output is namespaced by artifact kind
+    // (mirrors emit-pack's own content/<kind>/ convention) instead of
+    // landing bare at the project root.
+    expect(entries[0].suggestedPath).toBe('content/rooms/staged-room.yaml');
     expect(entries[0].sourceStepId).toBe(1);
   });
 
@@ -651,6 +655,139 @@ describe('tuning steps stage into activeTuning.stagedWrites (F-591fae03)', () =>
   });
 });
 
+// --- Shared pendingWriteBatch slot ownership (F-71e4a9c3, wave-4) ---
+// The independent-pools test above proves STAGING never crosses flows. This
+// covers the separate bug one layer up: pendingWriteBatch is a single
+// engine-level REFERENCE into whichever pool most recently became
+// confirmable. Before this fix, a build's flush-gate consent could be
+// silently overwritten by a tuning plan completing later, and confirm/reject
+// unconditionally cleared BOTH stagedWrites pools regardless of which one
+// pendingWriteBatch actually pointed at -- so confirming the visible
+// (tuning) batch destroyed the invisible (build) one without ever writing
+// it, and declining the visible batch also silently destroyed the batch the
+// user could not see.
+describe('pendingWriteBatch ownership survives a second flow completing (F-71e4a9c3)', () => {
+  function roomStep(id: number, theme: string): BuildStep {
+    return {
+      id, description: `room ${theme}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuneRoomStep(id: number, theme: string): TuningStep {
+    return {
+      id, description: `tune room ${theme}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme }, dependencies: [], expectedEffect: 'none', status: 'pending',
+    };
+  }
+
+  it('a later-completing tuning batch does not silently overwrite an unconfirmed build batch', async () => {
+    const responses = [
+      'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
+      'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
+    ];
+    let call = 0;
+    const dir = await mkdtemp(join(tmpdir(), 'chat-batch-ownership-'));
+    try {
+      const engine = createChatEngine({
+        client: {
+          async generate(_input: PromptInput): Promise<PromptResult> {
+            return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+          },
+        },
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      // Build: a single-step plan completes on its own first /step, so its
+      // completion-promotion surfaces pendingWriteBatch = build's entry.
+      engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'build one')]));
+      const buildResult = await engine.executeBuildStep();
+      expect(buildResult).toContain('file(s) staged -- write all?');
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      expect(engine.pendingWriteBatch).toHaveLength(1);
+      expect(engine.pendingWriteBatch![0].content).toContain('build-room');
+      // Names the owning flow so the consent itself is unambiguous.
+      expect(buildResult).toContain('build');
+      expect(buildResult.toLowerCase()).toContain('build one');
+
+      // Tuning: also a single-step plan, ALSO completes on its own first
+      // step -- its completion-promotion tries to claim pendingWriteBatch
+      // too, while the build's batch is still unconfirmed.
+      engine.activeTuning = createTuningState({
+        goal: 'test tuning', steps: [tuneRoomStep(1, 'tune one')], warnings: [],
+      } satisfies TuningPlan);
+      const tuneResult = await engine.executeTuningStep();
+
+      // The build's batch is still the one exposed for confirmation --
+      // NOT silently replaced by tuning's.
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      expect(engine.pendingWriteBatch).toHaveLength(1);
+      expect(engine.pendingWriteBatch![0].content).toContain('build-room');
+      // Tuning's own content is neither lost nor silently confirmed --
+      // it stays staged, waiting its turn.
+      expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+      expect(Object.values(engine.activeTuning!.stagedWrites)[0].content).toContain('tune-room');
+      // The tuning step's own result says SOMETHING sensible instead of
+      // silently completing with content the user was never asked about.
+      expect(tuneResult).not.toContain('file(s) staged -- write all?');
+
+      // Confirming (twice: preview, then apply) applies ONLY the build's
+      // batch. The tuning room must NOT land on disk as a side effect.
+      await engine.process('yes');
+      const applied = await engine.process('yes');
+      expect(applied).toContain('Written');
+      await access(join(dir, 'content', 'rooms', 'build-room.yaml'));
+      await expect(access(join(dir, 'content', 'rooms', 'tune-room.yaml'))).rejects.toThrow();
+
+      // Confirming the build's batch cleared ONLY the build pool -- the
+      // tuning pool the user never confirmed is untouched.
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+      expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('declining the build batch does not destroy an already-staged tuning batch it never surfaced', async () => {
+    const responses = [
+      'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
+      'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
+    ];
+    let call = 0;
+    const engine = createChatEngine({
+      client: {
+        async generate(_input: PromptInput): Promise<PromptResult> {
+          return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+        },
+      },
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+
+    engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'build one')]));
+    await engine.executeBuildStep();
+    expect(engine.pendingWriteBatch).not.toBeNull();
+
+    engine.activeTuning = createTuningState({
+      goal: 'test tuning', steps: [tuneRoomStep(1, 'tune one')], warnings: [],
+    } satisfies TuningPlan);
+    await engine.executeTuningStep();
+    expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+
+    // Decline the (build-owned) visible batch.
+    const declined = await engine.process('no');
+    expect(declined).toMatch(/cancelled/i);
+
+    // The build pool was the one actually declined.
+    expect(engine.activeBuild!.stagedWrites).toEqual({});
+    // The tuning pool -- never surfaced, never part of this consent --
+    // survives the decline untouched.
+    expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+    expect(Object.values(engine.activeTuning!.stagedWrites)[0].content).toContain('tune-room');
+  });
+});
+
 // --- The roundtrip that would have caught the original bug (F-591fae03
 // recommendation item 10). A plan with 2+ scaffold steps followed by an
 // emit-pack tail, run through executeAllBuildSteps() and confirmed twice:
@@ -723,8 +860,10 @@ describe('multi-step build + emit-pack roundtrip (F-591fae03 item 10, composes w
       await engine.process('yes');
       const response = await engine.process('yes');
       expect(response).toContain('Written');
-      await access(join(dir, 'faction_a.yaml'));
-      await access(join(dir, 'faction_b.yaml'));
+      // F-164ac208 (wave-4): faction scaffolds land under content/factions/,
+      // not bare at the project root.
+      await access(join(dir, 'content', 'factions', 'faction_a.yaml'));
+      await access(join(dir, 'content', 'factions', 'faction_b.yaml'));
       expect(engine.activeBuild!.stagedWrites).toEqual({});
 
       // The gate is now open (nothing staged) — the next step call finally
@@ -746,6 +885,149 @@ describe('multi-step build + emit-pack roundtrip (F-591fae03 item 10, composes w
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// --- emit-pack surfaces its own consent immediately when it is not the
+// plan's LAST step (F-5f18d2a4, wave-4). generateBuildPlan's issue/replay
+// injection schedules real steps AFTER the template's own EMIT_PACK_STEP —
+// the completion-promotion gate only fired on isBuildComplete, an
+// assumption that emit-pack is always last. When violated, emit-pack's own
+// staged pack.json sat unconfirmed and invisible through however many more
+// steps the injected work took, then got silently bundled into a LATER,
+// unrelated batch — declining THAT batch (meaning to reject only the newer
+// injected content) would also lose the already-assembled, already-valid
+// pack.json. ---
+
+describe('emit-pack surfaces its own consent immediately when not the last step (F-5f18d2a4)', () => {
+  function factionScaffoldStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function emitPackStep(id: number, dependencies: number[]): BuildStep {
+    return {
+      id, description: 'emit-pack — assemble content/pack.json', command: 'emit-pack', intent: 'emit_pack',
+      params: {}, dependencies, artifactOutputs: [], usePriorContent: false, status: 'pending',
+    };
+  }
+  function trailingStep(id: number, dependencies: number[]): BuildStep {
+    // Simulates an issue/replay-injected step scheduled AFTER emit-pack,
+    // exactly as injectIssueSteps wires it in chat-build-planner.ts
+    // (dependency on the already-placed emit-pack step's id).
+    return {
+      id, description: 'create-faction — issue-driven', command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: 'issue-driven' }, dependencies,
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+
+  it('surfaces pack.json for confirmation as soon as emit-pack runs, even though a later step still depends on it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-emit-not-last-'));
+    try {
+      const engine = createChatEngine({
+        client: mockClient('id: faction_a\nname: Faction A\nmembers:\n  - captain_a'),
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        emitPackStep(2, [1]),
+        trailingStep(3, [2]),
+      ]));
+
+      // Step 1: stage the faction.
+      await engine.executeBuildStep();
+      // Step 2 (emit-pack): flush gate fires (stagedWrites non-empty).
+      const gateResult = await engine.executeBuildStep();
+      expect(gateResult).toContain('file(s) staged -- write all?');
+
+      // Confirm the faction batch (preview, then apply).
+      await engine.process('yes');
+      await engine.process('yes');
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+
+      // The gate is now open -- emit-pack finally runs for real. Step 3
+      // still depends on it and is still pending, so the build is NOT
+      // complete (isBuildComplete is false) -- but emit-pack's own staged
+      // pack.json must STILL surface for confirmation immediately, not
+      // silently wait for step 3 (which could be arbitrarily many more
+      // full model-generation steps away).
+      const emitResult = await engine.executeBuildStep();
+      expect(emitResult).toContain('file(s) staged -- write all?');
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending'); // step 3 untouched
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      const packEntry = engine.pendingWriteBatch!.find(e => e.suggestedPath === 'content/pack.json');
+      expect(packEntry).toBeDefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// --- Same-suggestedPath collision warning echoed inline at push-time
+// (F-9b4e71c6, wave-4). Before this fix, the ONLY defense against two steps
+// staging the SAME path (silently overwriting one step's content) was a
+// warning pushed to plan.warnings, but nothing in the step's own returned
+// text pointed at it — under the normal /build -> /step... -> yes/no flow,
+// a user would never see it (formatBuildStatus/buildDiagnostics didn't
+// surface plan.warnings either; see chat-build-planner.test.ts /
+// chat-balance-analyzer.test.ts for that half of the fix). ---
+
+describe('same-suggestedPath collision warning echoed inline (F-9b4e71c6)', () => {
+  function roomStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: description }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuneRoomStep(id: number, description: string): TuningStep {
+    return {
+      id, description, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: description }, dependencies: [], expectedEffect: 'none', status: 'pending',
+    };
+  }
+  const collidingRoomYaml = 'id: same-room\nname: Same Room\nzones:\n  - id: nave\n    name: Nave';
+
+  it('executeBuildStep echoes the restaging-collision warning in the SECOND step\'s own result', async () => {
+    const engine = createChatEngine({
+      client: mockClient(collidingRoomYaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+    engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'first'), roomStep(2, 'second')]));
+    const firstResult = await engine.executeBuildStep();
+    expect(firstResult).not.toContain('restaged');
+
+    const secondResult = await engine.executeBuildStep();
+    expect(secondResult).toContain('restaged');
+    expect(secondResult).toContain('content/rooms/same-room.yaml');
+    expect(secondResult).toContain("step 1's staged content");
+    // The engine-level warnings list still gets the entry too (unchanged
+    // plumbing — formatBuildStatus/buildDiagnostics surface it from there).
+    expect(engine.activeBuild!.plan.warnings.some(w => w.includes('restaged'))).toBe(true);
+  });
+
+  it('executeTuningStep echoes the restaging-collision warning in the SECOND step\'s own result', async () => {
+    const engine = createChatEngine({
+      client: mockClient(collidingRoomYaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+    engine.activeTuning = createTuningState({
+      goal: 'test tuning', steps: [tuneRoomStep(1, 'first'), tuneRoomStep(2, 'second')], warnings: [],
+    } satisfies TuningPlan);
+    const firstResult = await engine.executeTuningStep();
+    expect(firstResult).not.toContain('restaged');
+
+    const secondResult = await engine.executeTuningStep();
+    expect(secondResult).toContain('restaged');
+    expect(secondResult).toContain('content/rooms/same-room.yaml');
+    expect(engine.activeTuning!.plan.warnings.some(w => w.includes('restaged'))).toBe(true);
   });
 });
 
@@ -857,5 +1139,185 @@ describe('engine.process — stream options and undo (F-5b193212 / F-cf6b6f85)',
     expect(msg).toMatch(/nothing to undo|backup not found|Error:/i);
     expect(engine.pendingWrite).not.toBeNull();
     expect(engine.pendingWrite!.content).toBe('draft');
+  });
+});
+
+// --- End-to-end CREATE-then-undo through the engine (F-2d9f6b18, wave-4) ---
+// The FIRST /undo after ANY confirmed guided-build write used to fail
+// outright with "backup not found" -- applyConfirmed never writes a .bak
+// for a CREATE (the overwhelming case for scaffold output), and undo blindly
+// hunted one anyway. Exercises the real confirm-then-undo path through the
+// engine, not just apply-preview.ts's own unit tests, since chat-engine.ts
+// is what actually records the content_applied event undo later parses.
+describe('engine confirm-write then undo (F-2d9f6b18)', () => {
+  it('undoes a freshly-created scaffold file by deleting it, not by failing to find a .bak', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-undo-create-'));
+    try {
+      // content_applied (and therefore undo) needs an active session to
+      // record into -- without one, handleConfirmWrite's `if (session)`
+      // guard skips recordEvent entirely and undo has nothing to parse.
+      await saveSession(dir, createSession('undo test'));
+      const yaml = 'id: undo-room\ntype: room\nname: Undo Room';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      await engine.process('generate a room about an undo test');
+      // First "yes" previews, second "yes" applies (mirrors the confirm
+      // flow's existing two-phase shape).
+      await engine.process('yes');
+      const applied = await engine.process('yes');
+      expect(applied).toContain('Written');
+      const suggestedPath = applied.match(/Written: (\S+)/)?.[1];
+      expect(suggestedPath).toBeDefined();
+      await access(suggestedPath!);
+
+      const undone = await engine.undoLastWrite();
+      expect(undone).not.toMatch(/backup not found/i);
+      expect(undone).toMatch(/Removed|Restored/i);
+      await expect(access(suggestedPath!)).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a second consecutive /undo after a CREATE-undo refuses cleanly instead of erroring on a garbled path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-undo-create-twice-'));
+    try {
+      await saveSession(dir, createSession('undo test'));
+      const yaml = 'id: undo-room\ntype: room\nname: Undo Room';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      await engine.process('generate a room about an undo test');
+      await engine.process('yes');
+      await engine.process('yes');
+
+      const firstUndo = await engine.undoLastWrite();
+      expect(firstUndo).not.toMatch(/backup not found/i);
+
+      const secondUndo = await engine.undoLastWrite();
+      // Must be a clean, legible refusal -- never a crash, and never a
+      // "backup not found" error pointing at a garbled self-referential path.
+      expect(secondUndo).toMatch(/nothing to undo/i);
+      expect(secondUndo).not.toMatch(/backup not found/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// --- Decline resets discarded steps to 'pending' so /step genuinely
+// regenerates them, closing the stale-disk emit-pack path (F-13d7b9e2,
+// wave-4). Before this fix, the reject handler cleared stagedWrites but left
+// every scaffold step 'executed' with its now-discarded summary. The next
+// /step then found emit-pack the only 'pending' step (its dependency, the
+// last scaffold step, already read 'executed') with stagedWrites now empty
+// (decline just cleared it) -- so the flush gate's guard condition was
+// false and emit-pack ran FOR REAL via assembleContentPack() against
+// whatever happened to already be on disk (near-empty, since the declined
+// content was never written), then reported a fully successful "completed"
+// build with a nonzero "Generated: N artifact(s)" line even though the user
+// explicitly discarded everything and none of it reached disk. ---
+
+describe('decline resets discarded steps to pending (F-13d7b9e2)', () => {
+  function factionScaffoldStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function emitPackStep(id: number, dependencies: number[]): BuildStep {
+    return {
+      id, description: 'emit-pack — assemble content/pack.json', command: 'emit-pack', intent: 'emit_pack',
+      params: {}, dependencies, artifactOutputs: [], usePriorContent: false, status: 'pending',
+    };
+  }
+
+  it('decline -> /step does NOT let emit-pack silently assemble from pre-batch disk', async () => {
+    const responses = [
+      'id: faction_a\nname: Faction A\nmembers:\n  - captain_a',
+      'id: faction_b\nname: Faction B\nmembers:\n  - captain_b',
+      // Third response: what step 1 regenerates to after decline+re-run.
+      'id: faction_a\nname: Faction A (redo)\nmembers:\n  - captain_a',
+    ];
+    let call = 0;
+    const dir = await mkdtemp(join(tmpdir(), 'chat-decline-reset-'));
+    try {
+      const engine = createChatEngine({
+        client: {
+          async generate(_input: PromptInput): Promise<PromptResult> {
+            return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+          },
+        },
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        factionScaffoldStep(2, 'second faction'),
+        emitPackStep(3, [2]),
+      ]));
+
+      // Both scaffold steps run; the flush gate blocks emit-pack.
+      const batchResult = await engine.executeAllBuildSteps();
+      expect(batchResult).toContain('file(s) staged -- write all?');
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending');
+      expect(engine.activeBuild!.generatedContent).toHaveLength(2);
+
+      // Decline the whole batch.
+      const declined = await engine.process('no');
+      expect(declined).toMatch(/cancelled/i);
+
+      // Both scaffold steps are reset to 'pending' -- not left 'executed'
+      // with a now-discarded summary.
+      expect(engine.activeBuild!.plan.steps[0].status).toBe('pending');
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+      // Their discarded output no longer inflates generatedContent (would
+      // otherwise double up with the regenerated copy below).
+      expect(engine.activeBuild!.generatedContent).toHaveLength(0);
+
+      // Nothing was ever written to disk -- the decline truly discarded
+      // everything, nothing "silently assembled" in the background.
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+      await expect(access(join(dir, 'content', 'factions', 'faction_a.yaml'))).rejects.toThrow();
+
+      // The FIRST /step after decline must regenerate step 1 -- NOT run
+      // emit-pack. Before the fix, emit-pack was the only 'pending' step
+      // left (its dependency already 'executed') and ran for real here.
+      const afterDecline = await engine.executeBuildStep();
+      expect(afterDecline).not.toContain('emit-pack');
+      expect(engine.activeBuild!.plan.steps[0].status).toBe('executed');
+      expect(engine.activeBuild!.plan.steps[0].result).toContain('faction_a');
+      // emit-pack is STILL untouched -- its dependency (step 2) isn't
+      // resolved again yet.
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending');
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('emit-pack step itself is excluded from the reset (stays pending, never force-rerun)', async () => {
+    // Sanity check on resetDiscardedSteps' own scoping: the emit-pack step
+    // never executed in the flush-gate-decline scenario (it stays 'pending'
+    // throughout), so nothing about the reset should touch its status.
+    const dir = await mkdtemp(join(tmpdir(), 'chat-decline-reset-emitpack-'));
+    try {
+      const engine = createChatEngine({
+        client: mockClient('id: faction_a\nname: Faction A\nmembers:\n  - captain_a'),
+        projectRoot: dir,
+        rawMode: true,
+      });
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        emitPackStep(2, [1]),
+      ]));
+      await engine.executeAllBuildSteps();
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+
+      await engine.process('no');
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

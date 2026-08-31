@@ -3,7 +3,7 @@
 // OVERWRITE previews a unified diff against the existing file.
 // Writes only with explicit --confirm: sibling .bak then atomic tmp+rename.
 
-import { readFile, writeFile, mkdir, rename, copyFile, unlink, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, copyFile, unlink, access, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 export type ApplyPreviewInput = {
@@ -22,9 +22,14 @@ export type ApplyPreviewResult = {
   preview: string;
 };
 
-/** Confirmed write: success lands a file, failure never does. */
+/**
+ * Confirmed write: success lands a file, failure never does.
+ * `deleted` (F-2d9f6b18) is set only by restoreFromBackup/undoLastApply when
+ * undoing a CREATE removed the file rather than restoring a backup body --
+ * ordinary applyConfirmed writes never set it.
+ */
 export type ApplyWriteResult =
-  | { ok: true; path: string; bytes: number; backupPath?: string }
+  | { ok: true; path: string; bytes: number; backupPath?: string; deleted?: boolean }
   | { ok: false; error: string };
 
 const PREVIEW_LINE_CAP = 40;
@@ -228,18 +233,42 @@ export async function applyConfirmed(input: ApplyPreviewInput): Promise<ApplyWri
 }
 
 /**
- * Restore `targetPath` from a sibling `.bak` (or an explicit backupPath).
- * Used by optional session undo of the last content_applied event.
+ * Restore `targetPath` from a sibling `.bak` (or an explicit backupPath), or
+ * DELETE it when `wasCreate` says the write being undone had no backup
+ * because it created the file (F-2d9f6b18). Used by optional session undo
+ * of the last content_applied event.
  */
 export async function restoreFromBackup(input: {
   targetPath: string;
   backupPath?: string;
   projectRoot?: string;
+  /**
+   * True when the content_applied write being undone was a CREATE: there is
+   * no backup to restore from because none was ever written (applyConfirmed
+   * only backs up a target that already existed). Undo instead removes the
+   * file the write created. False/undefined preserves the pre-fix
+   * behavior (probe backupPath, else `${resolved}.bak`) for OVERWRITE
+   * undos and for legacy history details recorded before this field
+   * existed.
+   */
+  wasCreate?: boolean;
 }): Promise<ApplyWriteResult> {
   const resolved = resolveUnderRoot(input.targetPath, input.projectRoot);
   if (!withinRoot(resolved, input.projectRoot)) {
     return { ok: false, error: `Error: target path escapes project root (${resolved})` };
   }
+
+  if (input.wasCreate) {
+    let bytes: number;
+    try {
+      bytes = (await stat(resolved)).size;
+    } catch {
+      return { ok: false, error: `Error: nothing to undo -- ${resolved} does not exist` };
+    }
+    await unlink(resolved);
+    return { ok: true, path: resolved, bytes, deleted: true };
+  }
+
   const bak = input.backupPath
     ? resolveUnderRoot(input.backupPath, input.projectRoot)
     : `${resolved}.bak`;
@@ -255,15 +284,74 @@ export async function restoreFromBackup(input: {
   return applyConfirmed({ content: body, targetPath: resolved, projectRoot: input.projectRoot });
 }
 
+export type ParsedContentAppliedDetail = {
+  targetPath: string;
+  backupPath?: string;
+  /**
+   * True: the write was a CREATE (undo deletes). False: an OVERWRITE with a
+   * real backupPath (undo restores from it). Undefined: a detail string
+   * predating this field (F-2d9f6b18) or one this package never produces
+   * itself (hand-written history) -- callers fall back to the legacy
+   * backupPath-or-`.bak` probe rather than assume either direction.
+   */
+  wasCreate?: boolean;
+  /**
+   * True when this detail records the effect of an UNDO that deleted a
+   * CREATE (formatUndoResultDetail's `(deleted by undo)` tag) -- there is
+   * nothing left on disk and no backup to chain a further undo from, so
+   * callers should refuse cleanly instead of guessing.
+   */
+  deletedByUndo?: boolean;
+};
+
 /**
  * Parse a `content_applied` history detail of the form
- * `path` or `path (backup: path.bak)`.
+ * `path`, `path (create)`, `path (backup: path.bak)`, or
+ * `path (deleted by undo)`.
  */
-export function parseContentAppliedDetail(detail: string): { targetPath: string; backupPath?: string } {
-  const match = detail.match(/^(.*?)(?: \(backup: (.+)\))?$/);
-  const targetPath = (match?.[1] ?? detail).trim();
-  const backupPath = match?.[2]?.trim();
-  return backupPath ? { targetPath, backupPath } : { targetPath };
+export function parseContentAppliedDetail(detail: string): ParsedContentAppliedDetail {
+  const backupMatch = detail.match(/^(.*) \(backup: (.+)\)$/);
+  if (backupMatch) {
+    return { targetPath: backupMatch[1].trim(), backupPath: backupMatch[2].trim(), wasCreate: false };
+  }
+  const createMatch = detail.match(/^(.*) \(create\)$/);
+  if (createMatch) {
+    return { targetPath: createMatch[1].trim(), wasCreate: true };
+  }
+  const deletedMatch = detail.match(/^(.*) \(deleted by undo\)$/);
+  if (deletedMatch) {
+    return { targetPath: deletedMatch[1].trim(), deletedByUndo: true };
+  }
+  return { targetPath: detail.trim() };
+}
+
+/**
+ * Build the `content_applied` history detail for a successful write
+ * (F-2d9f6b18) -- the single producer `parseContentAppliedDetail` parses.
+ * Explicitly tags CREATE vs OVERWRITE rather than letting readers infer it
+ * from backup-suffix presence/absence.
+ */
+export function formatContentAppliedDetail(result: { path: string; backupPath?: string }): string {
+  return result.backupPath
+    ? `${result.path} (backup: ${result.backupPath})`
+    : `${result.path} (create)`;
+}
+
+/**
+ * Build the `content_applied` history detail for the RESULT of an undo
+ * (F-2d9f6b18). A restore-from-backup undo produces an ordinary
+ * ApplyWriteResult (backupPath set the same way a fresh OVERWRITE's would,
+ * since restoreFromBackup's non-delete path runs through applyConfirmed) so
+ * formatContentAppliedDetail already describes it correctly, and a further
+ * /undo can restore right back to the content this one replaced. A
+ * CREATE-undo instead DELETED the file (`result.deleted`): there is no
+ * backup and no new content, so tag it distinctly rather than let it be
+ * misparsed as a fresh CREATE (which a further /undo would then try to
+ * delete again, based on a file that no longer exists).
+ */
+export function formatUndoResultDetail(result: { path: string; backupPath?: string; deleted?: boolean }): string {
+  if (result.deleted) return `${result.path} (deleted by undo)`;
+  return formatContentAppliedDetail(result);
 }
 
 /** Restore the last `content_applied` target from its backup (or target.bak). */
@@ -278,9 +366,13 @@ export async function undoLastApply(input: {
   if (!targetPath) {
     return { ok: false, error: 'Error: nothing to undo (no content_applied event and no --write path)' };
   }
+  if (parsed?.deletedByUndo) {
+    return { ok: false, error: `Error: nothing to undo -- the last change already removed ${targetPath}` };
+  }
   return restoreFromBackup({
     targetPath,
     backupPath: parsed?.backupPath,
+    wasCreate: parsed?.wasCreate,
     projectRoot: input.projectRoot,
   });
 }

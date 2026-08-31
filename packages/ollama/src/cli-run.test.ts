@@ -635,3 +635,60 @@ describe('runCli — create-ruleset / create-rule-profile / create-item-placemen
     expect(session.artifacts.itemPlacements).toContain('rusty_key@chapel_guard');
   });
 });
+
+// F-2d9f6b18 (wave-4) — the same CREATE-undo bug apply-preview.ts/
+// chat-engine.ts fixed, reachable through the CLI's own apply-preview
+// --confirm/--undo commands: applyConfirmed never writes a .bak for a
+// CREATE, so --undo used to always fail "backup not found" for a freshly
+// written file, and a second consecutive --undo targeted the first undo's
+// own bespoke "undo restored X" event string (unparseable, no ' (backup: '
+// substring) instead of a real path.
+describe('runCli — apply-preview --undo on a CREATE (F-2d9f6b18)', () => {
+  async function runWithStdin(args: string[], body: string): Promise<void> {
+    const { Readable } = await import('node:stream');
+    const fakeStdin = Readable.from([Buffer.from(body)]);
+    const originalStdin = process.stdin;
+    Object.defineProperty(process, 'stdin', { value: fakeStdin, configurable: true });
+    try {
+      await runCli(args);
+    } finally {
+      Object.defineProperty(process, 'stdin', { value: originalStdin, configurable: true });
+    }
+  }
+
+  it('--undo deletes a freshly-created file instead of failing "backup not found"', async () => {
+    await runCli(['session', 'start', 'undo-create']);
+    process.exitCode = 0;
+
+    const target = path.join(tmpDir, 'fresh.yaml');
+    await runWithStdin(['apply-preview', '--stdin', '--write', target, '--confirm'], 'id: fresh\n');
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toContain('Written:');
+    await fs.access(target);
+
+    logSpy.mockClear();
+    errSpy.mockClear();
+    await runCli(['apply-preview', '--write', target, '--undo']);
+    expect(stderrText()).not.toMatch(/backup not found/i);
+    expect(process.exitCode).not.toBe(1);
+    await expect(fs.access(target)).rejects.toThrow();
+  });
+
+  it('a second consecutive --undo refuses cleanly instead of erroring on a garbled path', async () => {
+    await runCli(['session', 'start', 'undo-create-twice']);
+    process.exitCode = 0;
+
+    const target = path.join(tmpDir, 'fresh.yaml');
+    await runWithStdin(['apply-preview', '--stdin', '--write', target, '--confirm'], 'id: fresh\n');
+    await runCli(['apply-preview', '--write', target, '--undo']);
+    expect(process.exitCode).not.toBe(1);
+
+    logSpy.mockClear();
+    errSpy.mockClear();
+    process.exitCode = 0;
+    await runCli(['apply-preview', '--write', target, '--undo']);
+    expect(process.exitCode).toBe(1);
+    expect(stderrText()).toMatch(/nothing to undo/i);
+    expect(stderrText()).not.toMatch(/backup not found/i);
+  });
+});
