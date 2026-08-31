@@ -293,12 +293,10 @@ function buildContext(
   recs: Recommendation[],
 ): string {
   const parts: string[] = [];
-  const totalArtifacts =
-    session.artifacts.districts.length +
-    session.artifacts.factions.length +
-    session.artifacts.quests.length +
-    session.artifacts.rooms.length +
-    session.artifacts.packs.length;
+  const totalArtifacts = Object.values(session.artifacts).reduce(
+    (sum, ids) => sum + (Array.isArray(ids) ? ids.length : 0),
+    0,
+  );
 
   parts.push(`Session "${session.name}": ${totalArtifacts} artifact(s), ${openIssues.length} open issue(s).`);
 

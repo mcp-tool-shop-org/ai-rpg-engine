@@ -34,7 +34,9 @@ import {
   runExperiment, runParameterSweep,
   type ReplayProducer, type ExperimentSummary,
 } from './chat-experiments.js';
-import { tryLoadSession } from './session.js';
+import {
+  tryLoadSession, listSessions, formatSessionList, switchSession, exportSession,
+} from './session.js';
 import {
   resolveAlias, formatGroupedHelp,
   buildStudioSnapshot, formatStudioDashboard,
@@ -913,6 +915,44 @@ export async function handleSlashCommand(
         console.log(`Current display mode: ${getDisplayMode()}`);
         console.log('Usage: /display compact | /display verbose');
       }
+      return 'handled';
+    }
+
+    case 'session': {
+      const sub = (parts[1] ?? 'list').toLowerCase();
+      if (sub === 'list') {
+        const slots = await listSessions(projectRoot);
+        console.log('');
+        console.log(formatSessionList(slots));
+        console.log('');
+        return 'handled';
+      }
+      if (sub === 'switch') {
+        const name = parts.slice(2).join(' ').trim();
+        if (!name) {
+          console.log('Usage: /session switch <name>');
+          return 'handled';
+        }
+        try {
+          const switched = await switchSession(projectRoot, name);
+          console.log(`Switched to session "${switched.name}".`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.log(message);
+        }
+        return 'handled';
+      }
+      if (sub === 'export') {
+        try {
+          const exported = await exportSession(projectRoot);
+          console.log(exported.json);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.log(message);
+        }
+        return 'handled';
+      }
+      console.log('Usage: /session [list|switch <name>|export]');
       return 'handled';
     }
 

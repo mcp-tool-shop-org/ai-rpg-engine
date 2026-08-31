@@ -313,6 +313,35 @@ describe('runChatShell — exit save + crash safety (F-77c30d19, F-2ef8b590)', (
 // v2.6 Stage C F-a4c8e217 — the unknown-command message used to name the
 // alias TARGET, not what the user typed: '/next' printed "Unknown command:
 // /suggest-next".
+describe('handleSlashCommand — /session list and switch', () => {
+  it('lists named slots and switches the active copy', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'chat-session-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const { createSession, saveSession } = await import('./session.js');
+      const harbor = createSession('harbor');
+      await saveSession(projectRoot, harbor);
+      const underdark = createSession('underdark');
+      await saveSession(projectRoot, underdark);
+
+      await handleSlashCommand(
+        '/session list', makeEngine(projectRoot), createTranscript(null), projectRoot, false,
+      );
+      const listed = logSpy.mock.calls.flat().join('\n');
+      expect(listed).toContain('harbor');
+      expect(listed).toContain('underdark');
+
+      logSpy.mockClear();
+      await handleSlashCommand(
+        '/session switch harbor', makeEngine(projectRoot), createTranscript(null), projectRoot, false,
+      );
+      expect(logSpy.mock.calls.flat().join('\n')).toContain('Switched to session "harbor"');
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('handleSlashCommand — unknown command names the typed command (F-a4c8e217)', () => {
   it('reports the original typed alias, not its resolved target', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

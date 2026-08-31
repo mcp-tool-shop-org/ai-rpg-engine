@@ -239,6 +239,33 @@ describe('engine.process — session info without session', () => {
 });
 
 describe('engine.process — confirmation flow', () => {
+  it('shows generatePreview on the first yes when scaffold skipped it', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'ollama-preview-first-'));
+    try {
+      const engine = createChatEngine({
+        client: mockClient('ack'),
+        projectRoot,
+        rawMode: true,
+      });
+      engine.pendingWrite = {
+        content: 'id: chapel\nname: New Chapel\n',
+        suggestedPath: 'chapel.yaml',
+        label: 'chapel',
+      };
+      const first = await engine.process('yes');
+      expect(first).toContain('CREATE');
+      expect(first).toMatch(/Say "yes" to write/i);
+      expect(engine.pendingWrite).not.toBeNull();
+      expect(engine.pendingWrite!.previewShown).toBe(true);
+
+      const second = await engine.process('yes');
+      expect(second).toContain('Written');
+      expect(engine.pendingWrite).toBeNull();
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects write with "no"', async () => {
     const yaml = 'id: test-room\ntype: room\nname: Test';
     const engine = createChatEngine({
@@ -285,6 +312,7 @@ describe('engine.process — confirmed write confines against projectRoot', () =
       content: 'id: confined\nname: Confined Artifact',
       suggestedPath: target,
       label: 'confined artifact',
+      previewShown: true,
     };
 
     const response = await engine.process('yes');
@@ -314,6 +342,7 @@ describe('engine.process — confirmed write confines against projectRoot', () =
       content: 'id: escape',
       suggestedPath: escapeTarget,
       label: 'escape',
+      previewShown: true,
     };
 
     const response = await engine.process('yes');
@@ -339,6 +368,7 @@ describe('engine.process — confirmed write confines against projectRoot', () =
       content: 'id: rel-artifact',
       suggestedPath: 'artifact.yaml',
       label: 'relative artifact',
+      previewShown: true,
     };
     try {
       process.chdir(cwdDir);

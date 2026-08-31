@@ -2,9 +2,9 @@
 
 import type { OllamaTextClient } from '../client.js';
 import { createDistrictPrompt } from '../prompts/create-district.js';
-import { extractYaml } from '../parsers.js';
-import { parseYamlish, validateGeneratedDistrict } from '../validators.js';
-import type { GeneratedContentResult } from '../validators.js';
+import { validateGeneratedDistrict } from '../validators.js';
+import { generateWithRepair } from '../generate-with-repair.js';
+import type { GeneratedTextResult } from '../generate-with-repair.js';
 
 export type CreateDistrictInput = {
   theme: string;
@@ -12,24 +12,18 @@ export type CreateDistrictInput = {
   factions?: string[];
   existingZones?: string[];
   constraints?: string[];
+  repair?: boolean;
   sessionContext?: string;
 };
 
-export type GeneratedDistrictResult = {
-  ok: true;
-  yaml: string;
-  /** Schema check of the draft (v2.5 audit PA-4) — advisory unless the CLI --validate gate is on. */
-  validation: GeneratedContentResult;
-} | {
-  ok: false;
-  error: string;
-};
+export type GeneratedDistrictResult = GeneratedTextResult;
 
 export async function createDistrict(
   client: OllamaTextClient,
   input: CreateDistrictInput,
 ): Promise<GeneratedDistrictResult> {
-  const result = await client.generate({
+  return generateWithRepair({
+    client,
     system: createDistrictPrompt.system,
     prompt: createDistrictPrompt.render({
       theme: input.theme,
@@ -39,9 +33,8 @@ export async function createDistrict(
       constraints: input.constraints,
       sessionContext: input.sessionContext,
     }),
+    repair: input.repair,
+    kindLabel: 'district',
+    validate: validateGeneratedDistrict,
   });
-
-  if (!result.ok) return result;
-  const yaml = extractYaml(result.text);
-  return { ok: true, yaml, validation: validateGeneratedDistrict(yaml, parseYamlish(yaml)) };
 }

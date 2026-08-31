@@ -10,6 +10,10 @@ import {
   validateGeneratedDistrict,
   validateGeneratedLocationPack,
   validateGeneratedEncounterPack,
+  validateGeneratedEntity,
+  validateGeneratedDialogue,
+  validateGeneratedAbility,
+  validateGeneratedStatus,
 } from './validators.js';
 
 describe('parseYamlish', () => {
@@ -319,5 +323,65 @@ describe('pack validators (PA-4)', () => {
     const result = validateGeneratedEncounterPack('x', parsed);
     expect(result.valid).toBe(false);
     expect(result.validation.errors.some((e) => e.path === 'EncounterPack.quest')).toBe(true);
+  });
+});
+
+describe('validateGenerated entity/dialogue/ability/status', () => {
+  it('accepts a valid entity blueprint', () => {
+    const yaml = 'id: chapel_guard\ntype: npc\nname: Chapel Guard';
+    const result = validateGeneratedEntity(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects an entity missing type', () => {
+    const result = validateGeneratedEntity('x', { id: 'g', name: 'Guard' });
+    expect(result.valid).toBe(false);
+    expect(result.validation.errors.some((e) => e.path.includes('type'))).toBe(true);
+  });
+
+  it('accepts a valid dialogue tree', () => {
+    const yaml = [
+      'id: pilgrim_talk',
+      'speakers:',
+      '  - pilgrim',
+      'entryNodeId: greeting',
+      'nodes:',
+      '  greeting:',
+      '    id: greeting',
+      '    speaker: pilgrim',
+      '    text: Hello.',
+    ].join('\n');
+    const result = validateGeneratedDialogue(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('accepts a valid ability', () => {
+    const yaml = [
+      'id: fireball',
+      'name: Fireball',
+      'verb: cast',
+      'tags:',
+      '  - magic',
+      'target:',
+      '  type: single',
+      'effects:',
+      '  - type: damage',
+      '    params:',
+      '      amount: 10',
+    ].join('\n');
+    const result = validateGeneratedAbility(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('accepts a valid status', () => {
+    const yaml = [
+      'id: burning',
+      'name: Burning',
+      'tags:',
+      '  - fire',
+      'stacking: refresh',
+    ].join('\n');
+    const result = validateGeneratedStatus(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
   });
 });

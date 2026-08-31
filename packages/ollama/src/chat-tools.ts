@@ -17,7 +17,11 @@ import { createDistrict } from './commands/create-district.js';
 import { createQuest } from './commands/create-quest.js';
 import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
-import { formatSessionStatus, renderSessionContext } from './session.js';
+import { createDialogue } from './commands/create-dialogue.js';
+import { createEntity } from './commands/create-entity.js';
+import { createAbility } from './commands/create-ability.js';
+import { createStatus } from './commands/create-status.js';
+import { formatSessionStatus, renderSessionContext, artifactBucketForKind } from './session.js';
 import { generatePreview } from './apply-preview.js';
 import { planFromSession, formatPlan } from './chat-planner.js';
 import { generateRecommendations, formatRecommendations } from './chat-recommendations.js';
@@ -127,11 +131,14 @@ const sessionInfoTool: ChatTool = {
 
 // --- Tool: scaffold ---
 
-const SCAFFOLD_KINDS = ['room', 'faction', 'district', 'quest', 'location-pack', 'encounter-pack'] as const;
+const SCAFFOLD_KINDS = [
+  'room', 'faction', 'district', 'quest', 'location-pack', 'encounter-pack',
+  'dialogue', 'entity', 'ability', 'status',
+] as const;
 
 const scaffoldTool: ChatTool = {
   name: 'scaffold',
-  description: 'Generate new content (room, faction, district, quest, pack)',
+  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status)',
   intents: ['scaffold'],
   mutates: false,
   async execute(p: ChatToolParams): Promise<ChatToolResult> {
@@ -148,44 +155,78 @@ const scaffoldTool: ChatTool = {
     let validation: GeneratedContentResult | undefined;
     let idMatch: RegExpMatchArray | null = null;
 
+    // Chat always requests a single repair pass so invalid drafts get one
+    // correction before the user is invited to save.
+    const repair = true;
+    const sessionContext = p.sessionContext;
+
     switch (kind) {
       case 'room': {
-        const r = await createRoom(p.client, { theme, sessionContext: p.sessionContext });
+        const r = await createRoom(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
         break;
       }
       case 'faction': {
-        const r = await createFaction(p.client, { theme, sessionContext: p.sessionContext });
+        const r = await createFaction(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
         break;
       }
       case 'district': {
-        const r = await createDistrict(p.client, { theme, sessionContext: p.sessionContext });
+        const r = await createDistrict(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
         break;
       }
       case 'quest': {
-        const r = await createQuest(p.client, { theme, sessionContext: p.sessionContext });
+        const r = await createQuest(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
         break;
       }
       case 'location-pack': {
-        const r = await createLocationPack(p.client, { theme, sessionContext: p.sessionContext });
+        const r = await createLocationPack(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
         break;
       }
       case 'encounter-pack': {
-        const r = await createEncounterPack(p.client, { theme, sessionContext: p.sessionContext });
+        const r = await createEncounterPack(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'dialogue': {
+        const r = await createDialogue(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'entity':
+      case 'npc': {
+        const r = await createEntity(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'ability': {
+        const r = await createAbility(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'status': {
+        const r = await createStatus(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
@@ -197,11 +238,7 @@ const scaffoldTool: ChatTool = {
 
     idMatch = yaml.match(/^id:\s*(\S+)/m);
     const artifactId = idMatch?.[1] ?? kind;
-    const artifactKind = kind === 'quest' ? 'quests'
-      : kind === 'room' ? 'rooms'
-      : kind === 'faction' ? 'factions'
-      : kind === 'district' ? 'districts'
-      : 'packs';
+    const artifactKind = artifactBucketForKind(kind);
 
     // Surface validation instead of discarding it (v2.6 Stage C F-b8d1a6e3):
     // the commands validate every draft, and the CLI prints the warnings, but
@@ -494,6 +531,7 @@ const applyContentTool: ChatTool = {
         content,
         suggestedPath: targetPath,
         label: p.params.label ?? targetPath,
+        previewShown: true,
       },
     };
   },
@@ -513,6 +551,8 @@ const helpTool: ChatTool = {
       'Design:',
       '  "Generate a room about a haunted library"',
       '  "Create a faction of paranoid librarians"',
+      '  "Create a dialogue for the chapel pilgrim"',
+      '  "Create an entity / ability / status from a theme"',
       '  "Plan a new district around smuggling"',
       '',
       'Iterate:',

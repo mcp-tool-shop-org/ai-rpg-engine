@@ -62,7 +62,10 @@ export function sessionDoctor(session: DesignSession): SessionDoctorResult {
   }
 
   // Empty session — no artifacts, no themes, no issues
-  const totalArtifacts = Object.values(session.artifacts).reduce((sum, arr) => sum + arr.length, 0);
+  const totalArtifacts = Object.values(session.artifacts).reduce(
+    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
+    0,
+  );
   if (totalArtifacts === 0 && session.themes.length === 0 && session.issues.length === 0) {
     diagnostics.push({
       code: 'EMPTY_SESSION',
@@ -83,6 +86,7 @@ export function sessionDoctor(session: DesignSession): SessionDoctorResult {
 
   // Duplicate artifacts
   for (const [kind, ids] of Object.entries(session.artifacts)) {
+    if (!Array.isArray(ids)) continue;
     const unique = new Set(ids as string[]);
     if (unique.size < (ids as string[]).length) {
       const dupes = (ids as string[]).filter((id, i) => (ids as string[]).indexOf(id) !== i);
@@ -95,7 +99,9 @@ export function sessionDoctor(session: DesignSession): SessionDoctorResult {
   }
 
   // Issues referencing targets not in artifacts
-  const allArtifactIds = new Set(Object.values(session.artifacts).flat());
+  const allArtifactIds = new Set(
+    Object.values(session.artifacts).flatMap((ids) => Array.isArray(ids) ? ids : []),
+  );
   const missingTargets = openIssues.filter(
     i => i.target && i.target !== 'global' && !allArtifactIds.has(i.target),
   );

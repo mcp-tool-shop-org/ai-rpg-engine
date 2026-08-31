@@ -1,10 +1,10 @@
 // Session — file-based design session protocol
-// Stores evolving world context in .ai-session.json at the project root.
+// Active copy lives in .ai-session.json; named slots live under .ai-sessions/<slug>.json.
 // Commands read session state to enrich prompts but never require it.
 
-import { readFile, writeFile, unlink, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import type { CritiqueIssue, CritiqueSuggestion } from './parsers.js';
+import { readFile, writeFile, unlink, stat, mkdir, readdir } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import type { CritiqueIssue } from './parsers.js';
 
 /** Drop oldest events once history exceeds this many entries (F-1582fb3d). */
 export const MAX_SESSION_HISTORY_EVENTS = 1000;
@@ -13,13 +13,79 @@ export const MAX_SESSION_JSON_BYTES = 8 * 1024 * 1024;
 
 // --- Types ---
 
+/** Required on disk for older session files (pre-dialogue/entity verbs). */
+export const REQUIRED_ARTIFACT_KINDS = [
+  'districts', 'factions', 'quests', 'rooms', 'packs',
+] as const;
+
+/** Optional buckets filled with [] when an older file omits them. */
+export const OPTIONAL_ARTIFACT_KINDS = [
+  'entities', 'dialogues', 'abilities', 'statuses',
+] as const;
+
+export const ARTIFACT_KINDS = [
+  ...REQUIRED_ARTIFACT_KINDS,
+  ...OPTIONAL_ARTIFACT_KINDS,
+] as const;
+
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
+
 export type SessionArtifacts = {
   districts: string[];
   factions: string[];
   quests: string[];
   rooms: string[];
   packs: string[];
+  entities: string[];
+  dialogues: string[];
+  abilities: string[];
+  statuses: string[];
 };
+
+const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
+  districts: 'districts',
+  factions: 'factions',
+  quests: 'quests',
+  rooms: 'rooms',
+  packs: 'packs',
+  entities: 'entities',
+  dialogues: 'dialogues',
+  abilities: 'abilities',
+  statuses: 'statuses',
+};
+
+export function countArtifacts(artifacts: SessionArtifacts): number {
+  return ARTIFACT_KINDS.reduce((sum, kind) => sum + (artifacts[kind]?.length ?? 0), 0);
+}
+
+export function emptyArtifacts(): SessionArtifacts {
+  return {
+    districts: [],
+    factions: [],
+    quests: [],
+    rooms: [],
+    packs: [],
+    entities: [],
+    dialogues: [],
+    abilities: [],
+    statuses: [],
+  };
+}
+
+/** Coerce a loaded artifacts object: required keys must be arrays; optional keys default to []. */
+export function normalizeArtifacts(raw: unknown): SessionArtifacts {
+  const src = (typeof raw === 'object' && raw !== null && !Array.isArray(raw))
+    ? raw as Record<string, unknown>
+    : {};
+  const out = emptyArtifacts();
+  for (const kind of ARTIFACT_KINDS) {
+    const v = src[kind];
+    if (Array.isArray(v)) {
+      out[kind] = v.filter((id): id is string => typeof id === 'string');
+    }
+  }
+  return out;
+}
 
 export type SessionIssue = {
   code: string;
@@ -88,12 +154,41 @@ export type DesignSession = {
   };
 };
 
+export type SessionSlot = {
+  name: string;
+  slug: string;
+  path: string;
+  active: boolean;
+};
+
 // --- File protocol ---
 
-const SESSION_FILENAME = '.ai-session.json';
+export const SESSION_FILENAME = '.ai-session.json';
+export const SESSIONS_DIR = '.ai-sessions';
+
+export function sessionSlug(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug.length > 0 ? slug : 'untitled';
+}
 
 function sessionPath(projectRoot: string): string {
   return resolve(projectRoot, SESSION_FILENAME);
+}
+
+export function sessionsDir(projectRoot: string): string {
+  return resolve(projectRoot, SESSIONS_DIR);
+}
+
+export function namedSessionPath(projectRoot: string, name: string): string {
+  return resolve(projectRoot, SESSIONS_DIR, `${sessionSlug(name)}.json`);
+}
+
+function archiveDir(projectRoot: string): string {
+  return resolve(projectRoot, SESSIONS_DIR, 'archive');
+}
+
+function archiveStamp(): string {
+  return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
 /**
@@ -111,7 +206,9 @@ export class SessionLoadError extends Error {
   readonly path: string;
   readonly hint: string;
   constructor(path: string, detail: string, code = 'SESSION_CORRUPT') {
-    const label = code === 'SESSION_BUDGET_EXCEEDED' ? 'too large' : 'corrupt';
+    const label = code === 'SESSION_BUDGET_EXCEEDED' ? 'too large'
+      : code === 'SESSION_NOT_FOUND' ? 'missing'
+      : 'corrupt';
     super(`Session file is ${label}: ${path} (${detail})`);
     this.name = 'SessionLoadError';
     this.code = code;
@@ -119,8 +216,10 @@ export class SessionLoadError extends Error {
     this.hint = code === 'SESSION_BUDGET_EXCEEDED'
       ? 'The file was left untouched. Trim .ai-session.json history, restore it from git, '
         + 'or discard it with "ai session end" to start fresh.'
-      : 'The file was left untouched. Fix the JSON by hand, restore it from git, '
-        + 'or discard it with "ai session end" to start fresh.';
+      : code === 'SESSION_NOT_FOUND'
+        ? 'No named session with that slug. List slots with "ai session list".'
+        : 'The file was left untouched. Fix the JSON by hand, restore it from git, '
+          + 'or discard it with "ai session end" to start fresh.';
   }
 }
 
@@ -129,6 +228,10 @@ export class SessionLoadError extends Error {
  * as a DesignSession, or null when it is safe to use. Guards exactly the
  * fields the CLI dereferences — a valid-JSON-wrong-shape file (`{}`, an array)
  * must become a structured error, not a downstream TypeError.
+ *
+ * Optional artifact buckets (entities/dialogues/abilities/statuses) may be
+ * absent — older files only had the original five keys. Unknown extra keys
+ * are tolerated.
  */
 function sessionShapeProblem(v: unknown): string | null {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return 'not a JSON object';
@@ -141,8 +244,9 @@ function sessionShapeProblem(v: unknown): string | null {
   if (typeof artifacts !== 'object' || artifacts === null || Array.isArray(artifacts)) {
     return 'missing "artifacts" (object)';
   }
-  for (const kind of ['districts', 'factions', 'quests', 'rooms', 'packs'] as const) {
-    if (!Array.isArray((artifacts as Record<string, unknown>)[kind])) {
+  const bag = artifacts as Record<string, unknown>;
+  for (const kind of REQUIRED_ARTIFACT_KINDS) {
+    if (!Array.isArray(bag[kind])) {
       return `missing "artifacts.${kind}" (array)`;
     }
   }
@@ -151,22 +255,14 @@ function sessionShapeProblem(v: unknown): string | null {
   return null;
 }
 
-/**
- * Load the design session for a project root.
- *
- * - No session file (ENOENT) → `null` — the normal, quiet case.
- * - Unreadable / invalid JSON / wrong shape → throws {@link SessionLoadError}
- *   so a corrupt session is surfaced instead of silently ignored-then-clobbered
- *   by the next save (PA-2). Callers on advisory surfaces that must never throw
- *   should use {@link tryLoadSession}.
- */
-export async function loadSession(projectRoot: string): Promise<DesignSession | null> {
-  const file = sessionPath(projectRoot);
+async function readSessionFile(file: string): Promise<DesignSession> {
   let fileSize: number;
   try {
     fileSize = (await stat(file)).size;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+      throw new SessionLoadError(file, 'file does not exist', 'SESSION_NOT_FOUND');
+    }
     const message = err instanceof Error ? err.message : String(err);
     throw new SessionLoadError(file, `unreadable: ${message}`);
   }
@@ -181,7 +277,9 @@ export async function loadSession(projectRoot: string): Promise<DesignSession | 
   try {
     raw = await readFile(file, 'utf-8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+      throw new SessionLoadError(file, 'file does not exist', 'SESSION_NOT_FOUND');
+    }
     const message = err instanceof Error ? err.message : String(err);
     throw new SessionLoadError(file, `unreadable: ${message}`);
   }
@@ -195,10 +293,31 @@ export async function loadSession(projectRoot: string): Promise<DesignSession | 
   const problem = sessionShapeProblem(parsed);
   if (problem) throw new SessionLoadError(file, problem);
   const session = parsed as DesignSession;
+  session.artifacts = normalizeArtifacts(session.artifacts);
   if (Array.isArray(session.history) && session.history.length > MAX_SESSION_HISTORY_EVENTS) {
     session.history = session.history.slice(-MAX_SESSION_HISTORY_EVENTS);
   }
   return session;
+}
+
+/**
+ * Load the design session for a project root.
+ *
+ * - No session file (ENOENT) → `null` — the normal, quiet case.
+ * - Unreadable / invalid JSON / wrong shape → throws {@link SessionLoadError}
+ *   so a corrupt session is surfaced instead of silently ignored-then-clobbered
+ *   by the next save (PA-2). Callers on advisory surfaces that must never throw
+ *   should use {@link tryLoadSession}.
+ */
+export async function loadSession(projectRoot: string): Promise<DesignSession | null> {
+  const file = sessionPath(projectRoot);
+  try {
+    return await readSessionFile(file);
+  } catch (err) {
+    if (err instanceof SessionLoadError && err.code === 'SESSION_NOT_FOUND') return null;
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    throw err;
+  }
 }
 
 /**
@@ -220,7 +339,11 @@ export async function tryLoadSession(projectRoot: string): Promise<DesignSession
 
 export async function saveSession(projectRoot: string, session: DesignSession): Promise<void> {
   session.updatedAt = new Date().toISOString();
-  await writeFile(sessionPath(projectRoot), JSON.stringify(session, null, 2) + '\n', 'utf-8');
+  session.artifacts = normalizeArtifacts(session.artifacts);
+  const json = JSON.stringify(session, null, 2) + '\n';
+  await writeFile(sessionPath(projectRoot), json, 'utf-8');
+  await mkdir(sessionsDir(projectRoot), { recursive: true });
+  await writeFile(namedSessionPath(projectRoot, session.name), json, 'utf-8');
 }
 
 export async function deleteSession(projectRoot: string): Promise<boolean> {
@@ -230,6 +353,152 @@ export async function deleteSession(projectRoot: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * End the active session by renaming it into `.ai-sessions/archive/` instead
+ * of unlinking. The named slot is left in place so `session switch` can
+ * restore it. Returns whether an active file was archived.
+ */
+export async function endSession(
+  projectRoot: string,
+): Promise<{ archived: boolean; archivePath?: string; name?: string }> {
+  const active = sessionPath(projectRoot);
+  let raw: string;
+  try {
+    raw = await readFile(active, 'utf-8');
+  } catch {
+    return { archived: false };
+  }
+  let slug = 'session';
+  let name: string | undefined;
+  try {
+    const parsed = JSON.parse(raw) as { name?: unknown };
+    if (typeof parsed.name === 'string' && parsed.name.length > 0) {
+      name = parsed.name;
+      slug = sessionSlug(parsed.name);
+    }
+  } catch {
+    // corrupt — still archive the raw bytes
+  }
+  const dest = join(archiveDir(projectRoot), `${slug}-${archiveStamp()}.json`);
+  await mkdir(dirname(dest), { recursive: true });
+  await writeFile(dest, raw, 'utf-8');
+  await unlink(active);
+  return { archived: true, archivePath: dest, name };
+}
+
+export async function listSessions(projectRoot: string): Promise<SessionSlot[]> {
+  const slots: SessionSlot[] = [];
+  const seen = new Set<string>();
+  let activeName: string | null = null;
+  const active = await loadSession(projectRoot);
+  if (active) activeName = active.name;
+
+  let names: string[] = [];
+  try {
+    names = await readdir(sessionsDir(projectRoot));
+  } catch {
+    names = [];
+  }
+  for (const file of names) {
+    if (!file.endsWith('.json')) continue;
+    const path = resolve(sessionsDir(projectRoot), file);
+    try {
+      const s = await readSessionFile(path);
+      const slug = sessionSlug(s.name);
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      slots.push({
+        name: s.name,
+        slug,
+        path,
+        active: activeName !== null && sessionSlug(activeName) === slug,
+      });
+    } catch {
+      // skip unreadable named files
+    }
+  }
+
+  if (active && !seen.has(sessionSlug(active.name))) {
+    slots.unshift({
+      name: active.name,
+      slug: sessionSlug(active.name),
+      path: sessionPath(projectRoot),
+      active: true,
+    });
+  }
+
+  slots.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+  return slots;
+}
+
+export function formatSessionList(slots: SessionSlot[]): string {
+  if (slots.length === 0) {
+    return 'No named sessions. Start one with: ai session start <name>';
+  }
+  const lines = ['Sessions:'];
+  for (const s of slots) {
+    const mark = s.active ? '* ' : '  ';
+    lines.push(`${mark}${s.name}  (${s.slug})`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Make `name` the active session. Flushes the current active copy to its
+ * named slot first so switching is not destructive.
+ */
+export async function switchSession(projectRoot: string, name: string): Promise<DesignSession> {
+  const named = namedSessionPath(projectRoot, name);
+  const target = await readSessionFile(named);
+  const current = await loadSession(projectRoot);
+  if (current && sessionSlug(current.name) !== sessionSlug(target.name)) {
+    await saveSession(projectRoot, current);
+  }
+  const json = JSON.stringify(target, null, 2) + '\n';
+  await writeFile(sessionPath(projectRoot), json, 'utf-8');
+  return target;
+}
+
+/**
+ * If a named slot exists and there is no active session, copy it to the
+ * active path and return it. Otherwise null.
+ */
+export async function resumeNamedSession(
+  projectRoot: string,
+  name: string,
+): Promise<DesignSession | null> {
+  const named = namedSessionPath(projectRoot, name);
+  try {
+    const target = await readSessionFile(named);
+    await writeFile(sessionPath(projectRoot), JSON.stringify(target, null, 2) + '\n', 'utf-8');
+    return target;
+  } catch (err) {
+    if (err instanceof SessionLoadError && err.code === 'SESSION_NOT_FOUND') return null;
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+export async function exportSession(
+  projectRoot: string,
+  destPath?: string,
+): Promise<{ json: string; path?: string }> {
+  const session = await loadSession(projectRoot);
+  if (!session) {
+    throw new SessionLoadError(
+      sessionPath(projectRoot),
+      'no active session',
+      'SESSION_NOT_FOUND',
+    );
+  }
+  const json = JSON.stringify(session, null, 2) + '\n';
+  if (!destPath) return { json };
+  const resolved = resolve(projectRoot, destPath);
+  await mkdir(dirname(resolved), { recursive: true });
+  await writeFile(resolved, json, 'utf-8');
+  return { json, path: resolved };
 }
 
 // --- Factories ---
@@ -242,13 +511,7 @@ export function createSession(name: string): DesignSession {
     updatedAt: now,
     themes: [],
     constraints: [],
-    artifacts: {
-      districts: [],
-      factions: [],
-      quests: [],
-      rooms: [],
-      packs: [],
-    },
+    artifacts: emptyArtifacts(),
     issues: [],
     acceptedSuggestions: [],
     history: [{ timestamp: now, kind: 'session_start', detail: `Session "${name}" started` }],
@@ -290,6 +553,7 @@ export function addConstraints(session: DesignSession, constraints: string[]): v
 }
 
 export function addArtifact(session: DesignSession, kind: keyof SessionArtifacts, id: string): void {
+  if (!session.artifacts[kind]) session.artifacts[kind] = [];
   if (!session.artifacts[kind].includes(id)) {
     session.artifacts[kind].push(id);
     recordEvent(session, 'artifact_created', `${kind}/${id}`);
@@ -329,6 +593,12 @@ export function resolveIssue(session: DesignSession, code: string): boolean {
   return false;
 }
 
+function formatArtifactLine(kind: ArtifactKind, ids: string[], knownPrefix: string, noneLabel?: string): string | null {
+  if (ids.length === 0) return noneLabel ?? null;
+  const label = ARTIFACT_LABELS[kind];
+  return `${knownPrefix}${label}: ${ids.join(', ')}`;
+}
+
 // --- Context rendering (for prompt injection) ---
 
 export function renderSessionContext(session: DesignSession): string {
@@ -343,12 +613,11 @@ export function renderSessionContext(session: DesignSession): string {
     lines.push(`Constraints: ${session.constraints.join(', ')}`);
   }
 
-  const { districts, factions, quests, rooms, packs } = session.artifacts;
-  if (districts.length > 0) lines.push(`Known districts: ${districts.join(', ')}`);
-  if (factions.length > 0) lines.push(`Known factions: ${factions.join(', ')}`);
-  if (quests.length > 0) lines.push(`Known quests: ${quests.join(', ')}`);
-  if (rooms.length > 0) lines.push(`Known rooms: ${rooms.join(', ')}`);
-  if (packs.length > 0) lines.push(`Known packs: ${packs.join(', ')}`);
+  const artifacts = normalizeArtifacts(session.artifacts);
+  for (const kind of ARTIFACT_KINDS) {
+    const line = formatArtifactLine(kind, artifacts[kind], 'Known ');
+    if (line) lines.push(line);
+  }
 
   const openIssues = session.issues.filter(i => i.status === 'open');
   if (openIssues.length > 0) {
@@ -394,12 +663,12 @@ export function formatSessionStatus(session: DesignSession): string {
   lines.push('');
 
   lines.push('Artifacts:');
-  const { districts, factions, quests, rooms, packs } = session.artifacts;
-  lines.push(`  Districts: ${districts.length > 0 ? districts.join(', ') : '(none)'}`);
-  lines.push(`  Factions: ${factions.length > 0 ? factions.join(', ') : '(none)'}`);
-  lines.push(`  Quests: ${quests.length > 0 ? quests.join(', ') : '(none)'}`);
-  lines.push(`  Rooms: ${rooms.length > 0 ? rooms.join(', ') : '(none)'}`);
-  lines.push(`  Packs: ${packs.length > 0 ? packs.join(', ') : '(none)'}`);
+  const artifacts = normalizeArtifacts(session.artifacts);
+  for (const kind of ARTIFACT_KINDS) {
+    const ids = artifacts[kind];
+    const label = kind.charAt(0).toUpperCase() + kind.slice(1);
+    lines.push(`  ${label}: ${ids.length > 0 ? ids.join(', ') : '(none)'}`);
+  }
   lines.push('');
 
   const openIssues = session.issues.filter(i => i.status === 'open');
@@ -440,4 +709,28 @@ export function formatSessionHistory(session: DesignSession, limit = 20): string
   }
 
   return lines.join('\n');
+}
+
+/** Scaffold kind → SessionArtifacts bucket. Pack-like kinds land in `packs`. */
+export function artifactBucketForKind(kind: string): keyof SessionArtifacts {
+  switch (kind) {
+    case 'quest':
+    case 'quests': return 'quests';
+    case 'room':
+    case 'rooms': return 'rooms';
+    case 'faction':
+    case 'factions': return 'factions';
+    case 'district':
+    case 'districts': return 'districts';
+    case 'entity':
+    case 'npc':
+    case 'entities': return 'entities';
+    case 'dialogue':
+    case 'dialogues': return 'dialogues';
+    case 'ability':
+    case 'abilities': return 'abilities';
+    case 'status':
+    case 'statuses': return 'statuses';
+    default: return 'packs';
+  }
 }

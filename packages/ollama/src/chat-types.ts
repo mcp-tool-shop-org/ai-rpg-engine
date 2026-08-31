@@ -133,6 +133,8 @@ export type ChatToolResult = {
     content: string;
     suggestedPath: string;
     label: string;
+    /** True when generatePreview already ran for this payload (apply-content). */
+    previewShown?: boolean;
   };
 };
 

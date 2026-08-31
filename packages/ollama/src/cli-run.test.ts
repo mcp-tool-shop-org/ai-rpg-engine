@@ -117,6 +117,48 @@ describe('runCli — corrupt session handling (PA-2)', () => {
   });
 });
 
+describe('runCli — named session slots', () => {
+  it('lists, switches, and archives instead of unlinking on end', async () => {
+    await runCli(['session', 'start', 'harbor']);
+    await runCli(['session', 'end']);
+    await runCli(['session', 'start', 'underdark']);
+
+    logSpy.mockClear();
+    await runCli(['session', 'list']);
+    const listed = stdoutText();
+    expect(listed).toContain('harbor');
+    expect(listed).toContain('underdark');
+    expect(listed).toMatch(/\* underdark/);
+
+    logSpy.mockClear();
+    await runCli(['session', 'switch', 'harbor']);
+    expect(stdoutText()).toContain('Switched to session "harbor"');
+
+    logSpy.mockClear();
+    await runCli(['session', 'status']);
+    expect(stdoutText()).toContain('Session: harbor');
+
+    logSpy.mockClear();
+    await runCli(['session', 'end']);
+    expect(stdoutText()).toMatch(/Session archived:/);
+    const activeGone = await fs.access(sessionFile()).then(() => false).catch(() => true);
+    expect(activeGone).toBe(true);
+    const archiveDir = path.join(tmpDir, '.ai-sessions', 'archive');
+    const archived = await fs.readdir(archiveDir);
+    expect(archived.some((f) => f.startsWith('harbor-'))).toBe(true);
+    // named slot remains
+    await expect(fs.access(path.join(tmpDir, '.ai-sessions', 'harbor.json'))).resolves.toBeUndefined();
+  });
+
+  it('exports the active session as JSON', async () => {
+    await runCli(['session', 'start', 'harbor']);
+    logSpy.mockClear();
+    await runCli(['session', 'export']);
+    const raw = stdoutText();
+    expect(JSON.parse(raw).name).toBe('harbor');
+  });
+});
+
 describe('runCli — --validate write gate (PA-4)', () => {
   const validFactionYaml = [
     'id: dock_rats',

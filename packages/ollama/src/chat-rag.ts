@@ -5,7 +5,7 @@
 
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, extname, basename, relative } from 'node:path';
-import type { DesignSession } from './session.js';
+import { normalizeArtifacts, type DesignSession } from './session.js';
 import type { ChatTranscript } from './chat-types.js';
 
 // --- Types ---
@@ -194,17 +194,22 @@ async function safeReadFile(path: string, maxChars = 8000): Promise<string | nul
 
 function retrieveFromSession(session: DesignSession, keywords: string[]): RetrievedSnippet[] {
   const snippets: RetrievedSnippet[] = [];
+  const artifacts = normalizeArtifacts(session.artifacts);
 
   // Session overview
   const overview = [
     `Session: ${session.name}`,
     `Themes: ${session.themes.join(', ') || '(none)'}`,
     `Constraints: ${session.constraints.join(', ') || '(none)'}`,
-    `Districts: ${session.artifacts.districts.join(', ') || '(none)'}`,
-    `Factions: ${session.artifacts.factions.join(', ') || '(none)'}`,
-    `Quests: ${session.artifacts.quests.join(', ') || '(none)'}`,
-    `Rooms: ${session.artifacts.rooms.join(', ') || '(none)'}`,
-    `Packs: ${session.artifacts.packs.join(', ') || '(none)'}`,
+    `Districts: ${artifacts.districts.join(', ') || '(none)'}`,
+    `Factions: ${artifacts.factions.join(', ') || '(none)'}`,
+    `Quests: ${artifacts.quests.join(', ') || '(none)'}`,
+    `Rooms: ${artifacts.rooms.join(', ') || '(none)'}`,
+    `Packs: ${artifacts.packs.join(', ') || '(none)'}`,
+    `Entities: ${artifacts.entities.join(', ') || '(none)'}`,
+    `Dialogues: ${artifacts.dialogues.join(', ') || '(none)'}`,
+    `Abilities: ${artifacts.abilities.join(', ') || '(none)'}`,
+    `Statuses: ${artifacts.statuses.join(', ') || '(none)'}`,
   ].join('\n');
   const overviewScore = scoreContent(overview, keywords);
   if (overviewScore > 0) {

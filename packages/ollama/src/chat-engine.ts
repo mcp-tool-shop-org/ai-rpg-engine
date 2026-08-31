@@ -156,7 +156,7 @@ export type BatchStepCallback = (progress: BatchStepProgress) => void;
 export type ChatEngine = {
   memory: ChatMemory;
   /** Last generated content available for write. */
-  pendingWrite: { content: string; suggestedPath: string; label: string } | null;
+  pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null;
   /** Last context snapshot from RAG + shaping. Available after first process() call. */
   lastContextSnapshot: ContextSnapshot | null;
   /** Last loadout routing plan. Available when loadoutEnabled and after first process() call. */
@@ -215,7 +215,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     profile = WORLDBUILDER_PROFILE,
   } = options;
   const memory = createChatMemory(maxMemory, null);
-  let pendingWrite: { content: string; suggestedPath: string; label: string } | null = null;
+  let pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null = null;
   let lastContextSnapshot: ContextSnapshot | null = null;
   let lastLoadoutPlan: LoadoutRoutePlan | null = null;
   const loadoutHistory: LoadoutHistoryEntry[] = [];
@@ -491,11 +491,22 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
   async function handleConfirmWrite(session: DesignSession | null, _now: string): Promise<string> {
     if (!pendingWrite) return 'Nothing to write.';
-    const { content, suggestedPath, label } = pendingWrite;
+    const { content, suggestedPath, label, previewShown } = pendingWrite;
+
+    const { applyConfirmed, generatePreview } = await import('./apply-preview.js');
+
+    // Scaffold/improve stage a write without a diff. Show generatePreview
+    // once before clobbering; apply-content already did this.
+    if (!previewShown) {
+      const preview = await generatePreview({ content, targetPath: suggestedPath, label, projectRoot });
+      pendingWrite = { content, suggestedPath, label, previewShown: true };
+      const response = `${preview.preview}\n\nSay "yes" to write, or "no" to cancel.`;
+      addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+      return response;
+    }
 
     // Use apply-preview's confirmed write. Pass projectRoot so the path-escape
     // confinement uses the configured sandbox, not process.cwd().
-    const { applyConfirmed } = await import('./apply-preview.js');
     const result = await applyConfirmed({ content, targetPath: suggestedPath, label, projectRoot });
 
     if (!result.ok) {
@@ -507,7 +518,10 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     if (session) {
-      recordEvent(session, 'content_applied', result.path);
+      const detail = result.backupPath
+        ? `${result.path} (backup: ${result.backupPath})`
+        : result.path;
+      recordEvent(session, 'content_applied', detail);
       await saveSession(projectRoot, session);
     }
 

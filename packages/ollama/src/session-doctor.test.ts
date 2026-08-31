@@ -46,6 +46,24 @@ describe('sessionDoctor', () => {
     expect(result.diagnostics.some(d => d.code === 'DUPLICATE_ARTIFACTS')).toBe(true);
   });
 
+  it('detects duplicate entities and missing dialogue targets', () => {
+    const s = createSession('new-kinds');
+    addThemes(s, ['gothic']);
+    s.artifacts.entities = ['guard_01', 'guard_01'];
+    addArtifact(s, 'dialogues', 'pilgrim_talk');
+    const issues: CritiqueIssue[] = [{
+      code: 'BAD_NPC',
+      severity: 'medium',
+      location: 'missing_npc',
+      summary: 'References missing entity',
+      simulation_impact: 'test',
+    }];
+    addCritiqueIssues(s, issues);
+    const result = sessionDoctor(s);
+    expect(result.diagnostics.some(d => d.code === 'DUPLICATE_ARTIFACTS' && d.message.includes('entities'))).toBe(true);
+    expect(result.diagnostics.some(d => d.code === 'MISSING_TARGETS' && d.message.includes('missing_npc'))).toBe(true);
+  });
+
   it('warns about many open issues', () => {
     const s = createSession('busy');
     addThemes(s, ['gothic']);

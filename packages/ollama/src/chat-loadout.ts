@@ -217,9 +217,10 @@ export function buildTaskString(
   // Session signals — structured, not raw prose
   if (session) {
     const { artifacts, issues, themes, history } = session;
-    const artCount =
-      artifacts.districts.length + artifacts.factions.length +
-      artifacts.quests.length + artifacts.rooms.length + artifacts.packs.length;
+    const artCount = Object.values(artifacts).reduce(
+      (sum, ids) => sum + (Array.isArray(ids) ? ids.length : 0),
+      0,
+    );
     const openIssues = issues.filter(i => i.status === 'open');
     const themeStr = themes.slice(0, 3).join(', ');
 

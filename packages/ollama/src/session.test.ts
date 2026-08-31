@@ -9,6 +9,13 @@ import {
   SessionLoadError,
   saveSession,
   deleteSession,
+  endSession,
+  listSessions,
+  switchSession,
+  resumeNamedSession,
+  exportSession,
+  formatSessionList,
+  sessionSlug,
   addThemes,
   addConstraints,
   addArtifact,
@@ -19,6 +26,7 @@ import {
   formatSessionStatus,
   recordEvent,
   formatSessionHistory,
+  artifactBucketForKind,
   MAX_SESSION_HISTORY_EVENTS,
   MAX_SESSION_JSON_BYTES,
 } from './session.js';
@@ -47,6 +55,10 @@ describe('session', () => {
       expect(s.artifacts.quests).toEqual([]);
       expect(s.artifacts.rooms).toEqual([]);
       expect(s.artifacts.packs).toEqual([]);
+      expect(s.artifacts.entities).toEqual([]);
+      expect(s.artifacts.dialogues).toEqual([]);
+      expect(s.artifacts.abilities).toEqual([]);
+      expect(s.artifacts.statuses).toEqual([]);
       expect(s.issues).toEqual([]);
       expect(s.acceptedSuggestions).toEqual([]);
       expect(s.history).toHaveLength(1);
@@ -153,6 +165,34 @@ describe('session', () => {
       expect(await readFile(sessionFile(), 'utf-8')).toBe(corrupt);
     });
 
+    it('fills missing optional artifact buckets on load of older files', async () => {
+      const s = createSession('legacy');
+      const obj = JSON.parse(JSON.stringify(s)) as { artifacts: Record<string, unknown> };
+      delete obj.artifacts['entities'];
+      delete obj.artifacts['dialogues'];
+      delete obj.artifacts['abilities'];
+      delete obj.artifacts['statuses'];
+      await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.artifacts.entities).toEqual([]);
+      expect(loaded!.artifacts.dialogues).toEqual([]);
+      expect(loaded!.artifacts.abilities).toEqual([]);
+      expect(loaded!.artifacts.statuses).toEqual([]);
+      expect(loaded!.artifacts.rooms).toEqual([]);
+    });
+
+    it('tolerates unknown extra artifact keys on load', async () => {
+      const s = createSession('extra-keys');
+      const obj = JSON.parse(JSON.stringify(s)) as { artifacts: Record<string, unknown> };
+      obj.artifacts['items'] = ['sword_01'];
+      await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.name).toBe('extra-keys');
+      expect((loaded!.artifacts as Record<string, unknown>)['items']).toBeUndefined();
+    });
+
     it('tolerates a session without history (older format)', async () => {
       const s = createSession('old-format');
       const obj = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
@@ -249,10 +289,18 @@ describe('session', () => {
       addArtifact(session, 'factions', 'f1');
       addArtifact(session, 'quests', 'q1');
       addArtifact(session, 'packs', 'p1');
+      addArtifact(session, 'entities', 'guard_01');
+      addArtifact(session, 'dialogues', 'pilgrim_talk');
+      addArtifact(session, 'abilities', 'fireball');
+      addArtifact(session, 'statuses', 'burning');
       expect(session.artifacts.districts).toEqual(['d1']);
       expect(session.artifacts.factions).toEqual(['f1']);
       expect(session.artifacts.quests).toEqual(['q1']);
       expect(session.artifacts.packs).toEqual(['p1']);
+      expect(session.artifacts.entities).toEqual(['guard_01']);
+      expect(session.artifacts.dialogues).toEqual(['pilgrim_talk']);
+      expect(session.artifacts.abilities).toEqual(['fireball']);
+      expect(session.artifacts.statuses).toEqual(['burning']);
     });
 
     it('addCritiqueIssues converts and deduplicates', () => {
@@ -416,6 +464,104 @@ describe('session', () => {
       expect(output).toContain('theme_8');
       expect(output).toContain('theme_9');
       expect(output).not.toContain('theme_0');
+    });
+  });
+
+  describe('named session slots', () => {
+    it('sessionSlug lowercases and hyphenates', () => {
+      expect(sessionSlug('Harbor District')).toBe('harbor-district');
+      expect(sessionSlug('  --Underdark--  ')).toBe('underdark');
+      expect(sessionSlug('???')).toBe('untitled');
+    });
+
+    it('saveSession dual-writes the named slot', async () => {
+      const s = createSession('harbor');
+      addThemes(s, ['salt']);
+      await saveSession(tempDir, s);
+      const named = await readFile(join(tempDir, '.ai-sessions', 'harbor.json'), 'utf-8');
+      expect(JSON.parse(named).name).toBe('harbor');
+      expect(JSON.parse(named).themes).toEqual(['salt']);
+    });
+
+    it('listSessions marks the active slot', async () => {
+      await saveSession(tempDir, createSession('harbor'));
+      await saveSession(tempDir, createSession('underdark'));
+      const slots = await listSessions(tempDir);
+      expect(slots.map(s => s.name).sort()).toEqual(['harbor', 'underdark']);
+      const active = slots.find(s => s.active);
+      expect(active?.name).toBe('underdark');
+      expect(formatSessionList(slots)).toContain('* underdark');
+    });
+
+    it('switchSession is not destructive of the previous world', async () => {
+      const harbor = createSession('harbor');
+      addThemes(harbor, ['salt-road']);
+      await saveSession(tempDir, harbor);
+
+      const underdark = createSession('underdark');
+      addThemes(underdark, ['mycelium']);
+      await saveSession(tempDir, underdark);
+
+      const switched = await switchSession(tempDir, 'harbor');
+      expect(switched.name).toBe('harbor');
+      expect(switched.themes).toEqual(['salt-road']);
+
+      const active = await loadSession(tempDir);
+      expect(active?.name).toBe('harbor');
+
+      const namedUnderdark = JSON.parse(
+        await readFile(join(tempDir, '.ai-sessions', 'underdark.json'), 'utf-8'),
+      );
+      expect(namedUnderdark.themes).toEqual(['mycelium']);
+    });
+
+    it('endSession archives instead of unlinking', async () => {
+      const s = createSession('harbor');
+      addThemes(s, ['salt']);
+      await saveSession(tempDir, s);
+
+      const ended = await endSession(tempDir);
+      expect(ended.archived).toBe(true);
+      expect(ended.archivePath).toMatch(/archive/);
+      expect(await loadSession(tempDir)).toBeNull();
+      expect(await readFile(ended.archivePath!, 'utf-8')).toContain('harbor');
+      // named slot remains so switch can restore
+      const named = JSON.parse(
+        await readFile(join(tempDir, '.ai-sessions', 'harbor.json'), 'utf-8'),
+      );
+      expect(named.themes).toEqual(['salt']);
+    });
+
+    it('resumeNamedSession restores a named slot to the active path', async () => {
+      const s = createSession('harbor');
+      addThemes(s, ['salt']);
+      await saveSession(tempDir, s);
+      await endSession(tempDir);
+
+      const resumed = await resumeNamedSession(tempDir, 'harbor');
+      expect(resumed?.name).toBe('harbor');
+      expect(resumed?.themes).toEqual(['salt']);
+      expect((await loadSession(tempDir))?.name).toBe('harbor');
+    });
+
+    it('exportSession writes JSON (and optionally a path)', async () => {
+      await saveSession(tempDir, createSession('harbor'));
+      const toStdout = await exportSession(tempDir);
+      expect(JSON.parse(toStdout.json).name).toBe('harbor');
+      const dest = join(tempDir, 'export.json');
+      const written = await exportSession(tempDir, dest);
+      expect(written.path).toBe(dest);
+      expect(JSON.parse(await readFile(dest, 'utf-8')).name).toBe('harbor');
+    });
+
+    it('artifactBucketForKind maps new verbs onto the new buckets', () => {
+      expect(artifactBucketForKind('dialogue')).toBe('dialogues');
+      expect(artifactBucketForKind('entity')).toBe('entities');
+      expect(artifactBucketForKind('npc')).toBe('entities');
+      expect(artifactBucketForKind('ability')).toBe('abilities');
+      expect(artifactBucketForKind('status')).toBe('statuses');
+      expect(artifactBucketForKind('room')).toBe('rooms');
+      expect(artifactBucketForKind('location-pack')).toBe('packs');
     });
   });
 });

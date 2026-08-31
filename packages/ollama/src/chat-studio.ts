@@ -92,6 +92,7 @@ export function buildStudioSnapshot(
   const artifactCounts: Record<string, number> = {};
   let totalArtifacts = 0;
   for (const [kind, items] of Object.entries(session.artifacts)) {
+    if (!Array.isArray(items)) continue;
     artifactCounts[kind] = items.length;
     totalArtifacts += items.length;
   }
@@ -703,6 +704,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       { cmd: '/studio', aliases: ['/dash'], description: 'Show studio dashboard' },
       { cmd: '/history', aliases: [], description: 'Browse session history' },
+      { cmd: '/session', aliases: [], description: 'List or switch named sessions' },
       { cmd: '/issues', aliases: [], description: 'Browse open issues' },
       { cmd: '/findings', aliases: ['/fx'], description: 'Browse balance + experiment findings' },
       { cmd: '/experiments', aliases: ['/exp'], description: 'Browse experiment results' },

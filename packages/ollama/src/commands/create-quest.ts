@@ -2,9 +2,9 @@
 
 import type { OllamaTextClient } from '../client.js';
 import { createQuestPrompt } from '../prompts/create-quest.js';
-import { extractYaml } from '../parsers.js';
-import { parseYamlish, validateGeneratedQuest } from '../validators.js';
-import type { GeneratedContentResult } from '../validators.js';
+import { validateGeneratedQuest } from '../validators.js';
+import { generateWithRepair } from '../generate-with-repair.js';
+import type { GeneratedTextResult } from '../generate-with-repair.js';
 
 export type CreateQuestInput = {
   theme: string;
@@ -16,22 +16,14 @@ export type CreateQuestInput = {
   sessionContext?: string;
 };
 
-export type GeneratedQuestResult = {
-  ok: true;
-  yaml: string;
-  validation: GeneratedContentResult;
-  repaired?: boolean;
-  repairNote?: string;
-} | {
-  ok: false;
-  error: string;
-};
+export type GeneratedQuestResult = GeneratedTextResult;
 
 export async function createQuest(
   client: OllamaTextClient,
   input: CreateQuestInput,
 ): Promise<GeneratedQuestResult> {
-  const result = await client.generate({
+  return generateWithRepair({
+    client,
     system: createQuestPrompt.system,
     prompt: createQuestPrompt.render({
       theme: input.theme,
@@ -41,56 +33,8 @@ export async function createQuest(
       constraints: input.constraints,
       sessionContext: input.sessionContext,
     }),
+    repair: input.repair,
+    kindLabel: 'quest',
+    validate: validateGeneratedQuest,
   });
-
-  if (!result.ok) return result;
-
-  const yaml = extractYaml(result.text);
-  const parsed = parseYamlish(yaml);
-  const validation = validateGeneratedQuest(yaml, parsed);
-
-  if (validation.valid || !input.repair) {
-    return { ok: true, yaml, validation };
-  }
-
-  // Single repair pass
-  const errorSummary = validation.validation.errors
-    .map((e) => `${e.path}: ${e.message}`)
-    .join('\n');
-
-  const repairResult = await client.generate({
-    system: createQuestPrompt.system,
-    prompt: [
-      `The following YAML quest definition has validation errors.`,
-      `Fix the errors and output only the corrected YAML.`,
-      ``,
-      `Original YAML:`,
-      yaml,
-      ``,
-      `Validation errors:`,
-      errorSummary,
-      ``,
-      `Output only corrected YAML, no explanations.`,
-    ].join('\n'),
-  });
-
-  if (!repairResult.ok) {
-    return {
-      ok: true,
-      yaml,
-      validation,
-      repaired: false,
-      repairNote: `Repair failed: ${repairResult.error}`,
-    };
-  }
-
-  const repairedYaml = extractYaml(repairResult.text);
-  const repairedParsed = parseYamlish(repairedYaml);
-  const repairedValidation = validateGeneratedQuest(repairedYaml, repairedParsed);
-
-  const repairNote = repairedValidation.valid
-    ? `Repaired: ${validation.validation.errors.length} validation error(s) fixed.`
-    : `Repair attempted: ${validation.validation.errors.length} original error(s), ${repairedValidation.validation.errors.length} remaining.`;
-
-  return { ok: true, yaml: repairedYaml, validation: repairedValidation, repaired: true, repairNote };
 }
