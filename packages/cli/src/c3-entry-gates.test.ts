@@ -245,12 +245,12 @@ describe('C3/P2 — operands this engine cannot evaluate are NAMED, not silently
     // tracks time of day. Pinned as data so the prose cannot drift from it.
     expect(Object.keys(UNEVALUABLE_OPERANDS).sort()).toEqual(['party-level', 'player-level']);
     expect(Object.keys(GATE_REFUSED_OPERANDS)).toEqual(['random-probability']);
-    // 14 families; time-of-day is evaluable from Zone.scene (F-ddccdcc7).
-    expect(KNOWN_CONDITION_TYPES).toHaveLength(14);
+    // 18 families; time-of-day (F-ddccdcc7) plus four social arms (F-d7bab077).
+    expect(KNOWN_CONDITION_TYPES).toHaveLength(18);
     const evaluable = KNOWN_CONDITION_TYPES.filter(
       (t) => !UNEVALUABLE_OPERANDS[t] && !GATE_REFUSED_OPERANDS[t],
     );
-    expect(evaluable).toHaveLength(11);
+    expect(evaluable).toHaveLength(15);
   });
 
   it('the sky-gantry gate refuses AND reports its operand as unevaluable', () => {

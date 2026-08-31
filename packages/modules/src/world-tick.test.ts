@@ -2217,6 +2217,7 @@ describe('world-tick — move advisor (F-7a056689)', () => {
       entities: [makePlayer({ custom: { 'leverage.favor': 50 } })],
       zones,
     });
+    engine.store.state.globals[HEAT_KEY] = 80;
     engine.store.state.factions['watch'] = {
       id: 'watch', name: 'The Watch', reputation: -60, disposition: 'hostile',
     };
