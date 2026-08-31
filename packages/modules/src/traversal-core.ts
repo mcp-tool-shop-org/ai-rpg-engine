@@ -2,8 +2,10 @@
 
 import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
-import { getDistrictForZone, getDistrictDefinition } from './district-core.js';
+import { getDistrictForZone, getDistrictDefinition, getDistrictState } from './district-core.js';
 import { getDistrictEconomy, deriveEconomyDescriptor, formatEconomyForDirector } from './economy-core.js';
+import { computeDistrictMood, formatDistrictMoodForNarrator } from './district-mood.js';
+import { getPersistedMoveRecommendation } from './move-advisor.js';
 import { evaluateConditions } from './condition-eval.js';
 import { applyZoneItemRecognition } from './item-recognition.js';
 
@@ -115,11 +117,25 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     world.locationId = targetZoneId;
   }
 
+  // F-99de2f57: district-mood walk-in line. computeDistrictMood already runs
+  // every round for every district that resolves elsewhere (strategic-map,
+  // world-tick, leverage-modifiers, companion-reactions, npc-agency,
+  // crafting-recipes) — walking INTO a district was the one silent path. An
+  // unmapped zone (no district) stays byte-identical to today's four-key
+  // payload.
+  const moodDistrictId = getDistrictForZone(world, targetZoneId);
+  const moodDistrictState = moodDistrictId ? getDistrictState(world, moodDistrictId) : undefined;
+  const moodDistrictDef = moodDistrictId ? getDistrictDefinition(world, moodDistrictId) : undefined;
+  const moodHint = moodDistrictState && moodDistrictDef
+    ? formatDistrictMoodForNarrator(computeDistrictMood(moodDistrictState, moodDistrictDef.tags), moodDistrictDef.name)
+    : undefined;
+
   const entered = makeEvent(action, 'world.zone.entered', {
     zoneId: targetZoneId,
     zoneName: targetZone.name,
     previousZoneId: currentZone.id,
     tags: targetZone.tags,
+    ...(moodHint ? { moodHint } : {}),
   }, {
     presentation: {
       channels: ['objective'],
@@ -164,6 +180,13 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
     const districtId = getDistrictForZone(world, zone.id);
     const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
 
+    // F-7d890283: the same player-facing strategic-map line runMoveAdvisorStep
+    // already persists this round (world-tick.ts) — read here, never
+    // recomputed, so there is exactly one buildStrategicMap call per round.
+    // World-level (not district-scoped), so it rides beside economyReport as
+    // its own independent conditional, not nested inside the districtId gate.
+    const situationHint = getPersistedMoveRecommendation(world)?.situationHint;
+
     return [makeEvent(action, 'world.zone.inspected', {
       zoneId: zone.id,
       zoneName: zone.name,
@@ -183,6 +206,7 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
             ),
           }
         : {}),
+      ...(situationHint ? { situationHint } : {}),
     })];
   }
 

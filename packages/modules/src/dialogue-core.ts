@@ -22,6 +22,8 @@ import { generateNpcTextures, getPersistedNpcLastActions, getPersistedNpcProfile
 import { getReputationConsequence } from './social-consequence.js';
 import { getEntityFaction } from './faction-cognition.js';
 import { getVisiblePressures, formatPressureForDialogue, type WorldPressure } from './pressure-system.js';
+import { getPartyState, getActiveCompanions, formatPartyPresence } from './companion-core.js';
+import { getPersistedOpportunities, getOpportunitiesForNpc, formatOpportunityForDialogue } from './opportunity-core.js';
 
 const KNOWN_CONDITION_TYPE_SET: ReadonlySet<string> = new Set(KNOWN_CONDITION_TYPES);
 
@@ -235,6 +237,8 @@ function enterNode(
   const dialogueHint = dialogueHintForSpeaker(world, speakerId);
   const pressureHint = pressureHintForWorld(world);
   const textureHint = textureHintForSpeaker(world, speakerId);
+  const partyPresence = partyPresenceHint(world);
+  const opportunityHint = opportunityHintForSpeaker(world, speakerId);
 
   const events: ResolvedEvent[] = [
     makeEvent(action, 'dialogue.node.entered', {
@@ -247,6 +251,8 @@ function enterNode(
       ...(dialogueHint ? { dialogueHint } : {}),
       ...(pressureHint ? { pressureHint } : {}),
       ...(textureHint ? { textureHint } : {}),
+      ...(partyPresence ? { partyPresence } : {}),
+      ...(opportunityHint ? { opportunityHint } : {}),
     }, {
       presentation: {
         channels: ['dialogue'],
@@ -403,6 +409,41 @@ function textureHintForSpeaker(world: WorldState, speakerId: string | null | und
   const profiles = getPersistedNpcProfiles(world).filter((p) => p.npcId === speakerId);
   if (profiles.length === 0) return '';
   return generateNpcTextures(profiles, world, world.playerId)[0] ?? '';
+}
+
+/**
+ * Active-party presence line (F-472cf3c4). World-scoped, not speaker-scoped —
+ * whoever the player is talking to, an active party still travels with them.
+ * An empty or fully-inactive party omits the field, matching the other
+ * hints' byte-identical-when-absent guarantee (formatPartyPresence already
+ * returns undefined in that case).
+ */
+function partyPresenceHint(world: WorldState): string {
+  const party = getPartyState(world);
+  if (getActiveCompanions(party).length === 0) return '';
+  const names: Record<string, string> = {};
+  for (const c of party.companions) {
+    const name = world.entities[c.npcId]?.name;
+    if (name) names[c.npcId] = name;
+  }
+  return formatPartyPresence(party, names, world) ?? '';
+}
+
+/**
+ * Highest-urgency open opportunity linked to this speaker, NPC-facing
+ * (F-e7fc9018). Only 'available'/'accepted' status and non-'hidden'
+ * visibility surface — a speaker with no open, visible offer omits the field.
+ */
+function opportunityHintForSpeaker(world: WorldState, speakerId: string | null | undefined): string {
+  if (!speakerId) return '';
+  const open = getOpportunitiesForNpc(getPersistedOpportunities(world), speakerId)
+    .filter((o) => (o.status === 'available' || o.status === 'accepted') && o.visibility !== 'hidden');
+  if (open.length === 0) return '';
+  let highest = open[0];
+  for (let i = 1; i < open.length; i++) {
+    if (open[i].urgency > highest.urgency) highest = open[i];
+  }
+  return formatOpportunityForDialogue(highest);
 }
 
 /**

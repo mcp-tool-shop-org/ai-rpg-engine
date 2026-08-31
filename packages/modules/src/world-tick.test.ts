@@ -2252,6 +2252,49 @@ describe('world-tick — move advisor (F-7a056689)', () => {
   });
 });
 
+describe('world-tick — move advisor situationHint (F-7d890283)', () => {
+  it('a hostile faction plus a hotspot district attaches situationHint to the persisted rec, and the same string reaches world.zone.inspected', () => {
+    const engine = createTestEngine({
+      modules: [createEnvironmentCore(), createDistrictCore({ districts }), traversalCore, createWorldTick()],
+      entities: [makePlayer()],
+      zones,
+    });
+    engine.store.state.factions['watch'] = {
+      id: 'watch', name: 'The Watch', reputation: -60, disposition: 'hostile',
+    };
+    // district-1 (zoneIds: ['zone-a']) — force it into strategic-map's
+    // 'high-alert' hotspot band. Default stability (5, < 20) already earns
+    // 'unstable' on its own, so this only needs to add alertPressure.
+    getDistrictState(engine.world, 'district-1')!.alertPressure = 100;
+
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    const rec = getPersistedMoveRecommendation(engine.world);
+    expect(rec).toBeDefined();
+    expect(rec!.situationHint).toBe('Market feels unstable and high-alert. The watch are on high alert');
+
+    // world.zone.inspected reads the SAME persisted string beside
+    // economyReport — no recomputation, no parallel strategic-map namespace.
+    const inspected = engine.submitAction('inspect', {}).find((e) => e.type === 'world.zone.inspected');
+    expect(inspected).toBeDefined();
+    expect(inspected!.payload.situationHint).toBe(rec!.situationHint);
+  });
+
+  it('a quiet world (leverage-triggered, no districts/factions) omits situationHint from the persisted rec', () => {
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer({ custom: { 'leverage.favor': 50 } })],
+      zones,
+    });
+
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    const rec = getPersistedMoveRecommendation(engine.world);
+    expect(rec).toBeDefined();
+    expect(rec).not.toHaveProperty('situationHint');
+  });
+});
+
 describe('world-tick — resolvePressureByFaction (F-35aa8ed0)', () => {
   it('a faction hunt closes bounty-issued, moves alert, and expiry does not also fire', () => {
     const engine = createTestEngine({
