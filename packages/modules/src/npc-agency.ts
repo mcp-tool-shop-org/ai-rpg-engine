@@ -1233,6 +1233,7 @@ type NpcAgencyNamespace = {
   lastActions?: unknown;
   obligationLedgers?: unknown;
   activeChains?: unknown;
+  recapEntries?: unknown;
 };
 
 /** Peek the persisted namespace WITHOUT attaching (mirrors world-tick.ts's peekState contract). */
@@ -1297,6 +1298,18 @@ export function getPersistedNpcChains(world: WorldState): ConsequenceChain[] {
 }
 
 /**
+ * Non-attaching read of this round's PEOPLE recap (F-c3b0f88a). [] when the
+ * namespace is absent or malformed. world-tick.ts's runNpcAgencyStep is the
+ * production writer via computeNpcRecapEntries.
+ */
+export function getPersistedNpcRecapEntries(world: WorldState): NpcRecapEntry[] {
+  const value = peekNpcAgencyNamespace(world)?.recapEntries;
+  return Array.isArray(value)
+    ? value.filter((v): v is NpcRecapEntry => typeof v === 'object' && v !== null && typeof (v as NpcRecapEntry).npcId === 'string')
+    : [];
+}
+
+/**
  * Persist this round's NPC agency state. The ONLY writer (world-tick.ts's
  * per-round step) gates this call on "at least one named NPC exists this
  * round" — SEED-0 identity depends on this function never being invoked for
@@ -1304,9 +1317,10 @@ export function getPersistedNpcChains(world: WorldState): ConsequenceChain[] {
  * opportunity-core's setPersistedOpportunities) is safe and simpler here —
  * no sibling module shares this namespace.
  *
- * `activeChains` is optional so sibling writers that only touch obligation
- * ledgers (opportunity-resolution) preserve whatever chains world-tick last
- * persisted. Passing the array (including `[]`) is a full replace.
+ * `activeChains` / `recapEntries` are optional so sibling writers that only
+ * touch obligation ledgers (opportunity-resolution) preserve whatever
+ * world-tick last persisted. Passing the array (including `[]`) is a full
+ * replace.
  */
 export function setPersistedNpcState(
   world: WorldState,
@@ -1314,12 +1328,14 @@ export function setPersistedNpcState(
   lastActions: NpcActionResult[],
   obligationLedgers: Map<string, NpcObligationLedger>,
   activeChains?: ConsequenceChain[],
+  recapEntries?: NpcRecapEntry[],
 ): void {
   world.modules['npc-agency'] = {
     profiles,
     lastActions,
     obligationLedgers: Object.fromEntries(obligationLedgers),
     activeChains: activeChains ?? getPersistedNpcChains(world),
+    recapEntries: recapEntries ?? getPersistedNpcRecapEntries(world),
   };
 }
 
@@ -1403,8 +1419,20 @@ export function formatNpcPeopleForDirector(
   profiles: NpcProfile[],
   lastActions: NpcActionResult[],
   npcObligations?: Map<string, NpcObligationLedger>,
+  recapEntries?: NpcRecapEntry[],
 ): string {
   if (profiles.length === 0) return '  No named NPCs found.';
+
+  // Single PEOPLE recap (F-c3b0f88a): computeNpcRecapEntries is the producer.
+  // Callers that already persisted this tick's recap pass it through; otherwise
+  // obligations still surface via the existing favor/debt counts.
+  const recap = recapEntries ?? computeNpcRecapEntries(
+    profiles,
+    new Map(),
+    npcObligations ?? new Map(),
+    new Map(),
+  );
+  const recapByNpc = new Map(recap.map((entry) => [entry.npcId, entry]));
 
   const lines: string[] = [];
   lines.push('');
@@ -1425,9 +1453,18 @@ export function formatNpcPeopleForDirector(
       oblStr = ` — favor×${favors}, debt×${debts}`;
     }
 
+    const recapEntry = recapByNpc.get(profile.npcId);
+    let recapStr = '';
+    if (recapEntry?.shifted) {
+      recapStr += ` — shifted:${recapEntry.previousBreakpoint ?? '?'}→${recapEntry.breakpoint}`;
+    }
+    if (recapEntry?.activeChainKind) {
+      recapStr += ` — chain:${recapEntry.activeChainKind}`;
+    }
+
     // Compact enriched format
     lines.push('');
-    lines.push(`  ${profile.name} [${profile.breakpoint}/${profile.dominantAxis}] — ${profile.factionId ?? 'none'}${oblStr}`);
+    lines.push(`  ${profile.name} [${profile.breakpoint}/${profile.dominantAxis}] — ${profile.factionId ?? 'none'}${oblStr}${recapStr}`);
     lines.push(`    "${profile.leverageAngle}" | Last: ${actionStr}`);
   }
 

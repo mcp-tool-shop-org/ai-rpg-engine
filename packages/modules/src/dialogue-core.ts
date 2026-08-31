@@ -10,18 +10,20 @@ import type {
 import { makeEvent } from './make-event.js';
 import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
 // V3-DLG: dialogue vocabulary that reads/writes the social layer. Social
-// READ conditions route through condition-eval (F-d7bab077). Last-action
-// dialogueHint and live pressureHint attach on enterNode without rewriting
-// authored node.text. Write effects still call player-leverage. Neither
-// player-leverage nor npc-agency import dialogue-core.ts, so this stays a
-// one-directional edge.
+// READ conditions route through condition-eval (F-d7bab077 / F-6469b38f).
+// Last-action dialogueHint, live pressureHint, and generateNpcTextures
+// demeanor attach on enterNode without rewriting authored node.text. Write
+// effects still call player-leverage. Neither player-leverage nor npc-agency
+// import dialogue-core.ts, so this stays a one-directional edge.
 import { getLeverageState, applyLeverageDeltas, getStoredFactionAccess } from './player-leverage.js';
-import { evaluateCondition as evaluateCompiledCondition } from './condition-eval.js';
+import { evaluateCondition as evaluateCompiledCondition, KNOWN_CONDITION_TYPES } from './condition-eval.js';
 import type { LeverageCurrency } from './player-leverage.js';
-import { getPersistedNpcLastActions } from './npc-agency.js';
+import { generateNpcTextures, getPersistedNpcLastActions, getPersistedNpcProfiles } from './npc-agency.js';
 import { getReputationConsequence } from './social-consequence.js';
 import { getEntityFaction } from './faction-cognition.js';
 import { getVisiblePressures, formatPressureForDialogue, type WorldPressure } from './pressure-system.js';
+
+const KNOWN_CONDITION_TYPE_SET: ReadonlySet<string> = new Set(KNOWN_CONDITION_TYPES);
 
 export type DialogueState = {
   activeDialogue: string | null;
@@ -232,6 +234,7 @@ function enterNode(
   const dialogueBias = dialogueBiasForSpeaker(world, speakerId);
   const dialogueHint = dialogueHintForSpeaker(world, speakerId);
   const pressureHint = pressureHintForWorld(world);
+  const textureHint = textureHintForSpeaker(world, speakerId);
 
   const events: ResolvedEvent[] = [
     makeEvent(action, 'dialogue.node.entered', {
@@ -243,6 +246,7 @@ function enterNode(
       ...(dialogueBias ? { dialogueBias } : {}),
       ...(dialogueHint ? { dialogueHint } : {}),
       ...(pressureHint ? { pressureHint } : {}),
+      ...(textureHint ? { textureHint } : {}),
     }, {
       presentation: {
         channels: ['dialogue'],
@@ -390,6 +394,18 @@ function dialogueHintForSpeaker(world: WorldState, speakerId: string | null | un
 }
 
 /**
+ * Zone-scoped demeanor from generateNpcTextures (F-3a991ee0). Speakers in
+ * another zone, empty profiles, or a profile with no goal omit the field.
+ * Authored node.text is never rewritten.
+ */
+function textureHintForSpeaker(world: WorldState, speakerId: string | null | undefined): string {
+  if (!speakerId) return '';
+  const profiles = getPersistedNpcProfiles(world).filter((p) => p.npcId === speakerId);
+  if (profiles.length === 0) return '';
+  return generateNpcTextures(profiles, world, world.playerId)[0] ?? '';
+}
+
+/**
  * Highest-urgency visible pressure, formatted by formatPressureForDialogue
  * (F-da7751a0). Peeks the world-tick namespace rather than importing the
  * tick driver (player-leverage already cycles with world-tick). Empty when
@@ -425,17 +441,13 @@ function evaluateCondition(
     return world.globals[condition.params.key as string] !== undefined;
   }
 
-  // Social-state READ conditions live in the closed condition-eval table
-  // (F-d7bab077). Dialogue routes through that one evaluator so a Guild-hall
-  // exit and a dialogue choice cannot disagree about favor>=20. Unknown
-  // kinds still fall through to the silent-true default below (V3-DLG-3).
-  if (
-    condition.type === 'leverage-at-least' ||
-    condition.type === 'reputation-at-least' ||
-    condition.type === 'npc-relationship-at-least' ||
-    condition.type === 'obligation-exists' ||
-    condition.type === 'faction-access'
-  ) {
+  // Every evaluable KNOWN_CONDITION_TYPES family routes through the one
+  // closed evaluator (F-6469b38f / F-d7bab077) so a dusk chapel line and a
+  // traversal exit cannot disagree. player-level / party-level stay
+  // unevaluable (fail-closed); random-probability stays GATE_REFUSED.
+  // Unknown kinds still fall through to the silent-true default below
+  // (V3-DLG-3) so existing content is unchanged.
+  if (KNOWN_CONDITION_TYPE_SET.has(condition.type)) {
     return evaluateCompiledCondition(condition, world, world.playerId).ok;
   }
 

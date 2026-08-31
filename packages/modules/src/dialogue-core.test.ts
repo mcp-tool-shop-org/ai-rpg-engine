@@ -18,7 +18,7 @@ import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import { createDialogueCore } from './dialogue-core.js';
 import { getLeverageState } from './player-leverage.js';
 import { createObligation, setPersistedNpcState } from './npc-agency.js';
-import type { NpcObligationLedger } from './npc-agency.js';
+import type { NpcObligationLedger, NpcProfile } from './npc-agency.js';
 import { createFactionCognition } from './faction-cognition.js';
 import { createCognitionCore } from './cognition-core.js';
 import { createWorldTick, getWorldTickState } from './world-tick.js';
@@ -216,6 +216,55 @@ describe('dialogue-core: speakHandler', () => {
       .find(e => e.type === 'dialogue.node.entered')!;
     expect(bare.payload.text).toBe('Welcome, traveler.');
     expect(bare.payload.pressureHint).toBeUndefined();
+  });
+
+  it('F-3a991ee0: a same-zone fearful flee NPC attaches textureHint; other-zone or no-goal omits the field', () => {
+    const named: EntityState = { ...npc, tags: ['npc', 'named'] };
+    const fearful: NpcProfile = {
+      npcId: 'merchant',
+      name: 'Merchant',
+      factionId: null,
+      goals: [{ id: 'flee', label: 'Flee', priority: 1, verb: 'flee', reason: 'afraid' }],
+      relationship: { trust: 0, fear: 70, greed: 0, loyalty: 0 },
+      breakpoint: 'wavering',
+      dominantAxis: 'fear',
+      leverageAngle: 'fear',
+      knownRumors: [],
+      underPressure: false,
+    };
+
+    const sameZone = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, named],
+      zones,
+    });
+    setPersistedNpcState(sameZone.world, [fearful], [], new Map());
+    const hinted = sameZone.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(hinted.payload.text).toBe('Welcome, traveler.');
+    expect(hinted.payload.textureHint).toBe('Merchant edging toward the exit, eyes darting');
+
+    const otherZone = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, { ...named, zoneId: 'zone-b' }],
+      zones: [...zones, { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] }],
+    });
+    setPersistedNpcState(otherZone.world, [fearful], [], new Map());
+    const remote = otherZone.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(remote.payload.text).toBe('Welcome, traveler.');
+    expect(remote.payload.textureHint).toBeUndefined();
+
+    const idle = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, named],
+      zones,
+    });
+    setPersistedNpcState(idle.world, [{ ...fearful, goals: [] }], [], new Map());
+    const bare = idle.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(bare.payload.text).toBe('Welcome, traveler.');
+    expect(bare.payload.textureHint).toBeUndefined();
   });
 
   it('finds dialogue by explicit dialogueId parameter', () => {
@@ -773,6 +822,92 @@ describe('dialogue-core: obligation-exists condition (F-V31-OBLIG-DLG)', () => {
     engine.world.modules['dialogue-core'] = { activeDialogue: 'obligation-vocab', activeNodeId: 'preEntry', speakerId: null };
     const events = engine.submitAction('choose', { parameters: { choiceId: 'proceed' } });
     expect(enteredChoiceIds(events)).toContain('default-speaker-obligation');
+  });
+});
+
+const chapelDialogue: DialogueDefinition = {
+  id: 'chapel-gates',
+  speakers: ['merchant'],
+  entryNodeId: 'entry',
+  nodes: {
+    entry: {
+      id: 'entry',
+      speaker: 'merchant',
+      text: 'The chapel waits.',
+      choices: [
+        {
+          id: 'dusk-gate', text: '[dusk] Enter at dusk.', nextNodeId: 'shop',
+          condition: { type: 'time-of-day', params: { equals: 'dusk' } },
+        },
+        {
+          id: 'key-gate', text: '[chapel-key] Unlock the chapel.', nextNodeId: 'shop',
+          condition: { type: 'has-item', params: { id: 'chapel-key' } },
+        },
+        {
+          id: 'flag-gate', text: '[rite-done] Speak of the rite.', nextNodeId: 'shop',
+          condition: { type: 'has-flag', params: { id: 'rite-done' } },
+        },
+        {
+          id: 'always-open', text: 'Always.', nextNodeId: 'shop',
+          condition: { type: 'always', params: {} },
+        },
+        {
+          id: 'never-open', text: 'Never.', nextNodeId: 'shop',
+          condition: { type: 'never', params: {} },
+        },
+        {
+          id: 'level-gate', text: '[level] Power.', nextNodeId: 'shop',
+          condition: { type: 'player-level', params: { op: '>=', value: 5 } },
+        },
+        {
+          id: 'unknown-gate', text: 'Mystery.', nextNodeId: 'shop',
+          condition: { type: 'not-a-real-operand', params: {} },
+        },
+      ],
+    },
+    shop: { id: 'shop', speaker: 'merchant', text: 'Very well.' },
+  },
+};
+
+function chapelEngine(timeOfDay: string, inventory?: string[]) {
+  return createTestEngine({
+    modules: [createDialogueCore([chapelDialogue])],
+    entities: [{ ...player, inventory }, npc],
+    zones: [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [], scene: { timeOfDay } }],
+  });
+}
+
+describe('dialogue-core: remaining C3 families via condition-eval (F-6469b38f)', () => {
+  it('a dusk gate is hidden at morning and visible at dusk', () => {
+    const morning = chapelEngine('morning');
+    expect(enteredChoiceIds(morning.submitAction('speak', { targetIds: ['merchant'] }))).not.toContain('dusk-gate');
+    const dusk = chapelEngine('dusk');
+    expect(enteredChoiceIds(dusk.submitAction('speak', { targetIds: ['merchant'] }))).toContain('dusk-gate');
+  });
+
+  it('has-item chapel-key is hidden until granted', () => {
+    const locked = chapelEngine('dusk');
+    expect(enteredChoiceIds(locked.submitAction('speak', { targetIds: ['merchant'] }))).not.toContain('key-gate');
+    const unlocked = chapelEngine('dusk', ['chapel-key']);
+    expect(enteredChoiceIds(unlocked.submitAction('speak', { targetIds: ['merchant'] }))).toContain('key-gate');
+  });
+
+  it('has-flag, always, and never follow the shared evaluator; player-level stays fail-closed; unknown kinds stay silent-true', () => {
+    const engine = chapelEngine('dusk');
+    const hidden = enteredChoiceIds(engine.submitAction('speak', { targetIds: ['merchant'] }));
+    expect(hidden).not.toContain('flag-gate');
+    expect(hidden).toContain('always-open');
+    expect(hidden).not.toContain('never-open');
+    expect(hidden).not.toContain('level-gate');
+    expect(hidden).toContain('unknown-gate');
+
+    const flagged = createTestEngine({
+      modules: [createDialogueCore([chapelDialogue])],
+      entities: [player, npc],
+      zones: [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [], scene: { timeOfDay: 'dusk' } }],
+      globals: { 'rite-done': true },
+    });
+    expect(enteredChoiceIds(flagged.submitAction('speak', { targetIds: ['merchant'] }))).toContain('flag-gate');
   });
 });
 
