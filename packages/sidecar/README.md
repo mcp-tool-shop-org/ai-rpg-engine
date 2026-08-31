@@ -38,17 +38,18 @@ ai-rpg-engine sidecar chapel-threshold --seed 71
 ## Talk to it
 
 ```ts
-import { MessageReader, encodeMessage, METHODS } from '@ai-rpg-engine/sidecar';
+import { MessageReader, encodeMessage, METHODS, connectSocketClient } from '@ai-rpg-engine/sidecar';
 
 // 1. Handshake. Capabilities are exchanged — there is no protocol version.
 await request(METHODS.INITIALIZE, {
   clientName: 'my-renderer',
   clientVersion: '1.0.0',
-  capabilities: { notifications: true, hashes: true },
+  capabilities: { notifications: true, hashes: true, canonicalHashes: true },
 });
 
 // 2. Load the world. A snapshot is a delta from an empty baseline, produced by
-//    the same serializer as every incremental update.
+//    the same serializer as every incremental update. Call this before listening
+//    for sim/tick — incremental ticks are withheld until SNAPSHOT (snapshotSeq).
 const snap = await request(METHODS.SNAPSHOT);
 let world = applyPatches({}, snap.delta);
 
@@ -56,7 +57,39 @@ let world = applyPatches({}, snap.delta);
 const result = await request(METHODS.SUBMIT_ACTION, { verb: 'move' });
 
 // 4. Tick notifications arrive as server PUSH, carrying events, a state delta,
-//    and the hash you use to detect staleness.
+//    and the hash you use to detect staleness. Drop ticks whose snapshotSeq is
+//    below the last applied snapshot.
+```
+
+A JS host attaching over TCP should use the exported helper, not copy test glue:
+
+```ts
+const { client } = await connectSocketClient(7731);
+await client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+await client.snapshot();
+```
+
+### Godot attach (TCP, not stdio pipes)
+
+GDScript subprocess pipes are documented-buggy upstream (godot#102340). Attach
+over localhost TCP — the same wire Godot's own editor uses. The shipped host kit
+lives in `gdscript/` (`SidecarFraming` + `SidecarAttachClient`).
+
+```bash
+ai-rpg-engine sidecar chapel-threshold --seed 71 --listen 7731
+```
+
+```gdscript
+var client := SidecarAttachClient.new()
+client.connect_to_host("127.0.0.1", 7731)
+client.initialize({
+  "notifications": true,
+  "hashes": true,
+  "canonicalHashes": true,  # cross-language hash; do not JSON.stringify
+  "writes": true,           # false = observer overlay (ticks only)
+})
+client.snapshot({ "omitEventLog": true })  # replay covers presentation
+# per-frame: client.poll()
 ```
 
 ## Design
@@ -88,14 +121,16 @@ the renderer.
 | Method | Purpose |
 |---|---|
 | `initialize` | Capability handshake. Required first. |
-| `snapshot` | The whole world, as a delta from empty. |
-| `submitAction` | Submit a player intent. |
-| `advance` | Advance the world without a player action. |
+| `snapshot` | The whole world, as a delta from empty. Optional `omitEventLog` / `collections` window the resync. |
+| `submitAction` | Submit a player intent. Observers (`writes: false`) are refused. |
+| `advance` | Advance the world without a player action. Observers refused. |
 | `preview` | Evaluate a command with no side effects. |
 | `replay` | Re-emit a closed tick window. Idempotent by `(tick, event id)`. |
-| `shutdown` | Orderly stop. May omit `id` (fire-and-forget). |
+| `shutdown` | Orderly stop. May omit `id` (fire-and-forget). Observers refused. |
 
-Notifications: `sim/tick` (events + delta + hash), `sim/closing`.
+Notifications: `sim/tick` (events + delta + hash + `snapshotSeq`; `canonicalHash` when negotiated), `sim/closing`.
+
+`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second hash, never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`). Incremental ticks are withheld until that session has served `snapshot`.
 
 ## License
 

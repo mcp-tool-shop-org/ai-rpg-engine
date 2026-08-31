@@ -9,6 +9,7 @@ import { SidecarClient } from './client.js';
 import { SidecarServer, attachedServerCount } from './server.js';
 import { ERROR_CODES, METHODS, NOTIFICATIONS, type RpcMessage } from './protocol.js';
 import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
+import { applyPatches, canonicalStateHash, stateHash } from './serializer.js';
 
 function brandModule(): EngineModule {
   return {
@@ -576,6 +577,121 @@ describe('F-8b1563f6 — an oversized snapshot fails the RPC rather than writing
     expect(err.code).toBe(ERROR_CODES.SNAPSHOT_TOO_LARGE);
     expect(err.message).toMatch(/ceiling/i);
     expect(() => encodeMessage(sent.find((m) => m.id === 2)!)).not.toThrow(MessageTooLargeError);
+    const errObj = sent.find((m) => m.id === 2)?.error as { data?: { byteLength: number; retry?: { omitEventLog?: boolean } } };
+    expect(errObj.data?.byteLength).toBeGreaterThan(MAX_MESSAGE_BYTES);
+    expect(errObj.data?.retry?.omitEventLog).toBe(true);
+    expect(err.message).toMatch(/omitEventLog/);
   }, 30000);
+});
+
+describe('F-071522b2 — snapshot epoch: no incremental tick onto an empty mirror', () => {
+  it('B initialize()s, A submitAction before B snapshot(): B is {} or complete, never partial', async () => {
+    const { a, b, engine } = dualLoopback(true);
+    await a.client.initialize();
+    await b.client.initialize();
+    await a.client.snapshot();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    expect(engine.world.entities['npc-1']).toBeTruthy();
+    // Withheld until SNAPSHOT: empty, not a half-applied entity set.
+    expect(b.client.mirroredState).toEqual({});
+    expect(mirroredEntities(b.client)['npc-1']).toBeUndefined();
+    expect(mirroredEntities(b.client)['hero']).toBeUndefined();
+
+    await b.client.snapshot();
+    expect(mirroredEntities(b.client)['npc-1']).toBeTruthy();
+    expect(mirroredEntities(b.client)['hero']).toBeTruthy();
+    expect(b.client.stalenessReports).toEqual([]);
+  });
+});
+
+describe('F-bb72a8ab — observer sessions cannot write; they still receive ticks', () => {
+  it('maxConnections 2, B writes:false: B submitAction is refused, A commits, B gets the tick', async () => {
+    const { a, b, engine } = dualLoopback(true);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, writes: false });
+    expect(a.server.sessionRole).toBe('writer');
+    expect(b.server.sessionRole).toBe('observer');
+    expect(b.server.capabilities.writes).toBe(false);
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await expect(b.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' })).rejects.toMatchObject({
+      code: ERROR_CODES.CAPABILITY_UNAVAILABLE,
+    });
+    expect(engine.world.entities['npc-1']).toBeUndefined();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    expect(engine.world.entities['npc-1']).toBeTruthy();
+    expect(mirroredEntities(b.client)['npc-1']).toBeTruthy();
+    expect(b.client.stalenessReports).toEqual([]);
+  });
+});
+
+describe('F-3f53c837 — canonicalHashes is negotiated and additive', () => {
+  it('canonicalHashes:false still only sees hash; true gets matching canonicalHash', async () => {
+    const { a, b } = dualLoopback(false);
+    await a.client.initialize({ notifications: true, hashes: true, canonicalHashes: false });
+    await b.client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+    const jsSnap = await a.client.snapshot();
+    expect(jsSnap).not.toHaveProperty('canonicalHash');
+    expect(jsSnap.hash).toBe(stateHash(a.client.mirroredState as WorldState));
+
+    const canonSnap = await b.client.snapshot();
+    expect(canonSnap.hash).toBe(stateHash(b.client.mirroredState as WorldState));
+    expect(canonSnap.canonicalHash).toBe(canonicalStateHash(b.client.mirroredState));
+    expect(canonSnap.canonicalHash).toMatch(/^[0-9a-f]{32}$/);
+    expect(b.client.stalenessReports).toEqual([]);
+  });
+});
+
+describe('F-decfe897 — omitEventLog snapshot is hash-matching and later ticks omit the log', () => {
+  it('a world whose eventLog alone exceeds the ceiling still snapshots with omitEventLog', () => {
+    const { engine } = boot();
+    engine.world.eventLog.push({
+      id: 'huge-log',
+      tick: 0,
+      type: 'probe.blob',
+      payload: { blob: 'x'.repeat(MAX_MESSAGE_BYTES) },
+    } as never);
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test' },
+      (m) => {
+        encodeMessage(m);
+        sent.push(m);
+      },
+    );
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    server.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SNAPSHOT, params: {} });
+    const fullErr = errorOf(sent.find((m) => m.id === 2));
+    expect(fullErr.code).toBe(ERROR_CODES.SNAPSHOT_TOO_LARGE);
+    expect(fullErr.message).toMatch(/omitEventLog/);
+    const data = (sent.find((m) => m.id === 2)?.error as { data?: { byteLength: number } }).data;
+    expect(data?.byteLength).toBeGreaterThan(MAX_MESSAGE_BYTES);
+
+    server.handle({ jsonrpc: '2.0', id: 3, method: METHODS.SNAPSHOT, params: { omitEventLog: true } });
+    const ok = sent.find((m) => m.id === 3);
+    expect(ok?.error).toBeUndefined();
+    const result = ok?.result as { hash: string; delta: unknown[] };
+    const mirrored = applyPatches({}, result.delta);
+    expect(stateHash(mirrored)).toBe(result.hash);
+    expect((mirrored as { eventLog?: unknown }).eventLog).toBeUndefined();
+  }, 30000);
+
+  it('a subsequent incremental tick does not assume the client has the omitted log', async () => {
+    const { a } = dualLoopback(false);
+    await a.client.initialize();
+    await a.client.snapshot({ omitEventLog: true });
+    expect((a.client.mirroredState as { eventLog?: unknown }).eventLog).toBeUndefined();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    const tick = a.client.receivedTicks.at(-1);
+    expect(tick).toBeTruthy();
+    expect((tick?.delta ?? []).filter((p) => p.path[0] === 'eventLog')).toEqual([]);
+    expect(mirroredEntities(a.client)['npc-1']).toBeTruthy();
+    expect((a.client.mirroredState as { eventLog?: unknown }).eventLog).toBeUndefined();
+    expect(a.client.stalenessReports).toEqual([]);
+  });
 });
 
