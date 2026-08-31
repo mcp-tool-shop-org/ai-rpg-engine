@@ -12,6 +12,7 @@ import {
 } from './chat-engine.js';
 import { createBuildState, type BuildPlan, type BuildStep } from './chat-build-planner.js';
 import { createTuningState, type TuningPlan, type TuningStep } from './chat-balance-analyzer.js';
+import { createSession, saveSession } from './session.js';
 
 function mockClient(response: string): OllamaTextClient {
   return {
@@ -862,5 +863,65 @@ describe('engine.process — stream options and undo (F-5b193212 / F-cf6b6f85)',
     expect(msg).toMatch(/nothing to undo|backup not found|Error:/i);
     expect(engine.pendingWrite).not.toBeNull();
     expect(engine.pendingWrite!.content).toBe('draft');
+  });
+});
+
+// --- End-to-end CREATE-then-undo through the engine (F-2d9f6b18, wave-4) ---
+// The FIRST /undo after ANY confirmed guided-build write used to fail
+// outright with "backup not found" -- applyConfirmed never writes a .bak
+// for a CREATE (the overwhelming case for scaffold output), and undo blindly
+// hunted one anyway. Exercises the real confirm-then-undo path through the
+// engine, not just apply-preview.ts's own unit tests, since chat-engine.ts
+// is what actually records the content_applied event undo later parses.
+describe('engine confirm-write then undo (F-2d9f6b18)', () => {
+  it('undoes a freshly-created scaffold file by deleting it, not by failing to find a .bak', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-undo-create-'));
+    try {
+      // content_applied (and therefore undo) needs an active session to
+      // record into -- without one, handleConfirmWrite's `if (session)`
+      // guard skips recordEvent entirely and undo has nothing to parse.
+      await saveSession(dir, createSession('undo test'));
+      const yaml = 'id: undo-room\ntype: room\nname: Undo Room';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      await engine.process('generate a room about an undo test');
+      // First "yes" previews, second "yes" applies (mirrors the confirm
+      // flow's existing two-phase shape).
+      await engine.process('yes');
+      const applied = await engine.process('yes');
+      expect(applied).toContain('Written');
+      const suggestedPath = applied.match(/Written: (\S+)/)?.[1];
+      expect(suggestedPath).toBeDefined();
+      await access(suggestedPath!);
+
+      const undone = await engine.undoLastWrite();
+      expect(undone).not.toMatch(/backup not found/i);
+      expect(undone).toMatch(/Removed|Restored/i);
+      await expect(access(suggestedPath!)).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a second consecutive /undo after a CREATE-undo refuses cleanly instead of erroring on a garbled path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-undo-create-twice-'));
+    try {
+      await saveSession(dir, createSession('undo test'));
+      const yaml = 'id: undo-room\ntype: room\nname: Undo Room';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      await engine.process('generate a room about an undo test');
+      await engine.process('yes');
+      await engine.process('yes');
+
+      const firstUndo = await engine.undoLastWrite();
+      expect(firstUndo).not.toMatch(/backup not found/i);
+
+      const secondUndo = await engine.undoLastWrite();
+      // Must be a clean, legible refusal -- never a crash, and never a
+      // "backup not found" error pointing at a garbled self-referential path.
+      expect(secondUndo).toMatch(/nothing to undo/i);
+      expect(secondUndo).not.toMatch(/backup not found/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

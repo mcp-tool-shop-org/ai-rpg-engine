@@ -569,7 +569,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     if (!pendingWrite) return 'Nothing to write.';
     const { content, suggestedPath, label, previewShown } = pendingWrite;
 
-    const { applyConfirmed, generatePreview } = await import('./apply-preview.js');
+    const { applyConfirmed, generatePreview, formatContentAppliedDetail } = await import('./apply-preview.js');
 
     // Scaffold/improve stage a write without a diff. Show generatePreview
     // once before clobbering; apply-content already did this.
@@ -594,10 +594,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     if (session) {
-      const detail = result.backupPath
-        ? `${result.path} (backup: ${result.backupPath})`
-        : result.path;
-      recordEvent(session, 'content_applied', detail);
+      recordEvent(session, 'content_applied', formatContentAppliedDetail(result));
       await saveSession(projectRoot, session);
     }
 
@@ -620,7 +617,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     if (!pendingWriteBatch || pendingWriteBatch.length === 0) return 'Nothing to write.';
     const entries = pendingWriteBatch;
 
-    const { applyConfirmed, generatePreview } = await import('./apply-preview.js');
+    const { applyConfirmed, generatePreview, formatContentAppliedDetail } = await import('./apply-preview.js');
 
     if (!pendingWriteBatchPreviewShown) {
       const previews: string[] = [];
@@ -653,10 +650,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       }
       lines.push(`Written: ${result.path} (${result.bytes} bytes)`);
       if (session) {
-        const detail = result.backupPath
-          ? `${result.path} (backup: ${result.backupPath})`
-          : result.path;
-        recordEvent(session, 'content_applied', detail);
+        recordEvent(session, 'content_applied', formatContentAppliedDetail(result));
       }
     }
 
@@ -682,7 +676,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
   async function undoLastWrite(): Promise<string> {
     const session = await tryLoadSession(projectRoot);
-    const { undoLastApply } = await import('./apply-preview.js');
+    const { undoLastApply, formatUndoResultDetail } = await import('./apply-preview.js');
     const history = session?.history ?? [];
     const result = await undoLastApply({ history, projectRoot });
     if (!result.ok) {
@@ -692,10 +686,17 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       return response;
     }
     if (session) {
-      recordEvent(session, 'content_applied', `undo restored ${result.path}`);
+      // F-2d9f6b18: record the undo's OWN effect with the same parseable
+      // shape every other content_applied event uses (never the old bespoke
+      // "undo restored X" string, which a SECOND consecutive /undo could not
+      // parse) so a further /undo targets a real path instead of a garbled,
+      // self-referential one.
+      recordEvent(session, 'content_applied', formatUndoResultDetail(result));
       await saveSession(projectRoot, session);
     }
-    const response = `Restored: ${result.path} (${result.bytes} bytes)`;
+    const response = result.deleted
+      ? `Removed: ${result.path} (undid a create)`
+      : `Restored: ${result.path} (${result.bytes} bytes)`;
     addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
     return response;
   }

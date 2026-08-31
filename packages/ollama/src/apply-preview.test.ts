@@ -5,7 +5,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup, parseContentAppliedDetail, undoLastApply } from './apply-preview.js';
+import {
+  generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup, parseContentAppliedDetail, undoLastApply,
+  formatContentAppliedDetail, formatUndoResultDetail,
+} from './apply-preview.js';
 
 describe('apply-preview', () => {
   let tempDir: string;
@@ -195,7 +198,25 @@ describe('apply-preview', () => {
       expect(parseContentAppliedDetail('/proj/chapel.yaml (backup: /proj/chapel.yaml.bak)')).toEqual({
         targetPath: '/proj/chapel.yaml',
         backupPath: '/proj/chapel.yaml.bak',
+        wasCreate: false,
       });
+    });
+
+    // F-2d9f6b18 (wave-4): a CREATE write must be recorded and parsed back
+    // as a CREATE explicitly -- not inferred from the mere absence of a
+    // backup suffix -- so undo can delete instead of hunting a .bak that
+    // was never written.
+    it('parseContentAppliedDetail reads the explicit (create) tag', () => {
+      expect(parseContentAppliedDetail('/proj/fresh.yaml (create)')).toEqual({
+        targetPath: '/proj/fresh.yaml',
+        wasCreate: true,
+      });
+    });
+
+    it('formatContentAppliedDetail tags CREATE and OVERWRITE distinctly', () => {
+      expect(formatContentAppliedDetail({ path: '/proj/fresh.yaml' })).toBe('/proj/fresh.yaml (create)');
+      expect(formatContentAppliedDetail({ path: '/proj/chapel.yaml', backupPath: '/proj/chapel.yaml.bak' }))
+        .toBe('/proj/chapel.yaml (backup: /proj/chapel.yaml.bak)');
     });
 
     it('undoLastApply restores from the last content_applied backup', async () => {
@@ -205,11 +226,97 @@ describe('apply-preview', () => {
       expect(written.ok).toBe(true);
       if (!written.ok) return;
       const restored = await undoLastApply({
-        history: [{ kind: 'content_applied', detail: `${written.path} (backup: ${written.backupPath})` }],
+        history: [{ kind: 'content_applied', detail: formatContentAppliedDetail(written) }],
         projectRoot: tempDir,
       });
       expect(restored.ok).toBe(true);
       expect(await readFile(target, 'utf-8')).toBe('before\n');
+    });
+
+    // F-2d9f6b18 (wave-4, CRITICAL): applyConfirmed never writes a .bak for
+    // a CREATE (the overwhelming case for guided-build scaffold output).
+    // Before this fix, undoLastApply always fell back to a `${path}.bak`
+    // probe that was never written, so the FIRST /undo after ANY confirmed
+    // guided-build batch failed outright with "backup not found" -- for
+    // every freshly-scaffolded file, every time.
+    it('undoLastApply DELETES the file on undo of a CREATE, instead of hunting a nonexistent .bak', async () => {
+      const target = join(tempDir, 'fresh.yaml');
+      const written = await applyConfirmed({ content: 'id: fresh\n', targetPath: target, projectRoot: tempDir });
+      expect(written.ok).toBe(true);
+      if (!written.ok) return;
+      expect(written.backupPath).toBeUndefined();
+
+      const undone = await undoLastApply({
+        history: [{ kind: 'content_applied', detail: formatContentAppliedDetail(written) }],
+        projectRoot: tempDir,
+      });
+      expect(undone.ok).toBe(true);
+      if (undone.ok) expect(undone.deleted).toBe(true);
+      await expect(readFile(target, 'utf-8')).rejects.toThrow();
+    });
+
+    // F-2d9f6b18 (wave-4): a SECOND consecutive /undo used to target a
+    // garbled, self-referential path -- the undo-restore's own
+    // content_applied event was recorded as the bespoke string
+    // `undo restored ${path}`, which has no ' (backup: ' substring, so the
+    // ENTIRE string became the parsed targetPath. formatUndoResultDetail
+    // gives the undo's own effect the same parseable shape every other
+    // content_applied event uses, so a second /undo targets a real path.
+    it('formatUndoResultDetail keeps a second consecutive undo parseable (OVERWRITE case)', async () => {
+      const target = join(tempDir, 'chapel.yaml');
+      await writeFile(target, 'before\n', 'utf-8');
+      const written = await applyConfirmed({ content: 'after\n', targetPath: target, projectRoot: tempDir });
+      expect(written.ok).toBe(true);
+      if (!written.ok) return;
+
+      // First undo: restores 'before' (and, being an OVERWRITE-shaped
+      // restoreFromBackup->applyConfirmed call, backs up 'after' first).
+      const firstUndo = await undoLastApply({
+        history: [{ kind: 'content_applied', detail: formatContentAppliedDetail(written) }],
+        projectRoot: tempDir,
+      });
+      expect(firstUndo.ok).toBe(true);
+      if (!firstUndo.ok) return;
+      expect(await readFile(target, 'utf-8')).toBe('before\n');
+
+      // The engine records the undo's own effect the same way a write is
+      // recorded -- never the old bespoke "undo restored X" string.
+      const firstUndoDetail = formatUndoResultDetail(firstUndo);
+      expect(firstUndoDetail).not.toContain('undo restored');
+
+      // Second undo, parsing ONLY that recorded detail, must restore back
+      // to 'after' -- not fail on a garbled path.
+      const secondUndo = await undoLastApply({
+        history: [{ kind: 'content_applied', detail: firstUndoDetail }],
+        projectRoot: tempDir,
+      });
+      expect(secondUndo.ok).toBe(true);
+      expect(await readFile(target, 'utf-8')).toBe('after\n');
+    });
+
+    // The CREATE-undo (delete) side of the same second-undo contract: its
+    // own effect is tagged distinctly (not as a fresh CREATE, which a third
+    // undo would then wrongly try to delete again) and refuses cleanly.
+    it('formatUndoResultDetail tags a CREATE-undo delete so a further undo refuses cleanly', async () => {
+      const target = join(tempDir, 'fresh.yaml');
+      const written = await applyConfirmed({ content: 'id: fresh\n', targetPath: target, projectRoot: tempDir });
+      expect(written.ok).toBe(true);
+      if (!written.ok) return;
+
+      const undone = await undoLastApply({
+        history: [{ kind: 'content_applied', detail: formatContentAppliedDetail(written) }],
+        projectRoot: tempDir,
+      });
+      expect(undone.ok).toBe(true);
+      if (!undone.ok) return;
+      const undoDetail = formatUndoResultDetail(undone);
+      expect(undoDetail).not.toContain('(create)');
+
+      const secondUndo = await undoLastApply({
+        history: [{ kind: 'content_applied', detail: undoDetail }],
+        projectRoot: tempDir,
+      });
+      expect(secondUndo.ok).toBe(false);
     });
   });
 

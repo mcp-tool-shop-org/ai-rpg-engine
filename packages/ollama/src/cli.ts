@@ -50,7 +50,10 @@ import {
   scaffoldAndCritique, compareAndFix, planAndGenerate,
   type MacroProgress, type ScaffoldKind,
 } from './macros.js';
-import { generatePreview, applyConfirmed, undoLastApply, withinRoot, resolveUnderRoot } from './apply-preview.js';
+import {
+  generatePreview, applyConfirmed, undoLastApply, withinRoot, resolveUnderRoot,
+  formatContentAppliedDetail, formatUndoResultDetail,
+} from './apply-preview.js';
 import {
   loadSession, saveSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
@@ -1714,9 +1717,16 @@ async function runCliInner(args: string[]): Promise<void> {
             `Restore from a sibling .bak with --undo --write <path>, or from the last content_applied backup.`,
           );
         }
-        console.log(`Restored: ${result.path} (${result.bytes} bytes)`);
+        console.log(result.deleted
+          ? `Removed: ${result.path} (undid a create)`
+          : `Restored: ${result.path} (${result.bytes} bytes)`);
         if (session) {
-          recordEvent(session, 'content_applied', `undo restored ${result.path}`);
+          // F-2d9f6b18: record the undo's own effect with the same
+          // parseable shape every other content_applied event uses (never
+          // the old bespoke "undo restored X" string, which a SECOND
+          // consecutive --undo could not parse) so a further --undo targets
+          // a real path instead of a garbled, self-referential one.
+          recordEvent(session, 'content_applied', formatUndoResultDetail(result));
           await saveSession(projectRoot, session);
         }
         break;
@@ -1741,7 +1751,10 @@ async function runCliInner(args: string[]): Promise<void> {
         }
         console.log(`Written: ${result.path} (${result.bytes} bytes)`);
         if (session) {
-          recordEvent(session, 'content_applied', result.path);
+          // F-2d9f6b18: tag CREATE vs OVERWRITE explicitly (was: bare
+          // result.path always, even on OVERWRITE, silently dropping the
+          // backupPath undo needs).
+          recordEvent(session, 'content_applied', formatContentAppliedDetail(result));
           await saveSession(projectRoot, session);
         }
       } else {

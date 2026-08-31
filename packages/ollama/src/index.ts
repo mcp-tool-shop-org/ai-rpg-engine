@@ -250,8 +250,11 @@ export type {
 } from './macros.js';
 
 // Apply preview
-export { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup, parseContentAppliedDetail, undoLastApply } from './apply-preview.js';
-export type { ApplyPreviewInput, ApplyPreviewResult, ApplyWriteResult } from './apply-preview.js';
+export {
+  generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup, parseContentAppliedDetail, undoLastApply,
+  formatContentAppliedDetail, formatUndoResultDetail,
+} from './apply-preview.js';
+export type { ApplyPreviewInput, ApplyPreviewResult, ApplyWriteResult, ParsedContentAppliedDetail } from './apply-preview.js';
 
 // Chat
 export type {
