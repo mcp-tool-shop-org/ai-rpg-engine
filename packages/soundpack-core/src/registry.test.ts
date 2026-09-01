@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { SoundRegistry, diffAmbientLayers } from './registry.js';
+import { SoundRegistry, diffAmbientLayers, hashRoll } from './registry.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
+import { hashRoll as indexHashRoll } from './index.js';
 
 describe('SoundRegistry', () => {
   it('should load the core sound pack', () => {
@@ -134,7 +135,7 @@ describe('SoundRegistry', () => {
       registry.load(CORE_SOUND_PACK);
       const first = registry.pickMusicSting({}, 0);
       const last = registry.pickMusicSting({}, 1);
-      // id-sorted: 'music_defeat_sting' < 'music_victory_sting'.
+      // id-sorted: 'music_defeat_sting' < 'music_retreat_sting' < 'music_victory_sting'.
       expect(first?.id).toBe('music_defeat_sting');
       expect(last?.id).toBe('music_victory_sting');
       expect(first?.durationClass).toBe('oneshot');
@@ -156,6 +157,21 @@ describe('SoundRegistry', () => {
         if (sting) stings.add(sting.id);
       }
       for (const id of stems) expect(stings.has(id)).toBe(false);
+    });
+
+    it('hashRoll is FNV-1a 32-bit / 2^32 into [0, 1), deterministic per id (F-cf6a6952)', () => {
+      expect(hashRoll('crypt-chamber')).toBeGreaterThanOrEqual(0);
+      expect(hashRoll('crypt-chamber')).toBeLessThan(1);
+      expect(hashRoll('crypt-chamber')).toBe(hashRoll('crypt-chamber'));
+      expect(hashRoll('crypt-chamber')).toBe(0.9062919542193413);
+      expect(hashRoll('graveyard')).toBe(0.8636932238005102);
+      expect(hashRoll('crypt-chamber')).not.toBe(hashRoll('graveyard'));
+      expect(indexHashRoll).toBe(hashRoll);
+      // Behavior-neutral on a 1-match list: any zone hash still picks the only dread stem.
+      const registry = new SoundRegistry();
+      registry.load(CORE_SOUND_PACK);
+      expect(registry.pickMusicStem({ mood: ['dread'] }, hashRoll('crypt-chamber'))?.id).toBe('music_dread');
+      expect(registry.pickMusicStem({ mood: ['dread'] }, hashRoll('graveyard'))?.id).toBe('music_dread');
     });
 
     it('diffAmbientLayers emits start/stop against getActiveLayers-shaped maps', () => {

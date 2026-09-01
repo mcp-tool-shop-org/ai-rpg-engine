@@ -23,7 +23,13 @@ import {
   COMBAT_STING_MAP,
   districtToneToSoundMood,
   districtToneMoodValues,
+  extendDistrictToneMap,
 } from './cue-map.js';
+import {
+  COMBAT_STING_MAP as INDEX_COMBAT_STING_MAP,
+  combatStingTargetIds as indexCombatStingTargetIds,
+  resolveMusicSting as indexResolveMusicSting,
+} from './index.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
 import { SoundRegistry } from './registry.js';
 
@@ -139,6 +145,7 @@ describe('cue-map: mapping table is stable', () => {
       'combat.hit': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6 },
       'combat.defeat': { effectId: 'alert_critical', timing: 'with-text', intensity: 0.9 },
       'combat.victory': { effectId: 'ui_success', timing: 'after-text', intensity: 0.8 },
+      'combat.retreat': { effectId: 'ui_whoosh', timing: 'after-text', intensity: 0.6 },
       'gate.refused': { effectId: 'ui_error', timing: 'with-text', intensity: 0.6 },
       'scene.enter': { effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.3 },
       'scene.crypt-reveal': reveal,
@@ -325,6 +332,12 @@ describe('cue-map: optional combat music stings (F-fa44e956)', () => {
     expect(resolveSoundCue('combat.hit').effectId).toBe('alert_warning');
     expect(resolveSoundCue('combat.victory').effectId).toBe('ui_success');
     expect(resolveSoundCue('combat.defeat').effectId).toBe('alert_critical');
+    expect(resolveSoundCue('combat.retreat')).toEqual({
+      effectId: 'ui_whoosh',
+      timing: 'after-text',
+      intensity: 0.6,
+      via: 'exact',
+    });
   });
 
   it('resolves combat.victory/combat.defeat to music stings, exact tier only (no namespace fallback)', () => {
@@ -335,6 +348,27 @@ describe('cue-map: optional combat music stings (F-fa44e956)', () => {
     expect(resolveMusicSting('combat.hit')).toBeUndefined();
     expect(resolveMusicSting('scene.enter')).toBeUndefined();
     expect(COMBAT_STING_MAP['combat.victory'].trackId).toBe('music_victory_sting');
+  });
+
+  it('maps combat.retreat to music_retreat_sting via exact; victory row and encounter.cleared stay unchanged (F-1b6a21ea)', () => {
+    expect(resolveMusicSting('combat.retreat')).toEqual({ trackId: 'music_retreat_sting', via: 'exact' });
+    expect(resolveMusicSting('combat.victory')).toEqual({ trackId: 'music_victory_sting', via: 'exact' });
+    expect(resolveMusicSting('combat.defeat')).toEqual({ trackId: 'music_defeat_sting', via: 'exact' });
+    // Do not add a second event name — combat.encounter.cleared is not a sting cue.
+    expect(resolveMusicSting('combat.encounter.cleared')).toBeUndefined();
+    expect(COMBAT_STING_MAP['combat.encounter.cleared']).toBeUndefined();
+    expect(COMBAT_STING_MAP['combat.retreat'].trackId).toBe('music_retreat_sting');
+    const retreat = CORE_SOUND_PACK.entries.find((e) => e.id === 'music_retreat_sting');
+    expect(retreat).toMatchObject({
+      domain: 'music',
+      durationClass: 'oneshot',
+      intensity: 'medium',
+      mood: ['tension', 'caution'],
+      cooldownMs: 3000,
+      source: 'voice-soundboard',
+      voiceSoundboardEffect: 'whoosh',
+    });
+    expect(combatStingTargetIds()).toContain('music_retreat_sting');
   });
 
   it('is independent of resolveMusicStem — combat.victory has no loop-stem hint', () => {
@@ -504,5 +538,48 @@ describe('districtToneToSoundMood: district-tone -> sound-mood bridge (F-f841299
       expect(ambientMoods.has('positive')).toBe(false);
       expect(ambientMoods.has('triumph')).toBe(false);
     });
+  });
+});
+
+describe('extendDistrictToneMap: pack-author tone overrides (F-798fc019)', () => {
+  it('an override wins and unmatched tones fall through to the built-in bridge', () => {
+    const resolve = extendDistrictToneMap({
+      volatile: ['tension', 'chaos'],
+      prosperous: ['positive', 'triumph'],
+    });
+    expect(resolve('volatile')).toEqual(['tension', 'chaos']);
+    expect(resolve('prosperous')).toEqual(['positive', 'triumph']);
+    expect(resolve('calm')).toEqual(['calm']);
+    expect(resolve('grim')).toEqual(['dread', 'negative']);
+  });
+
+  it('an unrecognized tone is still undefined (override does not invent a guess)', () => {
+    const resolve = extendDistrictToneMap({
+      volatile: ['tension', 'chaos'],
+    });
+    expect(resolve('ecstatic')).toBeUndefined();
+    expect(resolve('')).toBeUndefined();
+  });
+
+  it('mutating a result cannot poison the built-in table or the override map', () => {
+    const overrides = { volatile: ['tension', 'chaos'] };
+    const resolve = extendDistrictToneMap(overrides);
+    const first = resolve('volatile');
+    first?.push('poisoned');
+    const grim = resolve('grim');
+    grim?.push('poisoned');
+    expect(resolve('volatile')).toEqual(['tension', 'chaos']);
+    expect(overrides.volatile).toEqual(['tension', 'chaos']);
+    expect(resolve('grim')).toEqual(['dread', 'negative']);
+    expect(districtToneToSoundMood('grim')).toEqual(['dread', 'negative']);
+  });
+});
+
+describe('package index re-exports sting family (F-3b35e0ec)', () => {
+  it('COMBAT_STING_MAP and combatStingTargetIds are reachable from the package index beside resolveMusicSting', () => {
+    expect(INDEX_COMBAT_STING_MAP).toBe(COMBAT_STING_MAP);
+    expect(indexCombatStingTargetIds).toBe(combatStingTargetIds);
+    expect(indexResolveMusicSting).toBe(resolveMusicSting);
+    expect(indexCombatStingTargetIds()).toEqual(combatStingTargetIds());
   });
 });

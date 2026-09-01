@@ -212,18 +212,29 @@ export class AudioDirector {
    * fire-and-forget overlay, not a stem replacement.
    *
    * Resolves a file-source `resourceId` to its ingested hash via
-   * `soundRegistry`, same as a normal play command. Does not touch the music
-   * cooldown clock — matching the existing loop-stem gap (still OPEN
-   * F-a360ad62, noted above `schedule`'s crossfade-stop block).
+   * `soundRegistry`, same as a normal play command. When `opts.now` is a
+   * finite number, consults {@link isOnCooldown} and writes the sting
+   * resource into the cooldown clock (same shape as {@link schedule}'s sfx
+   * path, F-500ba292). Loop-stem music cooldown stays separately open
+   * (F-a360ad62). Omitting `now` skips the clock — time is an explicit
+   * input, never invented.
    *
    * @param resourceId A `domain: 'music'`, `durationClass: 'oneshot'` sound
    *                    id (e.g. a CORE_SOUND_PACK sting, or the result of
    *                    `SoundRegistry.pickMusicSting`).
    * @param opts        `priority` (default: the configured music domain
-   *                     priority) and `fadeMs` (forwarded to the renderer for
-   *                     a soft fade-in over the mix).
+   *                     priority), `fadeMs` (forwarded to the renderer for
+   *                     a soft fade-in over the mix), and `now` (explicit
+   *                     clock for sting cooldown).
    */
-  scheduleSting(resourceId: string, opts?: { priority?: number; fadeMs?: number }): AudioCommand {
+  scheduleSting(
+    resourceId: string,
+    opts?: { priority?: number; fadeMs?: number; now?: number },
+  ): AudioCommand | undefined {
+    const now = opts?.now;
+    if (typeof now === 'number' && Number.isFinite(now) && this.isOnCooldown(resourceId, now)) {
+      return undefined;
+    }
     const raw: AudioCommand = {
       domain: 'music',
       action: 'play',
@@ -233,6 +244,13 @@ export class AudioDirector {
       params: opts?.fadeMs !== undefined ? { fadeMs: opts.fadeMs } : {},
     };
     const resolved = this.resolveCommand(raw);
+    if (typeof now === 'number' && Number.isFinite(now)) {
+      this.cooldowns.set(resourceId, {
+        resourceId,
+        lastPlayedMs: now,
+        cooldownMs: this.cooldownFor(resourceId),
+      });
+    }
     return { ...resolved, action: 'sting' };
   }
 
@@ -271,9 +289,10 @@ export class AudioDirector {
   scheduleStingInto(
     commands: AudioCommand[],
     resourceId: string,
-    opts?: { priority?: number; fadeMs?: number },
+    opts?: { priority?: number; fadeMs?: number; now?: number },
   ): AudioCommand[] {
     const sting = this.scheduleSting(resourceId, opts);
+    if (!sting) return commands;
     commands.push(sting);
     commands.sort(compareAudioCommands);
     return commands;

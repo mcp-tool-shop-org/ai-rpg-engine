@@ -437,11 +437,51 @@ describe('AudioDirector', () => {
       expect(cmd.params.fadeMs).toBe(250);
     });
 
-    it('does not touch the music cooldown clock (still OPEN F-a360ad62)', () => {
+    it('without now, does not consult or write the sting cooldown clock (explicit now is required)', () => {
       const director = new AudioDirector();
       director.scheduleSting('music_victory_sting');
-      // No cooldown bookkeeping is created for the sting's resourceId.
       expect(director.isOnCooldown('music_victory_sting', 0)).toBe(false);
+    });
+
+    it('first sting with now writes cooldown; second at now+1000 is dropped; now+3000 plays (F-500ba292)', () => {
+      const director = new AudioDirector({
+        cooldownMs: { music_victory_sting: 3000 },
+      });
+      director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'crypt_theme', fadeMs: 800 },
+      }), 0);
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+
+      const first = director.scheduleSting('music_victory_sting', { now: 0 });
+      expect(first).toBeDefined();
+      expect(first!.action).toBe('sting');
+      expect(director.isOnCooldown('music_victory_sting', 0)).toBe(true);
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+
+      const second = director.scheduleSting('music_victory_sting', { now: 1000 });
+      expect(second).toBeUndefined();
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+      expect(director.getActiveLayers().has('music_victory_sting')).toBe(false);
+
+      const third = director.scheduleSting('music_victory_sting', { now: 3000 });
+      expect(third).toBeDefined();
+      expect(third!.action).toBe('sting');
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+    });
+
+    it('scheduleStingInto with now drops a hot sting and does not push (F-500ba292)', () => {
+      const director = new AudioDirector({
+        cooldownMs: { music_victory_sting: 3000 },
+      });
+      const commands = director.schedule(makePlan(), 0);
+      director.scheduleStingInto(commands, 'music_victory_sting', { now: 0 });
+      expect(commands.filter((c) => c.action === 'sting')).toHaveLength(1);
+      const len = commands.length;
+
+      const result = director.scheduleStingInto(commands, 'music_victory_sting', { now: 1000 });
+      expect(result).toBe(commands);
+      expect(commands.length).toBe(len);
+      expect(commands.filter((c) => c.action === 'sting')).toHaveLength(1);
     });
   });
 

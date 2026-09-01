@@ -228,6 +228,23 @@ export function diffAmbientLayers(
   return { start, stop };
 }
 
+/**
+ * Deterministic roll in [0, 1) from a string id — FNV-1a 32-bit then / 2^32
+ * (F-cf6a6952). Copied locally so soundpack-core stays dependency-free
+ * (do not import encounter-spawn). Behavior-neutral on a 1-match
+ * {@link SoundRegistry.pickMusicStem} / {@link SoundRegistry.pickAmbientBed}
+ * list; a richer pack with two stems in one mood family can pass
+ * `hashRoll(zoneId)` as the roll so each zone stays stable but distinct.
+ */
+export function hashRoll(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
 function pickLoop(entries: SoundEntry[], roll: number): SoundEntry | undefined {
   const matches = entries
     .filter((e) => e.durationClass === 'long-loop' || e.durationClass === 'short-loop')

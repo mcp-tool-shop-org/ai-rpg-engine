@@ -35,6 +35,7 @@
 //   | combat.hit           | alert_warning    | with-text  | 0.6       | exact     |
 //   | combat.defeat        | alert_critical   | with-text  | 0.9       | exact     |
 //   | combat.victory       | ui_success       | after-text | 0.8       | exact     |
+//   | combat.retreat       | ui_whoosh        | after-text | 0.6       | exact     |
 //   | gate.refused         | ui_error         | with-text  | 0.6       | exact     |
 //   | scene.enter          | ui_whoosh        | immediate  | 0.3       | exact     |
 //   | scene.*-reveal       | ui_attention     | immediate  | 0.7       | exact     |
@@ -99,6 +100,7 @@ export const EXACT_CUE_MAP: Readonly<Record<string, CueTarget>> = freezeNullProt
   'combat.hit': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6 },
   'combat.defeat': { effectId: 'alert_critical', timing: 'with-text', intensity: 0.9 },
   'combat.victory': { effectId: 'ui_success', timing: 'after-text', intensity: 0.8 },
+  'combat.retreat': { effectId: 'ui_whoosh', timing: 'after-text', intensity: 0.6 },
   'gate.refused': { effectId: 'ui_error', timing: 'with-text', intensity: 0.6 },
   'scene.enter': { effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.3 },
   'scene.crypt-reveal': REVEAL_STINGER,
@@ -264,15 +266,16 @@ export const COMBAT_STING_MAP: Readonly<Record<string, StingTarget>> = Object.fr
   Object.assign(Object.create(null), {
     'combat.victory': { trackId: 'music_victory_sting' },
     'combat.defeat': { trackId: 'music_defeat_sting' },
+    'combat.retreat': { trackId: 'music_retreat_sting' },
   }),
 );
 
 /**
  * Optional music sting for a gameplay cue. Undefined when the cue has no
- * sting hint (everything except combat.victory/combat.defeat today). Does
- * not emit an SFX cue and does not change ambient beds or the active stem —
- * unlike {@link resolveMusicStem}, a resolved sting is never meant to
- * replace what schedule() already has playing.
+ * sting hint (everything except combat.victory/combat.defeat/combat.retreat
+ * today). Does not emit an SFX cue and does not change ambient beds or the
+ * active stem — unlike {@link resolveMusicStem}, a resolved sting is never
+ * meant to replace what schedule() already has playing.
  */
 export function resolveMusicSting(cue: string): { trackId: string; via: CueMatchTier } | undefined {
   if (Object.hasOwn(COMBAT_STING_MAP, cue)) {
@@ -335,6 +338,29 @@ export function extendCueMap(
       return { ...overrides[cue], via: 'exact' };
     }
     return resolveSoundCue(cue);
+  };
+}
+
+/**
+ * Build a district-tone resolver with per-tone overrides layered over the
+ * built-in {@link districtToneToSoundMood} table — how a richer pack
+ * extends the 6-value DistrictMood vocabulary (e.g. volatile→chaos,
+ * prosperous→festive) without editing the canonical map (F-798fc019).
+ * `Object.hasOwn(overrides, tone)` wins and returns a fresh copy;
+ * unmatched tones fall through to {@link districtToneToSoundMood}.
+ * Pack-override coverage is the author's problem, same as
+ * {@link extendCueMap} extraTargets via {@link cueMapCoverage}.
+ *
+ * @param overrides Exact tone → replacement mood array.
+ */
+export function extendDistrictToneMap(
+  overrides: Record<string, readonly string[]>,
+): (tone: string) => string[] | undefined {
+  return (tone: string): string[] | undefined => {
+    if (Object.hasOwn(overrides, tone)) {
+      return [...overrides[tone]];
+    }
+    return districtToneToSoundMood(tone);
   };
 }
 
