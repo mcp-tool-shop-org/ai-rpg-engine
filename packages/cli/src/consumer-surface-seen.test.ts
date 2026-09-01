@@ -20,6 +20,12 @@
 //                            outcome victory, music_victory_sting scheduled,
 //                            tone triumph
 //   beat 6  NO_COLOR parity — ANSI-stripped colored frame equals color:false
+//   beat 7  retreat-cleared — synthetic presentable combat.encounter.cleared
+//                            {outcome:'retreat'} (honest until modules
+//                            dual-wires disengage): no music_victory_sting,
+//                            tone !== triumph, no flash, retreat line in
+//                            narration; a parallel omitted-outcome cleared
+//                            still triumphs (legacy)
 //
 // Ported from the coordinator's working reference script (same pack, same
 // beats, same assertions): .swarm/phase9-seen-proof.mjs (run
@@ -151,10 +157,14 @@ type Played = {
     baseline: PresentedTurn; zoneEntry: PresentedTurn;
     dialogue: PresentedTurn; dialogueWithParty: PresentedTurn;
     victory?: PresentedTurn;
+    retreat?: PresentedTurn;
+    omittedCleared?: PresentedTurn;
   };
   events: {
     zoneEntered?: ResolvedEvent; firstNode?: ResolvedEvent; partyNode?: ResolvedEvent;
     cleared: ResolvedEvent[]; heroFell: boolean;
+    retreatCleared?: ResolvedEvent;
+    omittedCleared?: ResolvedEvent;
   };
   attachedFirst: string[];
   attachedWithParty: string[];
@@ -271,14 +281,36 @@ function playSession(): Played {
   const colored = renderFullScreen(engine.world, tail, { color: true, partyLine: partyLine() });
   const plain = renderFullScreen(engine.world, tail, { color: false, partyLine: partyLine() });
 
+  // Beat 7 — synthetic retreat-cleared + parallel omitted-outcome (F-deb1375c).
+  // Modules' dual-wire of disengage → outcome:'retreat' is out of this glob;
+  // a synthetic presentable event is honest until that lands. Fresh presenters
+  // so the victory sting's cooldown cannot suppress the legacy omitted check.
+  const retreatCleared: ResolvedEvent = {
+    id: 'synthetic-retreat-cleared',
+    tick: engine.world.meta.tick,
+    type: 'combat.encounter.cleared',
+    payload: { outcome: 'retreat' },
+    presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+  };
+  const omittedCleared: ResolvedEvent = {
+    id: 'synthetic-omitted-cleared',
+    tick: engine.world.meta.tick,
+    type: 'combat.encounter.cleared',
+    payload: {},
+    presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+  };
+  const retreatPlan = new TurnPresenter().present(engine.world, [retreatCleared]);
+  const omittedPlan = new TurnPresenter().present(engine.world, [omittedCleared]);
+
   return {
     frames: { baseline: baselineFrame, zoneEntry: zoneFrame, recruit: recruitFrame },
     dialogueFrames: { first: firstDialogueFrame, withParty: partyDialogueFrame },
     plans: {
       baseline: baselinePlan, zoneEntry: zonePlan,
       dialogue: dialoguePlan, dialogueWithParty: dialogueWithPartyPlan, victory: victoryPlan,
+      retreat: retreatPlan, omittedCleared: omittedPlan,
     },
-    events: { zoneEntered, firstNode, partyNode, cleared, heroFell },
+    events: { zoneEntered, firstNode, partyNode, cleared, heroFell, retreatCleared, omittedCleared },
     attachedFirst: [...attachedFirst],
     attachedWithParty: [...attachedWithParty],
     parity: { colored, plain },
@@ -381,5 +413,31 @@ describe('SEEN proof — beat 5: victory fires once and stings', () => {
 describe('SEEN proof — beat 6: NO_COLOR parity', () => {
   it('the ANSI-stripped colored frame equals the color:false frame byte-for-byte', () => {
     expect(stripAnsi(played.parity.colored)).toBe(played.parity.plain);
+  });
+});
+
+describe('SEEN proof — beat 7: retreat-cleared never triumphs (F-deb1375c)', () => {
+  it('synthetic retreat-cleared carries outcome retreat — not a replay of the kill-clear', () => {
+    expect(played.events.retreatCleared?.payload?.outcome).toBe('retreat');
+    expect(played.events.cleared[0]?.payload?.outcome).toBe('victory');
+    expect(played.events.retreatCleared).not.toBe(played.events.cleared[0]);
+  });
+  it('no music_victory_sting, tone is not triumph, no flash, retreat line in narration', () => {
+    const retreat = played.plans.retreat;
+    expect(retreat).toBeDefined();
+    expect(retreat!.audioCommands.some((c) => c.action === 'sting' && c.resourceId === 'music_victory_sting')).toBe(false);
+    expect(retreat!.plan.tone).not.toBe('triumph');
+    expect(retreat!.plan.uiEffects.some((e) => e.type === 'flash')).toBe(false);
+    expect(retreat!.narrationText).toContain('The fight breaks off.');
+    expect(retreat!.plan.asides).toBeUndefined();
+  });
+  it('a parallel omitted-outcome cleared still triumphs (legacy)', () => {
+    const omitted = played.plans.omittedCleared;
+    expect(omitted).toBeDefined();
+    expect(played.events.omittedCleared?.payload).toEqual({});
+    expect(omitted!.plan.tone).toBe('triumph');
+    expect(omitted!.audioCommands.some((c) => c.action === 'sting' && c.resourceId === 'music_victory_sting')).toBe(true);
+    expect(omitted!.plan.uiEffects.some((e) => e.type === 'flash')).toBe(true);
+    expect(omitted!.narrationText).not.toContain('The fight breaks off.');
   });
 });

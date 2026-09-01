@@ -421,6 +421,95 @@ describe('buildNarrationPlan: deriveStingCue (F-0671a25f / F-b5150ad5)', () => {
   });
 });
 
+// F-deb1375c / R4: combat.encounter.cleared is one event with outcome
+// 'victory'|'retreat' — not a second name. Only exact 'retreat' is retreat;
+// omitted/unknown stay victory so today's callers stay byte-identical.
+describe('buildNarrationPlan: combat.encounter.cleared outcome (F-deb1375c / R4)', () => {
+  const retreatCleared: NarrationSourceEvent = {
+    type: 'combat.encounter.cleared',
+    payload: { outcome: 'retreat' },
+    presentation: { priority: 'high' },
+  };
+  const victoryCleared: NarrationSourceEvent = {
+    type: 'combat.encounter.cleared',
+    payload: { outcome: 'victory' },
+    presentation: { priority: 'high' },
+  };
+
+  it('{outcome:retreat} → sting combat.retreat, tone combat, uiEffects [] — never triumph', () => {
+    expect(deriveStingCue([retreatCleared], 'player')).toBe('combat.retreat');
+    expect(deriveTone([retreatCleared], 'player')).toBe('combat');
+    const plan = buildNarrationPlan({
+      sceneText: 'The fight breaks off.',
+      events: [retreatCleared],
+      playerId: 'player',
+    });
+    expect(plan.tone).toBe('combat');
+    expect(plan.tone).not.toBe('triumph');
+    expect(plan.uiEffects).toEqual([]);
+    expect(validateNarrationPlan(plan)).toEqual([]);
+  });
+
+  it('{outcome:victory} still triumphs, stings combat.victory, and flashes', () => {
+    expect(deriveStingCue([victoryCleared], 'player')).toBe('combat.victory');
+    expect(deriveTone([victoryCleared], 'player')).toBe('triumph');
+    const plan = buildNarrationPlan({
+      sceneText: 'The fight ends.',
+      events: [victoryCleared],
+      playerId: 'player',
+    });
+    expect(plan.tone).toBe('triumph');
+    expect(plan.uiEffects).toEqual([{ type: 'flash', durationMs: 250 }]);
+  });
+
+  it('omitted outcome stays victory (legacy byte-identical with encounterClearedEvent payload {})', () => {
+    expect(deriveStingCue([encounterClearedEvent], 'player')).toBe('combat.victory');
+    expect(deriveTone([encounterClearedEvent], 'player')).toBe('triumph');
+    const plan = buildNarrationPlan({
+      sceneText: 'The fight ends.',
+      events: [encounterClearedEvent],
+      playerId: 'player',
+    });
+    expect(plan.uiEffects).toEqual([{ type: 'flash', durationMs: 250 }]);
+  });
+
+  it('unknown outcome is treated as victory, not retreat', () => {
+    const unknown: NarrationSourceEvent = {
+      type: 'combat.encounter.cleared',
+      payload: { outcome: 'draw' },
+      presentation: { priority: 'high' },
+    };
+    expect(deriveStingCue([unknown], 'player')).toBe('combat.victory');
+    expect(deriveTone([unknown], 'player')).toBe('triumph');
+  });
+
+  it('player-defeat + retreat-cleared same turn still combat.defeat / sorrow (mutual-kill precedence)', () => {
+    expect(deriveStingCue([retreatCleared, playerDefeatEvent], 'player')).toBe('combat.defeat');
+    const plan = buildNarrationPlan({
+      sceneText: 'You fall as the fight breaks off.',
+      events: [retreatCleared, playerDefeatEvent],
+      playerId: 'player',
+    });
+    expect(plan.tone).toBe('sorrow');
+    expect(plan.uiEffects).toEqual([{ type: 'fade-out', durationMs: 600 }]);
+  });
+
+  it('bookkeeping (no presentation) retreat-cleared is ignored — no sting, no flash', () => {
+    const bookkeeping: NarrationSourceEvent = {
+      type: 'combat.encounter.cleared',
+      payload: { outcome: 'retreat' },
+    };
+    expect(deriveStingCue([bookkeeping], 'player')).toBeUndefined();
+    expect(deriveTone([bookkeeping], 'player')).toBe('calm');
+    const plan = buildNarrationPlan({
+      sceneText: 'Quiet.',
+      events: [bookkeeping],
+      playerId: 'player',
+    });
+    expect(plan.uiEffects).toEqual([]);
+  });
+});
+
 // Wave-2 R4 ruling, TTS scope expansion: dialogue.node.entered is structurally
 // excluded from sceneText (formatEventLine renders it null — "rendered
 // separately in dialogue display"), so the six dialogue hints could not reach

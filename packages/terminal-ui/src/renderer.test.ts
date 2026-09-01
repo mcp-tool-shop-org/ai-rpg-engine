@@ -1027,6 +1027,34 @@ describe('formatEvent — combat maneuver events render (CS-C amend)', () => {
   });
 });
 
+// F-deb1375c / R4: combat.encounter.cleared is the clearance discriminant.
+// Victory (and omitted) stay null so "X defeated!" remains the win beat;
+// retreat renders one muted line.
+describe('formatEvent — combat.encounter.cleared outcome (F-deb1375c)', () => {
+  it('victory (and omitted) stay null so the kill line remains the win beat', () => {
+    expect(formatEventLine(cev('combat.encounter.cleared', { outcome: 'victory' }))).toBeNull();
+    expect(formatEventLine(cev('combat.encounter.cleared', {}))).toBeNull();
+    expect(formatEventLine(cev('combat.encounter.cleared', { outcome: 'draw' }))).toBeNull();
+  });
+
+  it('retreat renders a single clearance line', () => {
+    expect(formatEventLine(cev('combat.encounter.cleared', { outcome: 'retreat' }))).toBe(
+      '> The fight breaks off.',
+    );
+  });
+
+  it('the retreat line is dim (MUTED_EVENTS), not alert-bold', () => {
+    const colored = renderEventLog(
+      [cev('combat.encounter.cleared', { outcome: 'retreat' })],
+      8,
+      { color: true },
+    );
+    const line = colored.split('\n').find((l) => stripAnsi(l).includes('The fight breaks off.')) ?? '';
+    expect(line).toContain('\u001b[2m');
+    expect(line).not.toContain('\u001b[1m');
+  });
+});
+
 describe('formatEvent — DoT/HoT lifecycle renders (CS-C amend)', () => {
   it('renders status.periodic.damage as "Burning: -3 HP"', () => {
     const text = renderEventLog([

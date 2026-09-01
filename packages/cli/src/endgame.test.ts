@@ -13,6 +13,7 @@ import {
   type WorldPressure,
   type CompanionState,
 } from '@ai-rpg-engine/modules';
+import { formatEventLine } from '@ai-rpg-engine/terminal-ui';
 import {
   detectBaseOutcome,
   evaluateSessionEnd,
@@ -735,6 +736,72 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     // chapel-nave + chapel-entrance discovered once each, revisit ignored.
     expect(discoveries.map((d) => d.zoneId).sort()).toEqual(['chapel-entrance', 'chapel-nave']);
     expect(actions.some((a) => a.description.includes('toughened'))).toBe(true);
+  });
+
+  // F-c8f6fbe1: the live log already appends moodHint as `. (${moodHint})`
+  // (renderer formatEventLineRaw). journalFromEventLog used to drop it, so
+  // KEY MOMENTS lost the district mood the player saw on entry.
+  it('F-c8f6fbe1: moodHint discovery description equals the live log line minus the "> " prefix', () => {
+    const engine = makeGame();
+    const zoneId = 'chapel-nave';
+    const name = engine.world.zones[zoneId]!.name;
+    const moodHint = 'Gallows Grounds: tense and watchful';
+    engine.store.emitEvent(
+      'world.zone.entered',
+      { zoneId, zoneName: name, moodHint },
+      { actorId: 'player' },
+    );
+
+    const entered = engine.world.eventLog.find(
+      (e) => e.type === 'world.zone.entered' && e.payload.zoneId === zoneId,
+    )!;
+    const live = formatEventLine(entered);
+    const discovery = journalFromEventLog(engine.world)
+      .query({ category: 'discovery' })
+      .find((d) => d.zoneId === zoneId);
+
+    expect(live).toBe(`> Entered ${name}. (${moodHint})`);
+    expect(discovery?.description).toBe(live!.slice(2));
+    expect(discovery?.data).toEqual({ moodHint });
+  });
+
+  it('F-c8f6fbe1: omitted moodHint stays byte-identical to today\'s Entered {name} with no parens', () => {
+    const engine = makeGame();
+    const zoneId = 'chapel-nave';
+    const name = engine.world.zones[zoneId]!.name;
+    engine.store.emitEvent('world.zone.entered', { zoneId, zoneName: name }, { actorId: 'player' });
+
+    const discovery = journalFromEventLog(engine.world)
+      .query({ category: 'discovery' })
+      .find((d) => d.zoneId === zoneId);
+    expect(discovery?.description).toBe(`Entered ${name}`);
+    expect(discovery?.description).not.toContain('(');
+    expect(discovery?.data).toEqual({});
+  });
+
+  it('F-c8f6fbe1: empty moodHint is omitted (no parens, no data key) and a revisit still records once', () => {
+    const engine = makeGame();
+    const zoneId = 'chapel-nave';
+    const name = engine.world.zones[zoneId]!.name;
+    engine.store.emitEvent(
+      'world.zone.entered',
+      { zoneId, zoneName: name, moodHint: '' },
+      { actorId: 'player' },
+    );
+    engine.store.emitEvent(
+      'world.zone.entered',
+      { zoneId, zoneName: name, moodHint: 'Chapel Grounds: tense and watchful' },
+      { actorId: 'player' },
+    );
+
+    const discoveries = journalFromEventLog(engine.world)
+      .query({ category: 'discovery' })
+      .filter((d) => d.zoneId === zoneId);
+    expect(discoveries).toHaveLength(1);
+    expect(discoveries[0].description).toBe(`Entered ${name}`);
+    expect(discoveries[0].description).not.toContain('(');
+    expect(discoveries[0].data).toEqual({});
+    expect(discoveries[0].data).not.toHaveProperty('moodHint');
   });
 });
 

@@ -520,7 +520,7 @@ const DAMAGE_EVENTS = new Set(['combat.damage.applied', 'status.periodic.damage'
 const HEAL_EVENTS = new Set(['status.periodic.heal']);
 const ALERT_EVENTS = new Set(['combat.entity.defeated', 'combat.guard.broken', 'combat.companion.intercepted']);
 const REJECT_EVENTS = new Set(['action.rejected', 'ability.rejected', 'ability.check.failed', 'combat.disengage.fail']);
-const MUTED_EVENTS = new Set(['combat.contact.miss', 'status.removed', 'status.expired', 'status.periodic.expired', 'dialogue.ended']);
+const MUTED_EVENTS = new Set(['combat.contact.miss', 'status.removed', 'status.expired', 'status.periodic.expired', 'dialogue.ended', 'combat.encounter.cleared']);
 
 function paintEventLine(type: string, line: string, pal: Palette): string {
   if (!pal.enabled) return line;
@@ -994,6 +994,11 @@ function formatEventLineRaw(event: ResolvedEvent): string | null {
       return `> ${p.entityName} breaks away from the fight.`;
     case 'combat.disengage.fail':
       return `> ${p.entityName} tries to break away but fails!`;
+    // F-deb1375c / R4: victory (and omitted/unknown) stay silent so
+    // "X defeated!" remains the win beat. Retreat is the clearance
+    // discriminant — one muted line, not a second event.
+    case 'combat.encounter.cleared':
+      return payloadString(p, 'outcome') === 'retreat' ? '> The fight breaks off.' : null;
 
     case 'status.applied': {
       const label = humanizeStateId(String(p.statusId ?? ''));
