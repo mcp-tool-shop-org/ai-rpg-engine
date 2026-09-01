@@ -179,6 +179,35 @@ describe('TurnPresenter: victory/defeat stings (F-0671a25f)', () => {
   });
 });
 
+// F-deb1375c / R4: TurnPresenter already deriveStingCue → resolveMusicSting
+// → scheduleStingInto. A flee-clear must not schedule music_victory_sting
+// or paint triumph (green-bold). Cue id combat.retreat is media's map key;
+// until that row lands resolveMusicSting is undefined and no sting fires —
+// still not music_victory_sting.
+describe('TurnPresenter: retreat-cleared (F-deb1375c / R4)', () => {
+  const retreatCleared = () =>
+    ev(
+      'combat.encounter.cleared',
+      { outcome: 'retreat' },
+      { channels: ['objective', 'narrator'], priority: 'high' },
+    );
+
+  it('a retreat-cleared present() has zero music_victory_sting and plan.tone is not triumph', () => {
+    const world = makeWorld();
+    const result = new TurnPresenter().present(world, [retreatCleared()], { color: false });
+    expect(
+      result.audioCommands.some((c) => c.action === 'sting' && c.resourceId === 'music_victory_sting'),
+    ).toBe(false);
+    expect(result.audioCommands.some((c) => c.action === 'sting')).toBe(false);
+    expect(result.plan.tone).not.toBe('triumph');
+    expect(result.plan.tone).toBe('combat');
+    expect(result.plan.uiEffects).toEqual([]);
+    expect(result.narrationText).toContain('The fight breaks off.');
+    expect(result.plan.asides).toBeUndefined();
+    expect(validateNarrationPlan(result.plan)).toEqual([]);
+  });
+});
+
 // Composition half of media's F-901767f5. TurnPresenter wires the REAL
 // tone-aware resolver at the wave-2 stitch: soundpack-core's
 // districtToneToSoundMood bridge + a CORE_SOUND_PACK-loaded SoundRegistry,

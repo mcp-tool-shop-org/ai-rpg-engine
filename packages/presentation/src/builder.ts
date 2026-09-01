@@ -150,6 +150,15 @@ function isPlayerDefeat(event: NarrationSourceEvent, playerId?: string): boolean
 }
 
 /**
+ * combat.encounter.cleared payload.outcome. Only the exact string 'retreat'
+ * is retreat; omitted/unknown stay victory so today's callers stay
+ * byte-identical until modules emits retreat. F-deb1375c / R4.
+ */
+function outcomeOf(event: NarrationSourceEvent): 'victory' | 'retreat' {
+  return event.payload?.outcome === 'retreat' ? 'retreat' : 'victory';
+}
+
+/**
  * Only PRESENTATION-BEARING events drive tone/urgency. Modules mark events
  * meant for the player with an `event.presentation` block (channels,
  * priority, soundCues); events without one are internal bookkeeping — e.g.
@@ -164,7 +173,7 @@ function presentable(event: NarrationSourceEvent): boolean {
  * Derive tone from presentation-bearing event kinds. Precedence (first
  * match wins):
  *   1. the player was defeated                    → 'sorrow'
- *   2. the encounter was cleared (combat.encounter.cleared) → 'triumph'
+ *   2. the encounter was cleared (outcome !== 'retreat') → 'triumph'
  *   3. any combat.* event occurred                → 'combat'
  *   4. otherwise (dialogue, travel, idle)          → 'calm'
  * The remaining tones (tense/dread/wonder) are authored space — a game with
@@ -178,6 +187,10 @@ function presentable(event: NarrationSourceEvent): boolean {
  * Player defeat still outranks everything, including a same-turn clearance
  * (a mutual kill fades out, never flashes triumphant — mirrors
  * deriveStingCue's identical precedence call).
+ *
+ * F-deb1375c / R4: sawCleared only when payload.outcome !== 'retreat'. A
+ * flee-clear is still a combat.* event so it falls through to 'combat' —
+ * never 'triumph'. There is no NarrationTone named retreat.
  */
 export function deriveTone(
   events: readonly NarrationSourceEvent[],
@@ -188,7 +201,7 @@ export function deriveTone(
   for (const event of events) {
     if (!presentable(event)) continue;
     if (event.type === DEFEAT_EVENT && isPlayerDefeat(event, playerId)) return 'sorrow';
-    if (event.type === ENCOUNTER_CLEARED_EVENT) sawCleared = true;
+    if (event.type === ENCOUNTER_CLEARED_EVENT && outcomeOf(event) !== 'retreat') sawCleared = true;
     if (event.type.startsWith('combat.')) sawCombat = true;
   }
   if (sawCleared) return 'triumph';
@@ -220,31 +233,40 @@ export function deriveUrgency(events: readonly NarrationSourceEvent[]): Urgency 
  * Which music STING (a one-shot fanfare/stinger, distinct from the sfx
  * pipeline's blips) this turn calls for, in the canonical soundpack cue
  * vocabulary soundpack-core's `resolveMusicSting` resolves — 'combat.defeat'
- * / 'combat.victory' / undefined. F-0671a25f / F-b5150ad5: TurnPresenter is
- * the repo's only per-turn AudioCommand composition point and never called
- * AudioDirector.scheduleSting, so the documented sting hook could never
- * actually carry a sting to a player or embedder; this is the pure half of
- * the fix (terminal-ui's TurnPresenter does the thin scheduling call).
+ * / 'combat.victory' / 'combat.retreat' / undefined. F-0671a25f / F-b5150ad5:
+ * TurnPresenter is the repo's only per-turn AudioCommand composition point
+ * and never called AudioDirector.scheduleSting, so the documented sting hook
+ * could never actually carry a sting to a player or embedder; this is the
+ * pure half of the fix (terminal-ui's TurnPresenter does the thin scheduling
+ * call).
  *
  * Precedence mirrors deriveTone exactly: a player defeat wins even alongside
  * a same-turn combat.encounter.cleared (a mutual kill defeats, it does not
  * also victory-sting) — pinned by the Director ruling that ties this
  * derivation's precedence to deriveTone's.
  *
- * Deliberately keys off the event TYPE only (no dependency on
- * combat.encounter.cleared's eventual payload shape) — the lowest-coupling
- * trigger available.
+ * F-deb1375c / R4: binds payload.outcome. Only exact 'retreat' is retreat
+ * (cue id 'combat.retreat', media's COMBAT_STING_MAP key); omitted/unknown
+ * stay 'combat.victory' so today's callers stay byte-identical until
+ * modules emits retreat. Until media lands the map row, resolveMusicSting
+ * is undefined and TurnPresenter schedules no sting — still not
+ * music_victory_sting.
  */
 export function deriveStingCue(
   events: readonly NarrationSourceEvent[],
   playerId?: string,
 ): string | undefined {
   let cleared = false;
+  let retreated = false;
   for (const event of events) {
     if (!presentable(event)) continue;
     if (event.type === DEFEAT_EVENT && isPlayerDefeat(event, playerId)) return 'combat.defeat';
-    if (event.type === ENCOUNTER_CLEARED_EVENT) cleared = true;
+    if (event.type === ENCOUNTER_CLEARED_EVENT) {
+      if (outcomeOf(event) === 'retreat') retreated = true;
+      else cleared = true;
+    }
   }
+  if (retreated) return 'combat.retreat';
   return cleared ? 'combat.victory' : undefined;
 }
 
@@ -346,6 +368,9 @@ function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | un
  * presentation block should not flash the screen the player never saw
  * announced. The existing player-defeat/fade-out branch is NOT gated on
  * presentable() — unchanged from before this fix, out of this fix's scope.
+ *
+ * F-deb1375c / R4: flash only on presentable cleared with outcome !==
+ * 'retreat'; a flee-clear returns [] (no flash, no triumph).
  */
 function deriveUiEffects(
   events: readonly NarrationSourceEvent[],
@@ -356,7 +381,13 @@ function deriveUiEffects(
     if (event.type === DEFEAT_EVENT && isPlayerDefeat(event, playerId)) {
       return [{ type: 'fade-out', durationMs: 600 }];
     }
-    if (event.type === ENCOUNTER_CLEARED_EVENT && presentable(event)) sawCleared = true;
+    if (
+      event.type === ENCOUNTER_CLEARED_EVENT &&
+      presentable(event) &&
+      outcomeOf(event) !== 'retreat'
+    ) {
+      sawCleared = true;
+    }
   }
   return sawCleared ? [{ type: 'flash', durationMs: 250 }] : [];
 }

@@ -523,15 +523,21 @@ export function journalFromEventLog(world: WorldState): CampaignJournal {
       const zoneId = event.payload.zoneId as string | undefined;
       if (!zoneId || seenZones.has(zoneId)) continue;
       seenZones.add(zoneId);
+      const name = world.zones[zoneId]?.name ?? zoneId;
+      // F-c8f6fbe1: same payloadString contract as formatEventLineRaw —
+      // non-empty string only. Period then space-paren matches renderer.ts.
+      // Quiet (absent/empty) stays today's `Entered ${name}` bytes.
+      const moodRaw = event.payload.moodHint;
+      const moodHint = typeof moodRaw === 'string' && moodRaw.length > 0 ? moodRaw : undefined;
       journal.record({
         tick: event.tick,
         category: 'discovery',
         actorId: world.playerId,
         zoneId,
-        description: `Entered ${world.zones[zoneId]?.name ?? zoneId}`,
+        description: moodHint ? `Entered ${name}. (${moodHint})` : `Entered ${name}`,
         significance: 0.3,
         witnesses: [],
-        data: {},
+        data: moodHint ? { moodHint } : {},
       });
     } else if (event.type === 'progression.node.unlocked') {
       journal.record({
