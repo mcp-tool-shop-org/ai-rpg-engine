@@ -1354,7 +1354,7 @@ describe('F-749aba8e — seedWorldFactionsFromMembership', () => {
   it('writes defaults (name=factionId, reputation=0, disposition=neutral) for a bare membership row', () => {
     const engine = bootEngine();
     seedWorldFactionsFromMembership(engine.store.state, [
-      { factionId: 'chapel-undead', entityIds: ['ash-ghoul'] },
+      { factionId: 'chapel-undead' },
     ]);
     expect(engine.store.state.factions['chapel-undead']).toEqual({
       id: 'chapel-undead',
@@ -1369,8 +1369,6 @@ describe('F-749aba8e — seedWorldFactionsFromMembership', () => {
     seedWorldFactionsFromMembership(engine.store.state, [
       {
         factionId: 'colonial-navy',
-        entityIds: ['navy_sailor'],
-        cohesion: 0.8,
         name: 'The Colonial Navy',
         reputation: -35,
         disposition: 'hostile',
@@ -1390,7 +1388,7 @@ describe('F-749aba8e — seedWorldFactionsFromMembership', () => {
       id: 'chapel-undead', name: 'Chapel Undead', reputation: 4, disposition: 'wary',
     };
     seedWorldFactionsFromMembership(engine.store.state, [
-      { factionId: 'chapel-undead', entityIds: ['ash-ghoul'], reputation: 0, disposition: 'neutral' },
+      { factionId: 'chapel-undead', reputation: 0, disposition: 'neutral' },
     ]);
     expect(engine.store.state.factions['chapel-undead'].reputation).toBe(4);
     expect(engine.store.state.factions['chapel-undead'].name).toBe('Chapel Undead');
@@ -1399,7 +1397,7 @@ describe('F-749aba8e — seedWorldFactionsFromMembership', () => {
   it('does not invent ids that were not on the membership roster', () => {
     const engine = bootEngine();
     seedWorldFactionsFromMembership(engine.store.state, [
-      { factionId: 'survivors', entityIds: ['medic_chen'] },
+      { factionId: 'survivors' },
     ]);
     expect(Object.keys(engine.store.state.factions)).toEqual(['survivors']);
   });

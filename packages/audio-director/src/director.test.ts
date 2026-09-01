@@ -378,12 +378,13 @@ describe('AudioDirector', () => {
     it('returns a music-domain command tagged with a distinct action, not play/crossfade/stop', () => {
       const director = new AudioDirector();
       const cmd = director.scheduleSting('music_victory_sting');
-      expect(cmd.domain).toBe('music');
-      expect(cmd.resourceId).toBe('music_victory_sting');
-      expect(cmd.action).toBe('sting');
-      expect(cmd.action).not.toBe('play');
-      expect(cmd.action).not.toBe('crossfade');
-      expect(cmd.action).not.toBe('stop');
+      expect(cmd).toBeDefined();
+      expect(cmd!.domain).toBe('music');
+      expect(cmd!.resourceId).toBe('music_victory_sting');
+      expect(cmd!.action).toBe('sting');
+      expect(cmd!.action).not.toBe('play');
+      expect(cmd!.action).not.toBe('crossfade');
+      expect(cmd!.action).not.toBe('stop');
     });
 
     it('a sting never appears in getActiveLayers as the active music', () => {
@@ -426,15 +427,17 @@ describe('AudioDirector', () => {
         },
       });
       const cmd = director.scheduleSting('custom_sting');
-      expect(cmd.resourceId).toBe(stingHash);
-      expect(cmd.action).toBe('sting');
-      expect(cmd.params.effectId).toBe('custom_sting');
+      expect(cmd).toBeDefined();
+      expect(cmd!.resourceId).toBe(stingHash);
+      expect(cmd!.action).toBe('sting');
+      expect(cmd!.params.effectId).toBe('custom_sting');
     });
 
     it('an optional fadeMs is forwarded in params for a soft fade-in over the mix', () => {
       const director = new AudioDirector();
       const cmd = director.scheduleSting('music_victory_sting', { fadeMs: 250 });
-      expect(cmd.params.fadeMs).toBe(250);
+      expect(cmd).toBeDefined();
+      expect(cmd!.params.fadeMs).toBe(250);
     });
 
     it('without now, does not consult or write the sting cooldown clock (explicit now is required)', () => {

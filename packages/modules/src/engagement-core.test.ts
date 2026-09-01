@@ -1316,7 +1316,7 @@ describe('combat.encounter.cleared retreat (F-f693d790, R4 flee)', () => {
     expect(evt.payload.outcome).toBe('retreat');
     expect(evt.payload.zoneId).toBe('zone-a');
     expect(evt.payload.disengageEventId).toBe(disengage.id);
-    expect(evt.payload.participants.finalOpponent).toBeUndefined();
+    expect((evt.payload.participants as { finalOpponent?: string } | undefined)?.finalOpponent).toBeUndefined();
     expect(evt.presentation?.priority).toBe('high');
     expect(evt.presentation?.soundCues ?? []).not.toContain('combat.victory');
     // Pack still lives in the combat zone — the player ended the encounter by running.
