@@ -489,14 +489,14 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
       'dead: no played session produces a `player-owes-npc` ledger entry at magnitude >= 4.',
   },
   bounty: {
-    reachable: false,
+    reachable: true,
     measured:
-      'lost at v3.10: deleting the 9 legacy per-starter victory-cue listeners (wave-4 ' +
-      'F-6dc0efb7) shifted the deterministic event stream; black-flag-requiem\'s scripted ' +
-      'session no longer lands the four-way conjunction (rep <= -50 AND alert >= 60 AND heat ' +
-      'at wake threshold in one round, plus a rival faction at rep >= 10 to hire). The ' +
-      'synthetic control still fires — the mechanism is healthy; re-tuning bounty\'s on-ramp is ' +
-      'a P1 balance target.',
+      'LIT in P1 by black-flag-requiem. The four-way conjunction is intact (Navy baseline ' +
+      '-35/30, two kills at -10/+15, brethren at 15, wake at 10 heat). v3.10\'s listener ' +
+      'deletion shifted the engaged session so the two navy kills sit 36 quiet rounds apart; ' +
+      'QUIET_ROUNDS_BEFORE_DECAY was raised to that measured gap so the two +5 heats still ' +
+      'stack. Synthetic control still fires. Flip back to false in the same commit if a later ' +
+      'stream shift loses the natural path again.',
   },
   'supply-run': {
     reachable: true,

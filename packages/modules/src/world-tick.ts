@@ -293,8 +293,14 @@ export const HEAT_DECAY_PER_QUIET_TICK = 1;
  * it — the wake threshold became unreachable mid-rampage. The street forgets
  * after things stay calm for a stretch, not between two swings of the same
  * axe.
+ *
+ * v3.11 P1(bounty-on-ramp): the POR-1 black-flag `engaged` session lands two
+ * navy kills 36 quiet rounds apart (boarding marine on the deck, then a navy
+ * sailor clone). HEAT_WAKE_THRESHOLD stays 10 (two +5 kills); this window is
+ * the measured gap so those two heats still stack. Do not drop the wake
+ * threshold — a 1-kill world must not spawn pressures.
  */
-export const QUIET_ROUNDS_BEFORE_DECAY = 3;
+export const QUIET_ROUNDS_BEFORE_DECAY = 37;
 
 /**
  * districtMetrics.stability derives from the safety global on a 0–100 scale:
