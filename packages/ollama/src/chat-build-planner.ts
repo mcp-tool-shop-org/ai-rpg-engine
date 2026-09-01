@@ -888,6 +888,15 @@ export function formatBuildStatus(state: BuildState): string {
     }
   }
 
+  const staged = Object.values(state.stagedWrites);
+  if (staged.length > 0) {
+    lines.push('');
+    lines.push(`Staged writes (${staged.length}):`);
+    for (const entry of staged) {
+      lines.push(`  - ${entry.suggestedPath}`);
+    }
+  }
+
   return lines.join('\n');
 }
 

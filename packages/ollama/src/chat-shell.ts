@@ -180,6 +180,10 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
   const out = options.output ?? process.stdout;
 
   const engine = createChatEngine({ client, projectRoot, maxMemory, loadoutEnabled });
+  const existingSession = await tryLoadSession(projectRoot);
+  if (existingSession) {
+    engine.hydrateInFlight(existingSession);
+  }
   const transcript = createTranscript(null);
 
   const rl = createInterface({
@@ -204,6 +208,11 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     }
   }
   console.log('');
+  const resumeBanner = formatResumeInFlightBanner(engine);
+  if (resumeBanner) {
+    console.log(resumeBanner);
+    console.log('');
+  }
   rl.prompt();
 
   let inFlight: AbortController | null = null;
@@ -305,10 +314,9 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     // transcript lands (or the failure is reported).
     if (exitSaveStarted) return;
     exitSaveStarted = true;
-    // F-a63c0e57: warn before the process actually goes away when unconfirmed
-    // staged content would otherwise be silently and permanently lost (no
-    // session persistence for in-flight batches exists yet — that is a
-    // roadmap item, not built here; this wave is warn-on-exit only).
+    // F-a63c0e57: warn-on-exit remains as defense in depth (F-3f17cbc3 now
+    // serializes in-flight batches into the session file, but a persist
+    // refusal / over-budget attach still needs this warning).
     const warning = formatExitStagedWarning(engine);
     if (warning) console.error(warning);
     void persistTranscriptAtExit(transcript, projectRoot, saveTranscripts, transcriptPath);
@@ -316,8 +324,8 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
 }
 
 /**
- * Build the exit warning for unconfirmed staged content (F-a63c0e57,
- * scope-ruled to warn-on-exit only this wave). Checks activeBuild/
+ * Build the exit warning for unconfirmed staged content (F-a63c0e57).
+ * Defense in depth alongside session persistence (F-3f17cbc3). Checks activeBuild/
  * activeTuning's own stagedWrites pools directly rather than only
  * engine.pendingWriteBatch: stagedWrites accumulates from the very first
  * step a batch stages, while pendingWriteBatch is only populated later (the
@@ -353,6 +361,40 @@ export function formatExitStagedWarning(engine: ChatEngine): string | null {
     ...sections,
     '',
     'Say "yes" to write it, or run /step / /tune-step to keep going, before exiting.',
+  ].join('\n');
+}
+
+/**
+ * Resume banner for in-flight /build and /tune restored from the session
+ * file (F-3f17cbc3). Names the goal and every staged path, and points at
+ * yes/no|/step — not the exit-loss wording. Exported for tests.
+ */
+export function formatResumeInFlightBanner(engine: ChatEngine): string | null {
+  const sections: string[] = [];
+
+  const buildEntries = engine.activeBuild ? Object.values(engine.activeBuild.stagedWrites) : [];
+  if (engine.activeBuild && (buildEntries.length > 0 || engine.activeBuild.status !== 'completed')) {
+    const stagedLine = buildEntries.length > 0
+      ? `${buildEntries.length} staged file(s) awaiting confirmation:\n`
+        + buildEntries.map((e) => `  - ${e.suggestedPath}`).join('\n')
+      : 'plan restored (no staged files yet)';
+    sections.push(`Resumed in-flight build "${engine.activeBuild.plan.goal}" — ${stagedLine}`);
+  }
+
+  const tuningEntries = engine.activeTuning ? Object.values(engine.activeTuning.stagedWrites) : [];
+  if (engine.activeTuning && (tuningEntries.length > 0 || engine.activeTuning.status !== 'completed')) {
+    const stagedLine = tuningEntries.length > 0
+      ? `${tuningEntries.length} staged file(s) awaiting confirmation:\n`
+        + tuningEntries.map((e) => `  - ${e.suggestedPath}`).join('\n')
+      : 'plan restored (no staged files yet)';
+    sections.push(`Resumed in-flight tuning "${engine.activeTuning.plan.goal}" — ${stagedLine}`);
+  }
+
+  if (sections.length === 0) return null;
+  return [
+    ...sections,
+    '',
+    'Say "yes" to preview and write, "no" to discard, or /step / /tune-step to continue.',
   ].join('\n');
 }
 
@@ -504,6 +546,7 @@ export async function handleSlashCommand(
       const session = await tryLoadSession(projectRoot);
       const plan = generateBuildPlan(goal, session);
       engine.activeBuild = createBuildState(plan);
+      await engine.persistInFlight();
       console.log('');
       console.log(formatBuildPlan(plan));
       console.log('');
@@ -705,6 +748,7 @@ export async function handleSlashCommand(
         ? generateOperationalPlan(goal, session, engine.lastAnalysis)
         : generateTuningPlan(goal, session);
       engine.activeTuning = createTuningState(plan);
+      await engine.persistInFlight();
       console.log('');
       console.log(formatTuningPlan(plan));
       console.log('');

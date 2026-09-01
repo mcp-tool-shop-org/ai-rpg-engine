@@ -1006,6 +1006,18 @@ describe('formatTuningStatus', () => {
     expect(output).toContain('Warnings:');
     expect(output).toContain('restaged content/rooms/x.yaml');
   });
+
+  it('names every staged path so /tune-status survives a restored in-flight batch (F-3f17cbc3)', () => {
+    const plan = generateTuningPlan('increase paranoia', makeSession());
+    const state = createTuningState(plan);
+    state.stagedWrites['content/rooms/tuned-room.yaml'] = {
+      content: 'id: tuned-room', suggestedPath: 'content/rooms/tuned-room.yaml',
+      label: 'room: tuned-room', sourceStepId: 1,
+    };
+    const output = formatTuningStatus(state);
+    expect(output).toContain(state.plan.goal);
+    expect(output).toContain('content/rooms/tuned-room.yaml');
+  });
 });
 
 // ========================================

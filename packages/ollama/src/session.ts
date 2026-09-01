@@ -2,9 +2,11 @@
 // Active copy lives in .ai-session.json; named slots live under .ai-sessions/<slug>.json.
 // Commands read session state to enrich prompts but never require it.
 
-import { readFile, writeFile, unlink, stat, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, unlink, stat, mkdir, readdir, rename, copyFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { CritiqueIssue } from './parsers.js';
+import type { BuildState } from './chat-build-planner.js';
+import type { TuningState } from './chat-balance-analyzer.js';
 
 /** Drop oldest events once history exceeds this many entries (F-1582fb3d). */
 export const MAX_SESSION_HISTORY_EVENTS = 1000;
@@ -188,6 +190,8 @@ export type SessionEvent = {
   detail: string;
 };
 
+export type PendingWriteBatchOwner = 'build' | 'tuning';
+
 export type DesignSession = {
   name: string;
   createdAt: string;
@@ -202,6 +206,15 @@ export type DesignSession = {
     model?: string;
     baseUrl?: string;
   };
+  /**
+   * In-flight guided /build (F-3f17cbc3). Optional: older session JSON omits
+   * it. Unconfirmed YAML lives here (stagedWrites), never in SessionArtifacts.
+   */
+  activeBuild?: BuildState | null;
+  /** In-flight guided /tune. Same load-tolerate contract as activeBuild. */
+  activeTuning?: TuningState | null;
+  /** Which pool pendingWriteBatch was derived from, if any. */
+  pendingWriteBatchOwner?: PendingWriteBatchOwner | null;
 };
 
 export type SessionSlot = {
@@ -302,7 +315,200 @@ function sessionShapeProblem(v: unknown): string | null {
   }
   // history is tolerated when absent (older sessions); recordEvent re-initializes it.
   if (s['history'] !== undefined && !Array.isArray(s['history'])) return '"history" is not an array';
+  // In-flight fields are optional and load-tolerant — malformed blobs are
+  // dropped after parse (see normalizeInFlightFields), never a shape error.
   return null;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+const PLAN_STATUSES = new Set(['planned', 'executing', 'completed', 'failed']);
+const STEP_STATUSES = new Set(['pending', 'executed', 'failed', 'skipped']);
+
+function warnDroppedInFlight(field: string, detail: string): void {
+  console.error(`Warning: dropping malformed in-flight session field "${field}" (${detail}).`);
+}
+
+function normalizeStagedWrites(raw: unknown): Record<string, {
+  content: string;
+  suggestedPath: string;
+  label: string;
+  sourceStepId: number;
+}> | null {
+  if (!isRecord(raw)) return null;
+  const out: Record<string, {
+    content: string; suggestedPath: string; label: string; sourceStepId: number;
+  }> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isRecord(value)) return null;
+    if (typeof value['content'] !== 'string'
+      || typeof value['suggestedPath'] !== 'string'
+      || typeof value['label'] !== 'string'
+      || typeof value['sourceStepId'] !== 'number') {
+      return null;
+    }
+    out[key] = {
+      content: value['content'],
+      suggestedPath: value['suggestedPath'],
+      label: value['label'],
+      sourceStepId: value['sourceStepId'],
+    };
+  }
+  return out;
+}
+
+function normalizeBuildState(raw: unknown): BuildState | null {
+  if (raw === null || raw === undefined) return null;
+  if (!isRecord(raw)) return null;
+  const plan = raw['plan'];
+  if (!isRecord(plan) || typeof plan['goal'] !== 'string' || !Array.isArray(plan['steps'])) return null;
+  if (typeof raw['startedAt'] !== 'string') return null;
+  if (typeof raw['status'] !== 'string' || !PLAN_STATUSES.has(raw['status'])) return null;
+  if (!Array.isArray(raw['generatedContent'])) return null;
+  const staged = normalizeStagedWrites(raw['stagedWrites'] ?? {});
+  if (!staged) return null;
+  const steps: BuildState['plan']['steps'] = [];
+  for (const step of plan['steps']) {
+    if (!isRecord(step)) return null;
+    if (typeof step['id'] !== 'number' || typeof step['description'] !== 'string'
+      || typeof step['command'] !== 'string' || typeof step['intent'] !== 'string'
+      || !isRecord(step['params']) || !Array.isArray(step['dependencies'])
+      || !Array.isArray(step['artifactOutputs']) || typeof step['usePriorContent'] !== 'boolean'
+      || typeof step['status'] !== 'string' || !STEP_STATUSES.has(step['status'])) {
+      return null;
+    }
+    const normalized: BuildState['plan']['steps'][number] = {
+      id: step['id'],
+      description: step['description'],
+      command: step['command'],
+      intent: step['intent'] as BuildState['plan']['steps'][number]['intent'],
+      params: Object.fromEntries(
+        Object.entries(step['params']).filter((e): e is [string, string] => typeof e[1] === 'string'),
+      ),
+      dependencies: step['dependencies'].filter((d): d is number => typeof d === 'number'),
+      artifactOutputs: step['artifactOutputs'].filter((a): a is string => typeof a === 'string'),
+      usePriorContent: step['usePriorContent'],
+      status: step['status'] as BuildState['plan']['steps'][number]['status'],
+    };
+    if (typeof step['result'] === 'string') normalized.result = step['result'];
+    if (typeof step['error'] === 'string') normalized.error = step['error'];
+    if (typeof step['outputContent'] === 'string') normalized.outputContent = step['outputContent'];
+    steps.push(normalized);
+  }
+  const warnings = Array.isArray(plan['warnings'])
+    ? plan['warnings'].filter((w): w is string => typeof w === 'string')
+    : [];
+  const estimatedSteps = typeof plan['estimatedSteps'] === 'number' ? plan['estimatedSteps'] : steps.length;
+  const state: BuildState = {
+    plan: { goal: plan['goal'], steps, estimatedSteps, warnings },
+    startedAt: raw['startedAt'],
+    status: raw['status'] as BuildState['status'],
+    generatedContent: raw['generatedContent'].filter((c): c is string => typeof c === 'string'),
+    stagedWrites: staged,
+  };
+  if (typeof raw['completedAt'] === 'string') state.completedAt = raw['completedAt'];
+  return state;
+}
+
+function normalizeTuningState(raw: unknown): TuningState | null {
+  if (raw === null || raw === undefined) return null;
+  if (!isRecord(raw)) return null;
+  const plan = raw['plan'];
+  if (!isRecord(plan) || typeof plan['goal'] !== 'string' || !Array.isArray(plan['steps'])) return null;
+  if (typeof raw['startedAt'] !== 'string') return null;
+  if (typeof raw['status'] !== 'string' || !PLAN_STATUSES.has(raw['status'])) return null;
+  const staged = normalizeStagedWrites(raw['stagedWrites'] ?? {});
+  if (!staged) return null;
+  const steps: TuningState['plan']['steps'] = [];
+  for (const step of plan['steps']) {
+    if (!isRecord(step)) return null;
+    if (typeof step['id'] !== 'number' || typeof step['description'] !== 'string'
+      || typeof step['command'] !== 'string' || typeof step['intent'] !== 'string'
+      || !isRecord(step['params']) || !Array.isArray(step['dependencies'])
+      || typeof step['expectedEffect'] !== 'string'
+      || typeof step['status'] !== 'string' || !STEP_STATUSES.has(step['status'])) {
+      return null;
+    }
+    const normalized: TuningState['plan']['steps'][number] = {
+      id: step['id'],
+      description: step['description'],
+      command: step['command'],
+      intent: step['intent'] as TuningState['plan']['steps'][number]['intent'],
+      params: Object.fromEntries(
+        Object.entries(step['params']).filter((e): e is [string, string] => typeof e[1] === 'string'),
+      ),
+      dependencies: step['dependencies'].filter((d): d is number => typeof d === 'number'),
+      expectedEffect: step['expectedEffect'],
+      status: step['status'] as TuningState['plan']['steps'][number]['status'],
+    };
+    if (typeof step['result'] === 'string') normalized.result = step['result'];
+    if (typeof step['error'] === 'string') normalized.error = step['error'];
+    steps.push(normalized);
+  }
+  const warnings = Array.isArray(plan['warnings'])
+    ? plan['warnings'].filter((w): w is string => typeof w === 'string')
+    : [];
+  const state: TuningState = {
+    plan: { goal: plan['goal'], steps, warnings },
+    startedAt: raw['startedAt'],
+    status: raw['status'] as TuningState['status'],
+    stagedWrites: staged,
+  };
+  if (typeof raw['completedAt'] === 'string') state.completedAt = raw['completedAt'];
+  return state;
+}
+
+function normalizePendingWriteBatchOwner(raw: unknown): PendingWriteBatchOwner | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (raw === 'build' || raw === 'tuning') return raw;
+  return undefined;
+}
+
+/**
+ * Drop malformed in-flight blobs with a stderr warning. Missing fields stay
+ * null/absent. Never throws — a bad in-flight payload must not become
+ * SessionLoadError (F-3f17cbc3).
+ */
+function normalizeInFlightFields(session: DesignSession): void {
+  const raw = session as unknown as Record<string, unknown>;
+  if (raw['activeBuild'] !== undefined && raw['activeBuild'] !== null) {
+    const build = normalizeBuildState(raw['activeBuild']);
+    if (build) {
+      session.activeBuild = build;
+    } else {
+      warnDroppedInFlight('activeBuild', 'unusable BuildState shape');
+      delete session.activeBuild;
+    }
+  } else {
+    delete session.activeBuild;
+  }
+  if (raw['activeTuning'] !== undefined && raw['activeTuning'] !== null) {
+    const tuning = normalizeTuningState(raw['activeTuning']);
+    if (tuning) {
+      session.activeTuning = tuning;
+    } else {
+      warnDroppedInFlight('activeTuning', 'unusable TuningState shape');
+      delete session.activeTuning;
+    }
+  } else {
+    delete session.activeTuning;
+  }
+  if (raw['pendingWriteBatchOwner'] !== undefined) {
+    const owner = normalizePendingWriteBatchOwner(raw['pendingWriteBatchOwner']);
+    if (owner === 'build' || owner === 'tuning') {
+      session.pendingWriteBatchOwner = owner;
+    } else if (raw['pendingWriteBatchOwner'] === null) {
+      delete session.pendingWriteBatchOwner;
+    } else {
+      warnDroppedInFlight('pendingWriteBatchOwner', `expected "build"|"tuning"|null, got ${JSON.stringify(raw['pendingWriteBatchOwner'])}`);
+      delete session.pendingWriteBatchOwner;
+    }
+  } else {
+    delete session.pendingWriteBatchOwner;
+  }
 }
 
 async function readSessionFile(file: string): Promise<DesignSession> {
@@ -347,6 +553,7 @@ async function readSessionFile(file: string): Promise<DesignSession> {
   if (Array.isArray(session.history) && session.history.length > MAX_SESSION_HISTORY_EVENTS) {
     session.history = session.history.slice(-MAX_SESSION_HISTORY_EVENTS);
   }
+  normalizeInFlightFields(session);
   return session;
 }
 
@@ -387,13 +594,120 @@ export async function tryLoadSession(projectRoot: string): Promise<DesignSession
   }
 }
 
+/**
+ * Write `contents` via sibling `.tmp` then rename so a crash mid-write cannot
+ * replace a restorable session with truncated JSON (F-3f17cbc3). Mirrors
+ * apply-preview's Windows-safe rename (copy+unlink when dest exists).
+ */
+async function atomicWriteFile(file: string, contents: string): Promise<void> {
+  const tmpPath = `${file}.tmp`;
+  await writeFile(tmpPath, contents, 'utf-8');
+  try {
+    await rename(tmpPath, file);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | null)?.code;
+    if (code === 'EEXIST' || code === 'EPERM' || code === 'EACCES') {
+      await copyFile(tmpPath, file);
+      await unlink(tmpPath);
+      return;
+    }
+    throw err;
+  }
+}
+
 export async function saveSession(projectRoot: string, session: DesignSession): Promise<void> {
   session.updatedAt = new Date().toISOString();
   session.artifacts = normalizeArtifacts(session.artifacts);
   const json = JSON.stringify(session, null, 2) + '\n';
-  await writeFile(sessionPath(projectRoot), json, 'utf-8');
+  await atomicWriteFile(sessionPath(projectRoot), json);
   await mkdir(sessionsDir(projectRoot), { recursive: true });
-  await writeFile(namedSessionPath(projectRoot, session.name), json, 'utf-8');
+  await atomicWriteFile(namedSessionPath(projectRoot, session.name), json);
+}
+
+export type InFlightPersistInput = {
+  activeBuild?: BuildState | null;
+  activeTuning?: TuningState | null;
+  pendingWriteBatchOwner?: PendingWriteBatchOwner | null;
+};
+
+export type PersistInFlightResult = {
+  session: DesignSession;
+  persisted: boolean;
+};
+
+function inFlightForPersist<T extends { status: string; stagedWrites: Record<string, unknown> }>(
+  state: T | null | undefined,
+): T | null {
+  if (!state) return null;
+  if ((state.status === 'completed' || state.status === 'failed')
+    && Object.keys(state.stagedWrites).length === 0) {
+    return null;
+  }
+  return state;
+}
+
+/**
+ * Attach live BuildState/TuningState onto the session file (creating one if
+ * needed) so a crash cannot destroy an unconfirmed /build or /tune batch.
+ * Persist-on-mutate, not persist-on-exit (F-3f17cbc3).
+ *
+ * If stringify would exceed MAX_SESSION_JSON_BYTES, refuse the in-flight
+ * attach, leave the previous session bytes untouched, and warn.
+ */
+export async function persistInFlight(
+  projectRoot: string,
+  session: DesignSession | null,
+  inflight: InFlightPersistInput,
+): Promise<PersistInFlightResult> {
+  const target = session ?? createSession('untitled');
+  const build = inFlightForPersist(inflight.activeBuild ?? null);
+  const tuning = inFlightForPersist(inflight.activeTuning ?? null);
+  const owner = inflight.pendingWriteBatchOwner ?? null;
+
+  const candidate: DesignSession = {
+    name: target.name,
+    createdAt: target.createdAt,
+    updatedAt: target.updatedAt,
+    themes: target.themes,
+    constraints: target.constraints,
+    artifacts: normalizeArtifacts(target.artifacts),
+    issues: target.issues,
+    acceptedSuggestions: target.acceptedSuggestions,
+    history: target.history,
+    modelConfig: target.modelConfig,
+  };
+  if (build) candidate.activeBuild = build;
+  if (tuning) candidate.activeTuning = tuning;
+  if (owner) candidate.pendingWriteBatchOwner = owner;
+
+  const json = JSON.stringify(candidate, null, 2) + '\n';
+  if (Buffer.byteLength(json, 'utf-8') > MAX_SESSION_JSON_BYTES) {
+    console.error(
+      'Warning: in-flight build/tuning state exceeds the session file budget; not persisted. '
+      + 'In-memory state remains and exiting still warns. Previous session file left untouched.',
+    );
+    return { session: target, persisted: false };
+  }
+
+  if (build) target.activeBuild = build;
+  else delete target.activeBuild;
+  if (tuning) target.activeTuning = tuning;
+  else delete target.activeTuning;
+  if (owner) target.pendingWriteBatchOwner = owner;
+  else delete target.pendingWriteBatchOwner;
+
+  try {
+    await saveSession(projectRoot, target);
+    return { session: target, persisted: true };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOENT') {
+      return { session: target, persisted: false };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Warning: could not persist in-flight session: ${msg}`);
+    return { session: target, persisted: false };
+  }
 }
 
 export async function deleteSession(projectRoot: string): Promise<boolean> {
@@ -731,6 +1045,15 @@ export function formatSessionStatus(session: DesignSession): string {
 
   if (session.acceptedSuggestions.length > 0) {
     lines.push(`Accepted suggestions: ${session.acceptedSuggestions.join(', ')}`);
+  }
+
+  if (session.activeBuild) {
+    const n = Object.keys(session.activeBuild.stagedWrites ?? {}).length;
+    lines.push(`IN_FLIGHT_BUILD: ${session.activeBuild.plan.goal} (${n} staged file${n === 1 ? '' : 's'})`);
+  }
+  if (session.activeTuning) {
+    const n = Object.keys(session.activeTuning.stagedWrites ?? {}).length;
+    lines.push(`IN_FLIGHT_TUNING: ${session.activeTuning.plan.goal} (${n} staged file${n === 1 ? '' : 's'})`);
   }
 
   return lines.join('\n');

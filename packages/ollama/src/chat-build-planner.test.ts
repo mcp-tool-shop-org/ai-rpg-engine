@@ -647,6 +647,17 @@ describe('formatBuildStatus', () => {
     expect(output).toContain('Warnings:');
     expect(output).toContain('restaged content/rooms/x.yaml');
   });
+
+  it('names every staged path so /status survives a restored in-flight batch (F-3f17cbc3)', () => {
+    const state = createBuildState(makePlan());
+    state.stagedWrites['content/rooms/market-hall.yaml'] = {
+      content: 'id: market-hall', suggestedPath: 'content/rooms/market-hall.yaml',
+      label: 'room: market-hall', sourceStepId: 1,
+    };
+    const output = formatBuildStatus(state);
+    expect(output).toContain(state.plan.goal);
+    expect(output).toContain('content/rooms/market-hall.yaml');
+  });
 });
 
 // ========================================

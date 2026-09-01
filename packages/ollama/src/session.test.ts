@@ -27,11 +27,14 @@ import {
   recordEvent,
   formatSessionHistory,
   artifactBucketForKind,
+  persistInFlight,
   MAX_SESSION_HISTORY_EVENTS,
   MAX_SESSION_JSON_BYTES,
 } from './session.js';
 import type { DesignSession, SessionEvent } from './session.js';
 import type { CritiqueIssue } from './parsers.js';
+import { createBuildState, type BuildPlan, type BuildStep } from './chat-build-planner.js';
+import { createTuningState, type TuningPlan, type TuningStep } from './chat-balance-analyzer.js';
 
 describe('session', () => {
   let tempDir: string;
@@ -595,6 +598,214 @@ describe('session', () => {
       expect(artifactBucketForKind('anchor')).toBe('anchors');
       expect(artifactBucketForKind('progression-tree')).toBe('trees');
       expect(artifactBucketForKind('tree')).toBe('trees');
+    });
+  });
+
+  // F-3f17cbc3: in-flight BuildState/TuningState (stagedWrites included)
+  // round-trips through the session file so a crash does not destroy an
+  // unconfirmed /build or /tune batch. Optional fields — older JSON without
+  // them still loads; malformed blobs are dropped, never SessionLoadError.
+  describe('in-flight BuildState/TuningState persistence (F-3f17cbc3)', () => {
+    const sessionFile = () => join(tempDir, '.ai-session.json');
+
+    function scaffoldStep(id: number): BuildStep {
+      return {
+        id, description: `step ${id}`, command: 'create-room', intent: 'scaffold',
+        params: { kind: 'room', theme: `theme-${id}` }, dependencies: [],
+        artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+      };
+    }
+    function tuningStep(id: number): TuningStep {
+      return {
+        id, description: `tune ${id}`, command: 'create-room', intent: 'scaffold',
+        params: { kind: 'room', theme: `tune-${id}` }, dependencies: [],
+        expectedEffect: 'none', status: 'pending',
+      };
+    }
+
+    it('round-trips activeBuild including stagedWrites and step.outputContent', async () => {
+      const s = createSession('haunted-market');
+      const plan: BuildPlan = {
+        goal: 'haunted market',
+        steps: [scaffoldStep(1), scaffoldStep(2)],
+        estimatedSteps: 2,
+        warnings: [],
+      };
+      plan.steps[0].status = 'executed';
+      plan.steps[0].result = 'Generated room';
+      plan.steps[0].outputContent = 'id: market-hall\nname: Market Hall';
+      s.activeBuild = createBuildState(plan);
+      s.activeBuild.status = 'executing';
+      s.activeBuild.generatedContent = ['id: market-hall\nname: Market Hall'];
+      s.activeBuild.stagedWrites['content/rooms/market-hall.yaml'] = {
+        content: 'id: market-hall\nname: Market Hall',
+        suggestedPath: 'content/rooms/market-hall.yaml',
+        label: 'room: market-hall',
+        sourceStepId: 1,
+      };
+      s.pendingWriteBatchOwner = 'build';
+      await saveSession(tempDir, s);
+
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.activeBuild).toBeTruthy();
+      expect(loaded!.activeBuild!.plan.goal).toBe('haunted market');
+      expect(loaded!.activeBuild!.plan.steps[0].status).toBe('executed');
+      expect(loaded!.activeBuild!.plan.steps[0].outputContent).toBe('id: market-hall\nname: Market Hall');
+      expect(loaded!.activeBuild!.plan.steps[1].status).toBe('pending');
+      expect(loaded!.activeBuild!.generatedContent).toEqual(['id: market-hall\nname: Market Hall']);
+      expect(loaded!.activeBuild!.stagedWrites['content/rooms/market-hall.yaml']?.content)
+        .toContain('market-hall');
+      expect(loaded!.pendingWriteBatchOwner).toBe('build');
+    });
+
+    it('round-trips activeTuning including stagedWrites', async () => {
+      const s = createSession('paranoia');
+      const plan: TuningPlan = {
+        goal: 'paranoia pass', steps: [tuningStep(1)], warnings: [],
+      };
+      s.activeTuning = createTuningState(plan);
+      s.activeTuning.stagedWrites['content/rooms/tuned-room.yaml'] = {
+        content: 'id: tuned-room', suggestedPath: 'content/rooms/tuned-room.yaml',
+        label: 'room: tuned-room', sourceStepId: 1,
+      };
+      s.pendingWriteBatchOwner = 'tuning';
+      await saveSession(tempDir, s);
+
+      const loaded = await loadSession(tempDir);
+      expect(loaded!.activeTuning?.plan.goal).toBe('paranoia pass');
+      expect(loaded!.activeTuning?.stagedWrites['content/rooms/tuned-room.yaml']?.content)
+        .toBe('id: tuned-room');
+      expect(loaded!.pendingWriteBatchOwner).toBe('tuning');
+    });
+
+    it('older session JSON without in-flight fields still loads', async () => {
+      const s = createSession('legacy');
+      const obj = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+      delete obj['activeBuild'];
+      delete obj['activeTuning'];
+      delete obj['pendingWriteBatchOwner'];
+      await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.name).toBe('legacy');
+      expect(loaded!.activeBuild ?? null).toBeNull();
+      expect(loaded!.activeTuning ?? null).toBeNull();
+      expect(loaded!.pendingWriteBatchOwner ?? null).toBeNull();
+    });
+
+    it('malformed in-flight blobs are dropped with a stderr warning and do not fail the load', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const s = createSession('corrupt-inflight');
+      const obj = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+      obj['activeBuild'] = { nope: true };
+      obj['activeTuning'] = 'not-an-object';
+      obj['pendingWriteBatchOwner'] = 'other';
+      await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
+
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.name).toBe('corrupt-inflight');
+      expect(loaded!.activeBuild ?? null).toBeNull();
+      expect(loaded!.activeTuning ?? null).toBeNull();
+      expect(loaded!.pendingWriteBatchOwner ?? null).toBeNull();
+      const stderr = errSpy.mock.calls.flat().join('\n');
+      expect(stderr).toMatch(/in-flight|activeBuild|activeTuning|pendingWriteBatchOwner/i);
+    });
+
+    it('saveSession leaves no leftover .tmp after a successful dual-write', async () => {
+      await saveSession(tempDir, createSession('atomic'));
+      const raw = await readFile(sessionFile(), 'utf-8');
+      expect(JSON.parse(raw).name).toBe('atomic');
+      await expect(readFile(`${sessionFile()}.tmp`, 'utf-8')).rejects.toThrow();
+      await expect(readFile(join(tempDir, '.ai-sessions', 'atomic.json.tmp'), 'utf-8')).rejects.toThrow();
+    });
+
+    it('persistInFlight auto-creates a session when none exists', async () => {
+      const plan: BuildPlan = {
+        goal: 'untitled build', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+      };
+      const build = createBuildState(plan);
+      build.stagedWrites['content/rooms/a.yaml'] = {
+        content: 'id: a', suggestedPath: 'content/rooms/a.yaml', label: 'room: a', sourceStepId: 1,
+      };
+      const result = await persistInFlight(tempDir, null, {
+        activeBuild: build, activeTuning: null, pendingWriteBatchOwner: null,
+      });
+      expect(result.persisted).toBe(true);
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.activeBuild?.plan.goal).toBe('untitled build');
+      expect(loaded!.activeBuild?.stagedWrites['content/rooms/a.yaml']?.content).toBe('id: a');
+    });
+
+    it('persistInFlight clears a finished plan with empty stagedWrites (keeps history)', async () => {
+      const s = createSession('done-build');
+      recordEvent(s, 'build_plan_completed', 'Build completed: done');
+      const plan: BuildPlan = {
+        goal: 'done', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+      };
+      plan.steps[0].status = 'executed';
+      const build = createBuildState(plan);
+      build.status = 'completed';
+      build.stagedWrites = {};
+      const result = await persistInFlight(tempDir, s, {
+        activeBuild: build, activeTuning: null, pendingWriteBatchOwner: null,
+      });
+      expect(result.persisted).toBe(true);
+      const loaded = await loadSession(tempDir);
+      expect(loaded!.activeBuild ?? null).toBeNull();
+      expect(loaded!.history.some(e => e.kind === 'build_plan_completed')).toBe(true);
+    });
+
+    it('over-budget in-flight attach leaves the previous session file untouched', async () => {
+      const s = createSession('budget');
+      addThemes(s, ['keep-me']);
+      await saveSession(tempDir, s);
+      const previous = await readFile(sessionFile(), 'utf-8');
+
+      const plan: BuildPlan = {
+        goal: 'huge', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+      };
+      const build = createBuildState(plan);
+      build.stagedWrites['content/rooms/huge.yaml'] = {
+        content: 'x'.repeat(MAX_SESSION_JSON_BYTES),
+        suggestedPath: 'content/rooms/huge.yaml',
+        label: 'room: huge',
+        sourceStepId: 1,
+      };
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const result = await persistInFlight(tempDir, s, {
+        activeBuild: build, activeTuning: null, pendingWriteBatchOwner: 'build',
+      });
+      expect(result.persisted).toBe(false);
+      expect(await readFile(sessionFile(), 'utf-8')).toBe(previous);
+      expect(errSpy.mock.calls.flat().join('\n')).toMatch(/budget/i);
+    });
+
+    it('formatSessionStatus reports IN_FLIGHT_BUILD and IN_FLIGHT_TUNING', () => {
+      const s = createSession('status-inflight');
+      const buildPlan: BuildPlan = {
+        goal: 'haunted market', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+      };
+      s.activeBuild = createBuildState(buildPlan);
+      s.activeBuild.stagedWrites['content/rooms/a.yaml'] = {
+        content: 'id: a', suggestedPath: 'content/rooms/a.yaml', label: 'a', sourceStepId: 1,
+      };
+      const tunePlan: TuningPlan = {
+        goal: 'paranoia pass', steps: [tuningStep(1)], warnings: [],
+      };
+      s.activeTuning = createTuningState(tunePlan);
+      s.activeTuning.stagedWrites['content/rooms/t.yaml'] = {
+        content: 'id: t', suggestedPath: 'content/rooms/t.yaml', label: 't', sourceStepId: 1,
+      };
+
+      const status = formatSessionStatus(s);
+      expect(status).toContain('IN_FLIGHT_BUILD');
+      expect(status).toContain('haunted market');
+      expect(status).toMatch(/1 staged/);
+      expect(status).toContain('IN_FLIGHT_TUNING');
+      expect(status).toContain('paranoia pass');
     });
   });
 });
