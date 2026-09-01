@@ -928,6 +928,13 @@ function formatEventLineRaw(event: ResolvedEvent): string | null {
     // items emit these — they used to render null, a visible no-op.
     case 'world.zone.inspected': {
       const parts: string[] = [`> You look around ${p.zoneName ?? 'the area'}.`];
+      // F-9b93f45b: same payloadString contract as world.zone.entered —
+      // period then space-paren after the look-around clause. Omitted, this
+      // is byte-identical to the line before this hint was read.
+      const moodHint = payloadString(p, 'moodHint');
+      if (moodHint) {
+        parts.push(`(${moodHint})`);
+      }
       const entities = Array.isArray(p.entities)
         ? (p.entities as Array<{ id?: string; name?: string }>).filter(
           e => typeof e?.name === 'string' && e.name.length > 0 && e.id !== event.actorId,
