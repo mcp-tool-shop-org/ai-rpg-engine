@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-bounty-hunter",
-  "version": "3.10.0",
+  "version": "3.11.0",
   "description": "AI RPG Engine thief-taker starter: Hue and Cry",
   "type": "module",
   "main": "./dist/index.js",

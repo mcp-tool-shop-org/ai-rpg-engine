@@ -36,10 +36,11 @@
 
 ---
 
-## 当前状态（v3.10.0）
+## 当前状态（v3.11.0）
 
 **What works and is tested:**
-- **The world reaches the player (v3.10):** two cycles of producers finally land on the player's senses. All eight narrator-voice hints render — NPC texture and faction bias frame the speaker, the manner hint rides the speaker line, party presence / world pressure / open opportunities close the dialogue frame as asides, and district mood and situation reports join the event log. The always-on HUD gains the party line. Combat honesty arrives as a real event: `combat.encounter.cleared` fires exactly once when the last hostile falls (a mutual kill reads as defeat, a companion's death no longer renders triumph, and the nine starter listeners that fanfared every kill are gone), mapped to the victory sting through the per-turn presenter. Zone entry resolves tone-aware music — a grim district actually sounds grim — and the spoken-output contract is real: `NarrationPlan.asides` carries dialogue fragments exactly once, `SpeakerCue.emotion` carries the manner hint verbatim, ready for a TTS embedder. Sidecar clients see pack-intake `dropped[]`/`advisories` on `initialize`, guided `/build` batches stage every step behind one batched consent (with a CREATE-aware undo and a decline that can't hollow the gate), scaffolded factions survive `emit-pack`, and faction identity resolves from the entity's own authored `faction` everywhere it used to need a registry no shipped pack populates — un-inverting district intruder tracking and reviving rumor propagation. A played-session e2e pins the whole surface frame-by-frame, NO_COLOR byte-identical. Recorded honestly: `bounty` lost natural reachability to the listener cleanup (its synthetic control passes — the mechanism is healthy); retuning its on-ramp is the named P1.
+- **Tuning and depth (v3.11):** `bounty` fires on authored content again (the v3.10 listener cleanup put black-flag's two navy kills 36 quiet rounds apart; heat grace is that measured gap, wake still two kills). A fight that ends because someone ran says so: `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'` — not a second event, not a victory sting, not a journaled win. Faction membership has three honest locations: `entity.faction` on the person, a kept registry that hydrates from it and still takes extras, and `CompanionState.originFaction` so the guild they came from still listens. Zone music rolls per `zoneId`; stings honor cooldowns; `/build` staged writes survive a crash; a new CLI session emits the starting-zone entered event so KEY MOMENTS see the first mood. 8356 tests.
+- **The world reaches the player (v3.10):** two cycles of producers finally land on the player's senses. All eight narrator-voice hints render — NPC texture and faction bias frame the speaker, the manner hint rides the speaker line, party presence / world pressure / open opportunities close the dialogue frame as asides, and district mood and situation reports join the event log. The always-on HUD gains the party line. Combat honesty arrives as a real event: `combat.encounter.cleared` fires exactly once when the last hostile falls (a mutual kill reads as defeat, a companion's death no longer renders triumph, and the nine starter listeners that fanfared every kill are gone), mapped to the victory sting through the per-turn presenter. Zone entry resolves tone-aware music — a grim district actually sounds grim — and the spoken-output contract is real: `NarrationPlan.asides` carries dialogue fragments exactly once, `SpeakerCue.emotion` carries the manner hint verbatim, ready for a TTS embedder. Sidecar clients see pack-intake `dropped[]`/`advisories` on `initialize`, guided `/build` batches stage every step behind one batched consent (with a CREATE-aware undo and a decline that can't hollow the gate), scaffolded factions survive `emit-pack`, and faction identity resolves from the entity's own authored `faction` everywhere it used to need a registry no shipped pack populates — un-inverting district intruder tracking and reviving rumor propagation. A played-session e2e pins the whole surface frame-by-frame, NO_COLOR byte-identical.
 - **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
 - **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -85,7 +86,7 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8223 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced; 4 tests parked under the recorded `P1(bounty-on-ramp)` tag)
+- Full test suite: **8356 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **哪些部分存在缺陷或不完整：**
 - AI 世界构建工作室（Ollama 层）的测试不如模拟核心充分，需要本地 Ollama 守护进程；它是完全可选的——引擎和 `run` 循环不需要网络。
@@ -337,7 +338,7 @@ const warCry: AbilityDefinition = {
 
 ### 我们目前的进展
 
-两个主要组件均已完成——**385个文件中包含8223个测试**，`buildCombatStack`和`buildWorldStack`上的所有12个初始角色，基于打印的种子进行确定性字节级重复播放，完整的AI决策评分，以及一个可以构建、运行、验证和检查的命令行界面。v3.x版本使世界栩栩如生（命名NPC、25个动词的社交系统、类型经济——v3.0–v3.1），将玩家拥有的资产放在XRPL测试网上，作为一种可选的侧通道（v3.2–v3.4），创建了两个系统优先级的初始角色，并将它们转变为引擎优化工具（v3.5–v3.6），完善并强化了战略层，直到后果产生实际影响（v3.7–v3.8），为宿主提供了引擎界面，使其能够与Godot连接（v3.8.1），闭合了创作循环，因此一个工作室会话或一个简单的JSON包就可以生成一个可玩的世界（v3.9），并且**将整个战略层置于玩家的感官之上——提示、队伍、胜利、情绪驱动的音乐以及背景——通过一次实际游戏会话进行验证（v3.10）**。
+Both composition spines are complete — **8356 tests across 386 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), and **tuned the depth those senses now reach — bounty on-ramp, retreat-as-outcome, three-location faction membership, crash-surviving `/build` (v3.11)**.
 
 **最近的发布周期（v2.4.0–v3.0.0）：**
 - v2.4.0 — 队伍战斗（目标盟友/治疗/增益/复活，友方/敌方 AoE），状态效果系统（修改器 + DoT/HoT + 反应触发器），插件配置阶段 1，内容 `validate`/`scaffold` CLI
@@ -348,18 +349,13 @@ const warCry: AbilityDefinition = {
 - v2.9.0 — 完成循环：`buy` + 商店库存和制作完成了经济系统；伙伴可以独立行动；四个社交动词（贿赂/恐吓/请愿/引导）在一个由机会奖励资助的杠杆经济中运行；机会会随着过期 + 影响后果而解决；装备、任务、可招募角色和起始金币会均匀地分配给所有十个启动器
 - **v3.0.0 — 让世界“活”起来：NPC 代理生成器点亮了命名 NPC（目标/关系/义务日志/后果链），并且每个启动器中都有一个故事 NPC；社交界面扩展到 25 个动词（外交 + 破坏），具有被动杠杆收入和读取社交状态的对话；每个启动器都有特定类型的库存 + 配方；杠杆结局（胜利/傀儡大师/安静的退休）变得可以实现；修复/修改菜单行，护送机会，以及一个 `audit-content` 开发 CLI——通过第 9 阶段的审核，该审核发现了绿色测试套件隐藏的两个死线**
 
-### 接下来（调整和深化周期）
+### 下一步
 
-v3.10提供了用户界面；在此过程中记录的内容将决定下一个周期：
+v3.11 版本结束了调整和深度优化阶段。剩下的工作是后续阶段的任务，而不是本阶段的剩余任务：
 
-- **重新调整`bounty`的入口（命名的P1）**——初始角色-监听器清理改变了确定性事件流，并且“黑旗-安魂曲”的四个条件奖励窗口不再出现在正常的会话中；该机制以人为方式运行，并且`faction-summons`（其整个后果链）在其后面等待——一个专门的单杠平衡调整，以可访问性框架作为门槛。
-- **为一场没有人赢得的战斗提供一个诚实的结局**——逃离一场战斗，然后清空该区域，不会触发任何事件（规则：撤退不是胜利）；一个带有自身影响和记忆语义的`outcome`承载的战斗结束设计（撤退/撤离）。
-- **同伴记得他们来自哪里**——目前，招募会将一个同伴重写到队伍的共享派系中，因此“他们所属的公会会听从你的命令”是无法实现的；在`CompanionState`上保留一个原始派系，可以解锁设计中设想的派系路线杠杆奖励。
-- **无需注册步骤即可进行派系认知**——谣言传播和观察者框架仍然严重依赖于明确的`createFactionCognition`注册，而当前发布的包中没有此功能；从已编写的`entity.faction`中推断出成员资格，并通过`affiliationOf`而不是原始派系不平等来路由观察者的敌意，完成了v3.10的身份回退所开始的工作。
-- **区域音乐的多样性和包的可扩展性**——音调桥首先是确定性的（相同的区域，相同的音调）；每个区域的确定性滚动，以及一个可以由包作者编写的音调→情绪表面，是设计中的下一步，以及缺失的繁荣家庭环境音乐。
-- **在崩溃中幸存的构建批次**——v3.10在退出时发出警告；将`BuildState`/`TuningState`（包括分阶段写入）序列化到会话文件中是完整的解决方案。
-- 多人游戏——两个*人类*玩家共享一个世界（网络层，故意推迟；单控制器共享配置文件今天发布，即[`shared-profiles.ts`](docs/examples/shared-profiles.ts)）。
-- 可序列化的公式覆盖——每个配置文件的公式调整（受公式DSL的限制；配置文件今天携带状态映射，而不是闭包）。
+- 一个繁荣家庭环境（音调桥和每个区域的滚动功能；核心仍然没有繁荣的主题）
+- 多人游戏——两个*人类*玩家共享一个世界（一个网络层，有意推迟；单控制器共享配置文件今天已发布，参见 [`shared-profiles.ts`](docs/examples/shared-profiles.ts)）
+- 可序列化的公式覆盖——每个配置文件的公式调整（受公式 DSL 的限制；配置文件今天包含状态映射，而不是闭包）
 
 ### 目标：插件配置
 

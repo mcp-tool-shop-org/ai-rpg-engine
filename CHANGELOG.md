@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.11.0] - 2026-09-01
+
+**Tuning and depth.** v3.10 put the strategic layer on the player's senses and
+recorded what still did not reach a natural session. This release retunes the
+bounty on-ramp, tells the truth when a fight ends in a flee, and makes faction
+membership a ledger with three honest locations.
+
+### Added
+- **`combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'`.** A
+  last-hostile flee and a player flee emit the same event with `'retreat'` —
+  not a second event name, and not a victory sting. Mutual kill remains
+  defeat; a companion falling is not triumph. Campaign memory skips a
+  retreat-clear. `COMBAT_STING_MAP` maps `combat.retreat` to
+  `music_retreat_sting`.
+- **Three faction-membership locations.** Authored `entity.faction` hydrates
+  into the membership registry at init; the registry stays a first-class
+  surface for extras (NPC memberships, other users); `CompanionState.originFaction`
+  preserves a recruit's home so faction-route leverage can key the guild they
+  came from. Observer hostility routes through `affiliationOf`. 16
+  `controllingFaction` ids across 11 starters now seed `WorldState.factions`.
+- **`hashRoll(zoneId)`** — deterministic per-zone stem pick; `extendDistrictToneMap`
+  for pack-authorable tone→mood; sting cooldowns on `scheduleSting`;
+  `COMBAT_STING_MAP` / `combatStingTargetIds` re-exported.
+- **In-flight `/build` and `/tune` survive a crash.** `BuildState` /
+  `TuningState` (staged writes included) serialize into the session file;
+  restore hydrates without writing pack files; first yes still previews.
+- **Starting-zone `world.zone.entered`** on a new CLI session (same helper
+  sidecar `--start` already used), so KEY MOMENTS record the first district
+  mood without a move.
+
+### Changed
+- **`bounty` is reachable on authored content.** The v3.10 listener deletion
+  put black-flag's two navy kills 36 quiet rounds apart; `QUIET_ROUNDS_BEFORE_DECAY`
+  is 37 so the two +5 heats still stack. `HEAT_WAKE_THRESHOLD` stays 10.
+  The four parked P1 tests are live. `REACHABLE_TODAY.bounty` is true.
+- Inspect attaches the same `moodHint` / `tone` pair as zone entry.
+- Post-clear encounter cooldown arms on elapsed authored ticks and on a
+  vacated combat zone after a player-flee.
+- `persistInFlight` resumes an existing `untitled` named slot instead of
+  clobbering it; `session switch` / resume use atomic writes.
+
+### Fixed
+- Silent overwrite of `.ai-sessions/untitled.json` when `/build` ran without
+  `session start`.
+- `session switch` / resume `writeFile` of the crash copy (truncation window).
+- Bounce-back restack after an elapsed spawn-time cooldown or after a flee
+  whose leftover pack later dies or leaves.
+
 ## [3.10.0] - 2026-08-31
 
 **The world reaches the player.** v3.7–v3.9 built hints, stings, party state, and

@@ -7,7 +7,7 @@ sidebar:
 
 A guide to building simulation-driven RPG worlds — from first room to experiment-driven balancing.
 
-Current release: **v3.10.0**. The world reaches the player: all eight narrator hints render in the dialogue frame and event log, the HUD carries the party line, `combat.encounter.cleared` maps victory to a real sting exactly once, zone entry resolves tone-aware music, sidecar clients see pack-intake advisories on `initialize`, and guided `/build` batches stage every step behind one consent — the whole surface pinned by a played-session end-to-end test. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
+Current release: **v3.11.0**. Tuning and depth on the consumer surface: `bounty` is reachable on authored content, `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'`, faction membership lives in three places (person, kept registry, companion origin), `/build` staged writes survive a crash, and a new session emits the starting-zone entered event. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
 
 ---
 

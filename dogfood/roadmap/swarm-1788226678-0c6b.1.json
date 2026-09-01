@@ -1,0 +1,222 @@
+{
+  "run_id": "swarm-1788226678-0c6b",
+  "repo": "mcp-tool-shop-org/ai-rpg-engine",
+  "compiled_from": {
+    "commit_sha": "b84e470eccb8320f5fdb46f1ee8d8d9d42ac9b20"
+  },
+  "open_summary": {
+    "open": 0,
+    "deferred": 2,
+    "approved": 0
+  },
+  "grandfathered_drain": {
+    "frozen_total": 0,
+    "drained": 0,
+    "outstanding": []
+  },
+  "recurrence_stats": {
+    "top_recurring": [],
+    "recurrence_rate": {
+      "total_runs": 11,
+      "distinct_fingerprints": 800,
+      "recurring_fingerprints": 0,
+      "recurrence_rate": 0,
+      "window_days": null
+    }
+  },
+  "attention": {
+    "advisory": true,
+    "items": [
+      {
+        "file": "packages/modules/src/encounter-spawn.ts",
+        "score": 0.16389358955973038,
+        "components": {
+          "churn": 0.16389358955973038,
+          "recency": 1,
+          "fragmentation": 1
+        }
+      },
+      {
+        "file": ".gitattributes",
+        "score": 0,
+        "components": {
+          "churn": 0.1307017543859649,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.12171600877192981,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/docs-integrity.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.15911517925247903,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/pages.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.0773467916366258,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.15234484059611392,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".gitignore",
+        "score": 0,
+        "components": {
+          "churn": 0.06919504643962848,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "CHANGELOG.md",
+        "score": 0,
+        "components": {
+          "churn": 0.1038275362747126,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "Dockerfile",
+        "score": 0,
+        "components": {
+          "churn": 0.12347144456886898,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "PHILOSOPHY.md",
+        "score": 0,
+        "components": {
+          "churn": 0.003168527379053695,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.es.md",
+        "score": 0,
+        "components": {
+          "churn": 0.6054652841580259,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.fr.md",
+        "score": 0,
+        "components": {
+          "churn": 0.5037721485759286,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.hi.md",
+        "score": 0,
+        "components": {
+          "churn": 0.5212805736970163,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.it.md",
+        "score": 0,
+        "components": {
+          "churn": 0.6492715579472371,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.ja.md",
+        "score": 0,
+        "components": {
+          "churn": 0.5365854290899663,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.md",
+        "score": 0,
+        "components": {
+          "churn": 0.1543354962749339,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.pt-BR.md",
+        "score": 0,
+        "components": {
+          "churn": 0.4685803839623874,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.zh.md",
+        "score": 0,
+        "components": {
+          "churn": 0.6289329308308176,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "SCORECARD.md",
+        "score": 0,
+        "components": {
+          "churn": 0.12869095816464238,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "SECURITY.md",
+        "score": 0,
+        "components": {
+          "churn": 0.07129186602870813,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      }
+    ]
+  },
+  "compiled_at": "2026-09-01T01:37:58.000Z",
+  "operator_notes": [],
+  "expired_notes": [],
+  "drain_queue": {
+    "entries": [],
+    "overdue_ids": []
+  },
+  "notesPath": "dogfood/roadmap-notes.json",
+  "sequence": 1,
+  "content_hash": "1a5ee2f9189cd62c5aa661c96fa1bf7c1e1ed2a80b6ceee8697e110e1c36cbca"
+}

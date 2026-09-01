@@ -12,7 +12,7 @@ import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 export const manifest: GameManifest = {
   id: 'signal-loss',
   title: 'Signal Loss',
-  version: '3.10.0',
+  version: '3.11.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'colony-minimal',
   modules: [
@@ -689,7 +689,7 @@ export const packMeta: PackMetadata = {
   tones: ['tense', 'atmospheric'],
   tags: ['colony', 'alien', 'management', 'first-contact', 'power'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.10.0',
+  version: '3.11.0',
   description: 'Command a struggling colony on an alien world. Manage dwindling power, navigate political fractures, and investigate a signal from beneath the surface.',
   narratorTone: 'hard sci-fi, clinical, tense, vast',
 };
