@@ -1412,4 +1412,35 @@ describe('combat.encounter.cleared retreat (F-f693d790, R4 flee)', () => {
 
     expect(cleared.length).toBe(0);
   });
+
+  it('F-e1b0084d: player already left — last hostile defeated names the defeated entity\'s zone, not the safe zone', () => {
+    const engine = buildEngine([
+      makePlayer('zone-b'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.bandit.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player', defeatZoneId: 'zone-a',
+    });
+
+    expect(cleared.length).toBe(1);
+    expect(cleared[0].payload.outcome).toBe('victory');
+    expect(cleared[0].payload.zoneId).toBe('zone-a');
+  });
+
+  it('F-e1b0084d: player already left — last hostile disengage names fromZoneId, not the safe zone', () => {
+    const engine = buildEngine([
+      makePlayer('zone-b'),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 20, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    flee(engine, 'bandit', 'zone-a', 'zone-choke');
+
+    expect(cleared.length).toBe(1);
+    expect(cleared[0].payload.outcome).toBe('retreat');
+    expect(cleared[0].payload.zoneId).toBe('zone-a');
+  });
 });

@@ -156,12 +156,30 @@ function maybeEmitEncounterCleared(
   if ((playerEntity.resources.hp ?? 0) <= 0) return;
 
   if (trigger === 'defeated') {
-    if (hasEnemiesInZone(world, playerEntity)) return;
-    const clearedZoneId = playerEntity.zoneId;
-    if (hasEncounterClearedThisTick(world, clearedZoneId, tick)) return;
-
     const defeatedId = event.payload.entityId as string;
     const defeated = world.entities[defeatedId];
+    const defeatZone =
+      typeof event.payload.defeatZoneId === 'string'
+        ? event.payload.defeatZoneId
+        : (typeof defeated?.zoneId === 'string' ? defeated.zoneId : undefined);
+    // F-e1b0084d: after a player-flee the player is already in a safe zone;
+    // last-hostile victory must name the street that actually cleared.
+    const playerLeftCombat =
+      typeof defeatZone === 'string'
+      && defeatZone !== playerEntity.zoneId
+      && !!defeated
+      && affiliationOf(playerEntity, defeated) === 'enemy';
+    const clearedZoneId = playerLeftCombat && defeatZone ? defeatZone : playerEntity.zoneId;
+
+    if (playerLeftCombat) {
+      const hostilesRemain = getEntitiesInZone(world, clearedZoneId)
+        .some(e => affiliationOf(playerEntity, e) === 'enemy');
+      if (hostilesRemain) return;
+    } else if (hasEnemiesInZone(world, playerEntity)) {
+      return;
+    }
+    if (hasEncounterClearedThisTick(world, clearedZoneId, tick)) return;
+
     const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
     const encounterId = defeated?.zoneId === clearedZoneId
       && typeof defeated.custom?.encounterId === 'string'
@@ -228,12 +246,16 @@ function maybeEmitEncounterCleared(
   }
 
   if (affiliationOf(playerEntity, entity) !== 'enemy') return;
-  if (hasEnemiesInZone(world, playerEntity)) return;
-  const clearedZoneId = playerEntity.zoneId;
+  // F-e1b0084d: last-hostile-flee names fromZoneId (the street they left),
+  // not player.zoneId — after a player-flee that would be the safe zone and
+  // the combat zone's liveByZone ledger would never settle.
+  const hostilesRemain = getEntitiesInZone(world, fromZoneId)
+    .some(e => affiliationOf(playerEntity, e) === 'enemy');
+  if (hostilesRemain) return;
+  const clearedZoneId = fromZoneId;
   if (hasEncounterClearedThisTick(world, clearedZoneId, tick)) return;
   const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
-  const encounterId = fromZoneId === clearedZoneId
-    && typeof entity.custom?.encounterId === 'string'
+  const encounterId = typeof entity.custom?.encounterId === 'string'
     ? entity.custom.encounterId
     : undefined;
   ctx.events.emit({
