@@ -41,6 +41,16 @@ describe('starter template', () => {
         expect(engine).toBeDefined();
     });
 
+    it('F-749aba8e: pack.factions seeds WorldState.factions for controllingFaction my-game', () => {
+        const engine = createGame(1);
+        expect(engine.store.state.factions['my-game']).toEqual({
+            id: 'my-game',
+            name: 'My Game',
+            reputation: 0,
+            disposition: 'neutral',
+        });
+    });
+
     it('tension rises when combat damage lands (tension-pressure fires)', () => {
         const engine = createGame(1);
         expect(engine.world.entities['player']?.resources.tension).toBe(0);

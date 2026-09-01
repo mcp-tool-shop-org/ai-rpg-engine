@@ -48,6 +48,7 @@ import {
   gladiatorQuests,
 } from './content.js';
 import { gladiatorMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 
 // Gladiator-specific presentation rule: patrons see gladiators as investments
 const patronPerception: PresentationRule = {
@@ -146,20 +147,21 @@ export function createGame(seed?: number): Engine {
   // inert: createEncounterSpawn's register() subscribes to no events and emits
   // nothing — it only claims a persistence namespace and registers the pack's
   // spawn content — so no handler ordering or event stream can observe it.
+  const factions = [
+    {
+      factionId: 'arena-stable',
+      entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'],
+      cohesion: 0.5,
+    },
+    {
+      factionId: 'patron-circle',
+      entityIds: ['domina-valeria'],
+      cohesion: 0.4,
+    },
+  ];
   const worldStack = buildWorldStack({
     playerId: 'player',
-    factions: [
-      {
-        factionId: 'arena-stable',
-        entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'],
-        cohesion: 0.5,
-      },
-      {
-        factionId: 'patron-circle',
-        entityIds: ['domina-valeria'],
-        cohesion: 0.4,
-      },
-    ],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -280,6 +282,7 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'player';
   engine.store.state.locationId = 'holding-cells';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // Listen for patron gift — give patron token after dialogue
   engine.store.events.on('dialogue.ended', (event) => {

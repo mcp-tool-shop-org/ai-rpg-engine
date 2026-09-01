@@ -190,6 +190,9 @@ export const pack: ContentPack = {
     zones,
     placements,
     districts,
+    factions: {
+        'my-game': { id: 'my-game', name: 'My Game', reputation: 0, disposition: 'neutral' },
+    },
     buildCatalog: buildCatalog as ContentPack['buildCatalog'],
     progressionTrees: [progressionTree],
     statuses: statusDefinitions,

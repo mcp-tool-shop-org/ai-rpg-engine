@@ -1073,6 +1073,9 @@ export const pack: ContentPack = {
   dialogues: [pilgrimDialogue, brotherAldricDialogue],
   quests: fantasyQuests,
   districts,
+  factions: {
+    'chapel-undead': { id: 'chapel-undead', name: 'Chapel Undead', reputation: 0, disposition: 'neutral' },
+  },
   buildCatalog: buildCatalog as ContentPack['buildCatalog'],
   progressionTrees: [combatMasteryTree],
   statuses: fantasyStatusDefinitions,

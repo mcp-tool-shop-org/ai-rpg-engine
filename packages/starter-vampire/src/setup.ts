@@ -48,6 +48,7 @@ import {
   itemCatalog,
 } from './content.js';
 import { vampireMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 
 // Vampire-specific presentation rule: vampires perceive humans as vessels
 const vampireHungerPerception: PresentationRule = {
@@ -145,20 +146,21 @@ export function createGame(seed?: number): Engine {
   // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
   // modules this setup used to hand-list, same wiring order, same configs.
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const factions = [
+    {
+      factionId: 'house-morvaine',
+      entityIds: ['duchess-morvaine', 'cassius', 'feral-thrall'],
+      cohesion: 0.6,
+    },
+    {
+      factionId: 'witch-hunters',
+      entityIds: ['witch-hunter'],
+      cohesion: 0.8,
+    },
+  ];
   const worldStack = buildWorldStack({
     playerId: 'player',
-    factions: [
-      {
-        factionId: 'house-morvaine',
-        entityIds: ['duchess-morvaine', 'cassius', 'feral-thrall'],
-        cohesion: 0.6,
-      },
-      {
-        factionId: 'witch-hunters',
-        entityIds: ['witch-hunter'],
-        cohesion: 0.8,
-      },
-    ],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -264,6 +266,7 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'player';
   engine.store.state.locationId = 'grand-ballroom';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // F-92c78519: seed a small starting coin balance. trade-core's buy verb
   // (always registered via buildWorldStack) reads actor.resources.coin, and

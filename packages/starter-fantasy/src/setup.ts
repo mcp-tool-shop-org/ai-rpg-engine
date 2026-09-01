@@ -25,7 +25,7 @@ import {
 import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, IntentProfile } from '@ai-rpg-engine/modules';
-import { applyContentPack } from '@ai-rpg-engine/content-schema';
+import { applyContentPack, seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 import {
   manifest,
   cryptWardenBoss,
@@ -113,13 +113,14 @@ export function createGame(seed?: number): Engine {
   // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
   // modules this setup used to hand-list, same wiring order, same configs.
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const factions = [{
+    factionId: 'chapel-undead',
+    entityIds: ['ash-ghoul', 'crypt-warden'],
+    cohesion: 0.7,
+  }];
   const worldStack = buildWorldStack({
     playerId: 'player',
-    factions: [{
-      factionId: 'chapel-undead',
-      entityIds: ['ash-ghoul', 'crypt-warden'],
-      cohesion: 0.7,
-    }],
+    factions,
     environment: {
       // Hazard effects apply their consequence by mutating entity.resources
       // directly: environment-core invokes effect() for its side-effects and
@@ -212,6 +213,9 @@ export function createGame(seed?: number): Engine {
     const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
     throw new Error(`applyContentPack failed:\n${detail}`);
   }
+  // F-749aba8e: same membership roster → WorldState.factions. First-wins so
+  // pack.factions (merged above) keeps the authored chapel-undead record.
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // F-bc7b8ab1: no manual playerId/locationId stamp needed here — pack.entities
   // carries exactly one type:'player' entity ('player', placed at

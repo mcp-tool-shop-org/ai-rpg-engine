@@ -77,13 +77,16 @@ export const ALLOWED_PACK_KEYS = [
   // Not sim-affecting — do not add to SIM_AFFECTING_KEYS (world-forge hasher pin).
   'meta',
   'manifest',
-  // F-d54f4d67: optional faction registry (id/name/reputation/disposition),
-  // keyed the way ruleProfiles is keyed by ruleProfileId. Overlay packs omit
-  // this — apply then keeps copy-the-string on EntityState.faction. When
-  // present, applyContentPack MERGES it onto WorldState.factions (never
-  // replaces — a host's own factions must survive an overlay pack). Not
-  // sim-affecting — do not add to SIM_AFFECTING_KEYS (world-forge hasher pin,
-  // same as ruleProfiles / entityAi / meta / manifest).
+  // F-d54f4d67 / F-749aba8e: optional faction registry
+  // (id/name/reputation/disposition), keyed the way ruleProfiles is keyed by
+  // ruleProfileId — also the target of districts[].controllingFaction.
+  // Overlay packs omit this — apply then keeps copy-the-string on
+  // EntityState.faction. When present, applyContentPack MERGES it onto
+  // WorldState.factions (never replaces — a host's own factions must survive
+  // an overlay pack). controllingFaction pointers are walked whenever they
+  // exist, not only when this key is present. Not sim-affecting — do not add
+  // to SIM_AFFECTING_KEYS (world-forge hasher pin, same as ruleProfiles /
+  // entityAi / meta / manifest).
   'factions',
   // ── C4: KNOWN, EVALUATED, DELIBERATELY NOT CARRIED ────────────────────────
   //

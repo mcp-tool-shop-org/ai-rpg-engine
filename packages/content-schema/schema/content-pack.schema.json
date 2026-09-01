@@ -138,7 +138,7 @@
     },
     "factions": {
       "type": "object",
-      "description": "Optional faction registry keyed by EntityBlueprint.faction. Overlay packs omit this; apply then keeps copy-the-string on EntityState.faction. applyContentPack MERGES it onto WorldState.factions — never replaces. Not sim-affecting.",
+      "description": "Optional faction registry keyed by EntityBlueprint.faction and districts[].controllingFaction. Overlay packs omit this; apply then keeps copy-the-string on EntityState.faction. applyContentPack MERGES it onto WorldState.factions — never replaces. districts[].controllingFaction is walked against the post-merge registry whenever the pointer exists, not only when this key is present. Not sim-affecting.",
       "additionalProperties": { "$ref": "#/$defs/FactionRecord" }
     },
     "factionPresences": {

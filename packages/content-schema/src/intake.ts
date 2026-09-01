@@ -31,6 +31,7 @@
 
 import type { AIState, Engine, EntityState, ResistanceLevel, ZoneState } from '@ai-rpg-engine/core';
 import type {
+  AuthoredFactionMembership,
   ContentPack,
   EntityAiState,
   EntityPlacementRecord,
@@ -884,7 +885,7 @@ export function applyContentPack(
     }
   }
 
-  // --- factions (core WorldState, F-d54f4d67) ---
+  // --- factions (core WorldState, F-d54f4d67 / F-749aba8e) ---
   // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
   // already wrote EntityState.faction). When the map is present, MERGE it onto
   // the store — never replace, same as ruleProfiles above (F-9930b9b6 closed
@@ -894,6 +895,8 @@ export function applyContentPack(
   // never flips ok. The unresolved check reads the store AFTER the merge, so an
   // entity's faction resolves against host-registered factions too, not just
   // the ones this specific pack declared — the whole point of merging.
+  // districts[].controllingFaction is walked whenever the pointer exists, not
+  // only when pack.factions is present (F-749aba8e).
   if (pack.factions !== undefined) {
     const cloned = cloneFactions(pack.factions, dropped);
     if (cloned !== undefined) {
@@ -914,6 +917,24 @@ export function applyContentPack(
             });
           }
         }
+      }
+    }
+  }
+
+  const districts = pack.districts;
+  if (Array.isArray(districts)) {
+    for (let i = 0; i < districts.length; i++) {
+      const d = districts[i] as unknown;
+      if (!isRecord(d) || typeof d.controllingFaction !== 'string') continue;
+      if (engine.store.state.factions[d.controllingFaction] === undefined) {
+        dropped.push({
+          path: `districts[${i}](${idOf(d)}).controllingFaction`,
+          reason: 'needs-module-vocabulary',
+          detail:
+            `unresolved faction "${d.controllingFaction}" — pack.factions (merged with any host-registered ` +
+            'factions) has no entry for this id. The pointer is copied; the registry is not. ' +
+            'Dropped, not refused (does not flip applyContentPack.ok).',
+        });
       }
     }
   }
@@ -1490,6 +1511,36 @@ function cloneFactions(
     };
   }
   return out;
+}
+
+/**
+ * Content-owned seed of WorldState.factions from an authored FactionMembership
+ * roster (F-749aba8e). Same list that feeds faction-cognition / defeat-fallout
+ * — not a third list. First-wins: a host-registered or pack.factions record
+ * is left alone. Defaults when the row omits the optional fields: name=
+ * factionId, reputation=0, disposition='neutral'.
+ *
+ * Call this from createGame after Engine construction (and after
+ * applyContentPack when the pack also authors pack.factions) so the registry
+ * fills even if modules has not yet hydrated membership onto WorldState.
+ */
+export function seedWorldFactionsFromMembership(
+  world: { factions: Record<string, PackFactionRecord> },
+  rows: readonly Pick<AuthoredFactionMembership, 'factionId' | 'name' | 'reputation' | 'disposition'>[],
+): void {
+  for (const row of rows) {
+    if (typeof row.factionId !== 'string' || row.factionId.length === 0) continue;
+    if (world.factions[row.factionId] !== undefined) continue;
+    world.factions[row.factionId] = {
+      id: row.factionId,
+      name: typeof row.name === 'string' && row.name.length > 0 ? row.name : row.factionId,
+      reputation: typeof row.reputation === 'number' ? row.reputation : 0,
+      disposition:
+        typeof row.disposition === 'string' && row.disposition.length > 0
+          ? row.disposition
+          : 'neutral',
+    };
+  }
 }
 
 /**
