@@ -1247,3 +1247,169 @@ describe('combat.encounter.cleared (F-32948b79, carried:F-defb93a6)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// F-f693d790 (R4 flee): dual-wire combat.encounter.cleared from
+// combat.disengage.success as well as combat.entity.defeated. Same event,
+// outcome 'victory'|'retreat' — not a second event. Mutual-kill stays
+// defeat; companion death is not triumph (already pinned above).
+// combat-core's disengageHandler moves zoneId BEFORE emitting, so these
+// tests move the actor first then emit — matching production order.
+// ---------------------------------------------------------------------------
+
+describe('combat.encounter.cleared retreat (F-f693d790, R4 flee)', () => {
+  function collectCleared(engine: ReturnType<typeof createTestEngine>): ResolvedEvent[] {
+    const collected: ResolvedEvent[] = [];
+    engine.store.events.on('combat.encounter.cleared', (e: ResolvedEvent) => {
+      collected.push(e);
+    });
+    return collected;
+  }
+
+  function flee(engine: ReturnType<typeof createTestEngine>, entityId: string, fromZoneId: string, toZoneId: string): ResolvedEvent {
+    const entity = engine.world.entities[entityId];
+    entity.zoneId = toZoneId;
+    return engine.store.emitEvent('combat.disengage.success', {
+      entityId,
+      entityName: entity.name,
+      fromZoneId,
+      toZoneId,
+    });
+  }
+
+  it('(a) last hostile disengage.success → one cleared, outcome retreat, no combat.victory cue', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 20, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    const disengage = flee(engine, 'bandit', 'zone-a', 'zone-b');
+
+    expect(cleared.length).toBe(1);
+    const evt = cleared[0];
+    expect(evt.type).toBe('combat.encounter.cleared');
+    expect(evt.payload.outcome).toBe('retreat');
+    expect(evt.payload.zoneId).toBe('zone-a');
+    expect(evt.payload.disengageEventId).toBe(disengage.id);
+    expect(evt.payload).not.toHaveProperty('finalDefeatEventId');
+    expect(evt.payload.participants).toEqual({
+      survivors: ['player'],
+      finalOpponent: { id: 'bandit', name: 'bandit' },
+    });
+    expect(evt.presentation?.priority).toBe('high');
+    expect(evt.presentation?.soundCues ?? []).not.toContain('combat.victory');
+    expect(evt.tags).toEqual(['combat', 'encounter', 'cleared']);
+  });
+
+  it('(b) player disengage.success with living hostiles in fromZoneId → one cleared, outcome retreat, zoneId=fromZoneId', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    const disengage = flee(engine, 'player', 'zone-a', 'zone-b');
+
+    expect(cleared.length).toBe(1);
+    const evt = cleared[0];
+    expect(evt.payload.outcome).toBe('retreat');
+    expect(evt.payload.zoneId).toBe('zone-a');
+    expect(evt.payload.disengageEventId).toBe(disengage.id);
+    expect(evt.payload.participants.finalOpponent).toBeUndefined();
+    expect(evt.presentation?.priority).toBe('high');
+    expect(evt.presentation?.soundCues ?? []).not.toContain('combat.victory');
+    // Pack still lives in the combat zone — the player ended the encounter by running.
+    expect(engine.world.entities.bandit.zoneId).toBe('zone-a');
+    expect((engine.world.entities.bandit.resources.hp ?? 0)).toBeGreaterThan(0);
+  });
+
+  it('(c) last hostile defeated, player alive → outcome victory byte-identical to today', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.bandit.resources.hp = 0;
+    const defeatEvent = engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player', defeatZoneId: 'zone-a',
+    });
+
+    expect(cleared.length).toBe(1);
+    const evt = cleared[0];
+    expect(evt.payload.outcome).toBe('victory');
+    expect(evt.payload.zoneId).toBe('zone-a');
+    expect(evt.payload.finalDefeatEventId).toBe(defeatEvent.id);
+    expect(evt.payload).not.toHaveProperty('disengageEventId');
+    expect(evt.payload.participants).toEqual({
+      survivors: ['player'],
+      finalOpponent: { id: 'bandit', name: 'bandit' },
+    });
+    expect(evt.presentation?.priority).toBe('critical');
+    expect(evt.presentation?.soundCues).toEqual(['combat.victory']);
+  });
+
+  it('(d) mutual kill still silent (alive-player gate)', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.player.resources.hp = 0;
+    engine.world.entities.bandit.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player',
+    });
+    flee(engine, 'bandit', 'zone-a', 'zone-b');
+
+    expect(cleared.length).toBe(0);
+  });
+
+  it('(e) same-tick AoE still de-duped across defeat + disengage', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit-1', 'zone-a'),
+      makeEnemy('bandit-2', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities['bandit-1'].resources.hp = 0;
+    engine.world.entities['bandit-2'].zoneId = 'zone-b';
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit-1', entityName: 'bandit-1', defeatedBy: 'player',
+    });
+    engine.store.emitEvent('combat.disengage.success', {
+      entityId: 'bandit-2', entityName: 'bandit-2', fromZoneId: 'zone-a', toZoneId: 'zone-b',
+    });
+
+    expect(cleared.length).toBe(1);
+  });
+
+  it('a non-last hostile fleeing leaves remaining pack in the zone → does not fire', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit-1', 'zone-a', { resources: { hp: 20, stamina: 5 } }),
+      makeEnemy('bandit-2', 'zone-a', { resources: { hp: 20, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    flee(engine, 'bandit-1', 'zone-a', 'zone-b');
+
+    expect(cleared.length).toBe(0);
+  });
+
+  it('companion death is not triumph (already pinned; disengage of an ally is also silent)', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeAlly('knight', 'zone-a'),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    flee(engine, 'knight', 'zone-a', 'zone-b');
+
+    expect(cleared.length).toBe(0);
+  });
+});

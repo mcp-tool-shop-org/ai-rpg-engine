@@ -56,14 +56,17 @@ export function composeLeverageModifiers(
   const party = getPartyState(world);
   const active = party.companions.filter((c) => c.active);
   if (active.length > 0) {
-    // A companion's faction is not on CompanionState — resolved via
-    // resolveEntityFaction (registry when a pack populated it, else the
-    // companion entity's own authored `faction` field), the same identity
-    // signal npc-agency reads. Looked up rather than duplicated onto the
-    // party record so the two can never disagree about who someone answers
-    // to.
+    // faction-route prefers CompanionState.originFaction (the guild they
+    // came from, F-14feff64) over the living party faction
+    // resolveEntityFaction now returns after recruit.
     const factionIds = Object.fromEntries(
-      active.map((c) => [c.npcId, resolveEntityFaction(world, c.npcId) ?? null]),
+      active.map((c) => {
+        const origin = c.originFaction;
+        if (c.abilityTags.includes('faction-route') && origin) {
+          return [c.npcId, origin];
+        }
+        return [c.npcId, resolveEntityFaction(world, c.npcId) ?? null];
+      }),
     );
     const mods = computeAbilityModifiers(computePartyAbilities(party), factionIds);
 

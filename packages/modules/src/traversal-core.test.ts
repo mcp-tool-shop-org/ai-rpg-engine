@@ -272,6 +272,48 @@ describe('traversal-core: moveHandler district-mood walk-in (F-99de2f57)', () =>
   });
 });
 
+describe('traversal-core: inspectHandler moodHint/tone (F-96c7710a)', () => {
+  const moodZones: ZoneState[] = [
+    { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
+    { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] },
+  ];
+  const districts = [{ id: 'district-1', name: 'Market', zoneIds: ['zone-b'], tags: [] }];
+
+  function makeMoodEngine(startZone: string) {
+    return createTestEngine({
+      modules: [traversalCore, createEnvironmentCore(), createDistrictCore({ districts })],
+      entities: [makePlayer(startZone)],
+      zones: moodZones,
+      playerId: 'player',
+      startZone,
+    });
+  }
+
+  it('district inspect attaches the same moodHint and tone a subsequent move into that zone would', () => {
+    const inspectEngine = makeMoodEngine('zone-b');
+    const inspected = inspectEngine.submitAction('inspect', {}).find((e) => e.type === 'world.zone.inspected');
+
+    const moveEngine = makeMoodEngine('zone-a');
+    const entered = moveEngine.submitAction('move', { targetIds: ['zone-b'] }).find((e) => e.type === 'world.zone.entered');
+
+    expect(inspected!.payload.moodHint).toBe(entered!.payload.moodHint);
+    expect(inspected!.payload.tone).toBe(entered!.payload.tone);
+    expect(inspected!.payload.moodHint).toBe('Market: calm and watchful');
+    expect(inspected!.payload.tone).toBe('calm');
+  });
+
+  it('unmapped inspect still matches today\'s seven-key shape (no moodHint, no tone)', () => {
+    const engine = makeMoodEngine('zone-a');
+    const inspected = engine.submitAction('inspect', {}).find((e) => e.type === 'world.zone.inspected');
+
+    expect(Object.keys(inspected!.payload).sort()).toEqual(
+      ['zoneId', 'zoneName', 'tags', 'entities', 'interactables', 'exits', 'hazards'].sort(),
+    );
+    expect(inspected!.payload).not.toHaveProperty('moodHint');
+    expect(inspected!.payload).not.toHaveProperty('tone');
+  });
+});
+
 describe('traversal-core: emitZoneEnteredForPlacement — session-start zone entry (F-96e9a5f4)', () => {
   // Same fixture shape as the F-99de2f57 block above, reused so the
   // moodHint/tone assertions below are directly comparable to a walked-in

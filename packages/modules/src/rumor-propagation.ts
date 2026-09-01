@@ -70,7 +70,7 @@ export function createRumorPropagation(config?: RumorPropagationConfig): EngineM
   return {
     id: 'rumor-propagation',
     version: '0.1.0',
-    dependsOn: ['cognition-core', 'faction-cognition'],
+    dependsOn: ['cognition-core'],
 
     register(ctx) {
       ctx.persistence.registerNamespace('rumor-propagation', {

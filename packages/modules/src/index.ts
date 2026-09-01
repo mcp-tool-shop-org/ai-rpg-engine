@@ -102,6 +102,8 @@ export {
   getEntityFaction,
   resolveEntityFaction,
   getFactionMembers,
+  registerFactionMembership,
+  updateLivingFactionMembership,
   setFactionBelief,
   getFactionBelief,
   factionBelieves,
@@ -368,6 +370,7 @@ export {
   MIN_SPAWN_CHANCE,
   MAX_SPAWN_CHANCE,
   BOSS_ROLE_TAG,
+  DEFAULT_POST_CLEAR_COOLDOWN,
   mergeEncounterSpawnContent,
 } from './encounter-spawn.js';
 export type {
