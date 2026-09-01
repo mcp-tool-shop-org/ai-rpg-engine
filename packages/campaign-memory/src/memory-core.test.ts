@@ -647,7 +647,12 @@ describe('F-32948b79/F-6a2e9f14: combat.encounter.cleared journals a combat row 
     expect(row).toBeDefined();
     // Carried verbatim off the payload — this module never re-derives
     // clearance (recomputes survivors/finalOpponent) itself.
-    expect(row!.data).toMatchObject({ eventType: 'combat.encounter.cleared', participants });
+    // F-860c77bb: stamp data.outcome when present (truthy-gated).
+    expect(row!.data).toMatchObject({
+      eventType: 'combat.encounter.cleared',
+      participants,
+      outcome: 'victory',
+    });
   });
 
   it('omits data.participants and falls back to a generic description when the payload carries none (omit)', () => {
@@ -670,6 +675,272 @@ describe('F-32948b79/F-6a2e9f14: combat.encounter.cleared journals a combat row 
     expect(row).toBeDefined();
     // Truthy-gated: never a `participants: undefined` key.
     expect(row!.data).not.toHaveProperty('participants');
+    expect(row!.data.outcome).toBe('victory');
     expect(row!.description).toBe('Aldric cleared the encounter');
+  });
+});
+
+describe('F-21739f16: companion-joined / alliance journal CompanionState.originFaction', () => {
+  function plantCompanionCore(
+    engine: Engine,
+    companions: Array<Record<string, unknown>>,
+  ): void {
+    // Duck-type the companion-core namespace (campaign-memory stays
+    // modules-import-free). originFaction is a payload/namespace field the
+    // modules producer emits; this package only reads it.
+    engine.world.modules['companion-core'] = {
+      companions,
+      maxSize: 3,
+      cohesion: 80,
+    };
+  }
+
+  it('companion.recruited stamps data.originFaction from the payload, never payload.faction', () => {
+    const engine = makeEngine();
+    engine.world.entities['guard'].faction = 'heroes-guild';
+    engine.store.recordEvent({
+      id: '',
+      tick: 10,
+      type: 'companion.recruited',
+      actorId: 'player',
+      payload: {
+        npcId: 'guard',
+        npcName: 'Guard',
+        role: 'diplomat',
+        faction: 'heroes-guild',
+        originFaction: 'castle-guard',
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'companion-joined' })[0];
+    expect(row).toBeDefined();
+    expect(row!.targetId).toBe('guard');
+    expect(row!.data.originFaction).toBe('castle-guard');
+    expect(row!.data.originFaction).not.toBe('heroes-guild');
+    expect(row!.data.partyFaction).toBe('heroes-guild');
+  });
+
+  it('omits data.originFaction when payload and companion-core both lack it (even if entity.faction is set)', () => {
+    const engine = makeEngine();
+    engine.world.entities['guard'].faction = 'heroes-guild';
+    engine.store.recordEvent({
+      id: '',
+      tick: 10,
+      type: 'companion.recruited',
+      actorId: 'player',
+      payload: { npcId: 'guard', npcName: 'Guard', role: 'tank', faction: 'heroes-guild' },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'companion-joined' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data).not.toHaveProperty('originFaction');
+    expect(row!.data.partyFaction).toBe('heroes-guild');
+  });
+
+  it('falls back to duck-typed companion-core.originFaction when the payload omits it', () => {
+    const engine = makeEngine();
+    engine.world.entities['guard'].faction = 'heroes-guild';
+    plantCompanionCore(engine, [
+      {
+        npcId: 'guard',
+        role: 'diplomat',
+        joinedAtTick: 10,
+        abilityTags: [],
+        morale: 80,
+        active: true,
+        originFaction: 'castle-guard',
+      },
+    ]);
+    engine.store.recordEvent({
+      id: '',
+      tick: 10,
+      type: 'companion.recruited',
+      actorId: 'player',
+      payload: { npcId: 'guard', npcName: 'Guard', role: 'diplomat', faction: 'heroes-guild' },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'companion-joined' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data.originFaction).toBe('castle-guard');
+    expect(row!.data.originFaction).not.toBe(engine.world.entities['guard'].faction);
+  });
+
+  it('never reads post-recruit entity.faction as originFaction', () => {
+    const engine = makeEngine();
+    // Home-faction leftover on entity.faction must not become originFaction.
+    engine.world.entities['guard'].faction = 'castle-guard';
+    plantCompanionCore(engine, [
+      {
+        npcId: 'guard',
+        role: 'diplomat',
+        joinedAtTick: 10,
+        abilityTags: [],
+        morale: 80,
+        active: true,
+      },
+    ]);
+    engine.store.recordEvent({
+      id: '',
+      tick: 10,
+      type: 'companion.recruited',
+      actorId: 'player',
+      payload: { npcId: 'guard', npcName: 'Guard', role: 'diplomat', faction: 'heroes-guild' },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'companion-joined' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data).not.toHaveProperty('originFaction');
+  });
+
+  it('alliance vs a companion originFaction stamps data.factionRouteNpcId', () => {
+    const engine = makeEngine();
+    engine.world.entities['guard'].faction = 'heroes-guild';
+    plantCompanionCore(engine, [
+      {
+        npcId: 'guard',
+        role: 'diplomat',
+        joinedAtTick: 10,
+        abilityTags: ['faction-route'],
+        morale: 80,
+        active: true,
+        originFaction: 'castle-guard',
+      },
+    ]);
+    engine.store.recordEvent({
+      id: '',
+      tick: 14,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: {
+        verb: 'diplomacy',
+        subAction: 'temporary-alliance',
+        actorId: 'player',
+        targetFactionId: 'castle-guard',
+        zoneId: 'market',
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'alliance' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data.originFaction).toBe('castle-guard');
+    expect(row!.data.factionRouteNpcId).toBe('guard');
+  });
+
+  it('post-recruit entity.faction matching the alliance target does not stamp factionRouteNpcId', () => {
+    const engine = makeEngine();
+    // Recruit overwrote entity.faction to the party id. Matching that must
+    // not count as "the guild they came from listened".
+    engine.world.entities['guard'].faction = 'heroes-guild';
+    plantCompanionCore(engine, [
+      {
+        npcId: 'guard',
+        role: 'diplomat',
+        joinedAtTick: 10,
+        abilityTags: ['faction-route'],
+        morale: 80,
+        active: true,
+        originFaction: 'castle-guard',
+      },
+    ]);
+    engine.store.recordEvent({
+      id: '',
+      tick: 14,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: {
+        verb: 'diplomacy',
+        subAction: 'temporary-alliance',
+        actorId: 'player',
+        targetFactionId: 'heroes-guild',
+        zoneId: 'market',
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'alliance' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data).not.toHaveProperty('originFaction');
+    expect(row!.data).not.toHaveProperty('factionRouteNpcId');
+  });
+
+  it('a matching entity.faction without originFaction does not stamp factionRouteNpcId', () => {
+    const engine = makeEngine();
+    engine.world.entities['guard'].faction = 'castle-guard';
+    plantCompanionCore(engine, [
+      {
+        npcId: 'guard',
+        role: 'diplomat',
+        joinedAtTick: 10,
+        abilityTags: ['faction-route'],
+        morale: 80,
+        active: true,
+      },
+    ]);
+    engine.store.recordEvent({
+      id: '',
+      tick: 14,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: {
+        verb: 'diplomacy',
+        subAction: 'temporary-alliance',
+        actorId: 'player',
+        targetFactionId: 'castle-guard',
+        zoneId: 'market',
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'alliance' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data).not.toHaveProperty('originFaction');
+    expect(row!.data).not.toHaveProperty('factionRouteNpcId');
+  });
+});
+
+describe('F-860c77bb: combat.encounter.cleared retreat skip and outcome stamp', () => {
+  const participants = {
+    survivors: ['player', 'guard'],
+    finalOpponent: { id: 'merchant', name: 'Merchant' },
+  };
+
+  it('outcome:retreat produces no combat row and opens no witness banks', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 6,
+      type: 'combat.encounter.cleared',
+      actorId: 'player',
+      payload: {
+        zoneId: 'market',
+        outcome: 'retreat',
+        participants,
+      },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'combat' })).toHaveLength(0);
+    expect(journal.size()).toBe(0);
+    // Relationship-effects never run — no NpcMemoryBank for zone witnesses.
+    expect(getNpcMemory(engine.world, 'guard')).toBeUndefined();
+    expect(getNpcMemory(engine.world, 'merchant')).toBeUndefined();
+  });
+
+  it('omitted outcome still journals a combat row (legacy hosts)', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 7,
+      type: 'combat.encounter.cleared',
+      actorId: 'player',
+      payload: {
+        zoneId: 'market',
+        participants,
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'combat' })[0];
+    expect(row).toBeDefined();
+    expect(row!.data).not.toHaveProperty('outcome');
+    expect(row!.description).toContain('cleared the encounter');
+    expect(getNpcMemory(engine.world, 'guard')).toBeDefined();
   });
 });
