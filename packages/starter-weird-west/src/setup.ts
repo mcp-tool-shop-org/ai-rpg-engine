@@ -47,6 +47,7 @@ import {
   weirdWestQuests,
 } from './content.js';
 import { weirdWestMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 
 // Spirits perceive the living as echoes of the future
 const spiritPerception: PresentationRule = {
@@ -140,20 +141,21 @@ export function createGame(seed?: number): Engine {
   // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
   // modules this setup used to hand-list, same wiring order, same configs.
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const factions = [
+    {
+      factionId: 'townsfolk',
+      entityIds: ['bartender_silas', 'sheriff_hale'],
+      cohesion: 0.4,
+    },
+    {
+      factionId: 'red-congregation',
+      entityIds: ['dust_revenant'],
+      cohesion: 0.9,
+    },
+  ];
   const worldStack = buildWorldStack({
     playerId: 'drifter',
-    factions: [
-      {
-        factionId: 'townsfolk',
-        entityIds: ['bartender_silas', 'sheriff_hale'],
-        cohesion: 0.4,
-      },
-      {
-        factionId: 'red-congregation',
-        entityIds: ['dust_revenant'],
-        cohesion: 0.9,
-      },
-    ],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -256,6 +258,7 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'drifter';
   engine.store.state.locationId = 'crossroads';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // Give sage bundle after bartender warns about mesa
   engine.store.events.on('dialogue.ended', (event) => {

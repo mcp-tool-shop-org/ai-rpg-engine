@@ -21,6 +21,7 @@ import {
   zoneDefinitionToState,
   entityBlueprintToState,
   extractSessionContent,
+  seedWorldFactionsFromMembership,
   MODULE_INTAKE_KEYS,
   SESSION_SCOPED_KEYS,
   CORE_INTAKE_KEYS,
@@ -1253,6 +1254,154 @@ describe('F-d54f4d67 — pack.factions merges onto WorldState.factions', () => {
     expect(r.ok).toBe(false);
     expect(engine.store.state.factions).toEqual({});
     expect(r.applied.factions).toBeUndefined();
+  });
+});
+
+describe('F-749aba8e — districts[].controllingFaction unresolved walk', () => {
+  it('drops an unresolved controllingFaction even when pack.factions is omitted', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      districts: [{
+        id: 'crypt-depths',
+        name: 'Crypt Depths',
+        zoneIds: ['vestry-door'],
+        tags: ['cursed'],
+        controllingFaction: 'chapel-undead',
+      }],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.factions).toEqual({});
+    const drop = r.dropped.find((d) => d.path.includes('controllingFaction'));
+    expect(drop).toBeDefined();
+    expect(drop!.path).toBe('districts[0](crypt-depths).controllingFaction');
+    expect(drop!.reason).toBe('needs-module-vocabulary');
+    expect(drop!.detail).toContain('chapel-undead');
+  });
+
+  it('does not drop a controllingFaction that resolves against pack.factions after merge', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      districts: [{
+        id: 'crypt-depths',
+        name: 'Crypt Depths',
+        zoneIds: ['vestry-door'],
+        tags: ['cursed'],
+        controllingFaction: 'chapel-undead',
+      }],
+      factions: {
+        'chapel-undead': {
+          id: 'chapel-undead', name: 'Chapel Undead', reputation: 0, disposition: 'neutral',
+        },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('controllingFaction'))).toBeUndefined();
+    expect(engine.store.state.factions['chapel-undead']).toEqual({
+      id: 'chapel-undead', name: 'Chapel Undead', reputation: 0, disposition: 'neutral',
+    });
+  });
+
+  it('does not drop a controllingFaction that resolves only against a host-registered faction', () => {
+    const engine = bootEngine();
+    engine.store.state.factions['chapel-undead'] = {
+      id: 'chapel-undead', name: 'Chapel Undead', reputation: 0, disposition: 'neutral',
+    };
+    const r = applyContentPack(engine, {
+      districts: [{
+        id: 'crypt-depths',
+        name: 'Crypt Depths',
+        zoneIds: ['vestry-door'],
+        tags: ['cursed'],
+        controllingFaction: 'chapel-undead',
+      }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('controllingFaction'))).toBeUndefined();
+  });
+
+  it('uncontrolled districts (no controllingFaction) are not reported', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      districts: [{
+        id: 'the-warrens',
+        name: 'The Warrens',
+        zoneIds: ['crooked-stair'],
+        tags: ['unbonded'],
+      }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('controllingFaction'))).toBeUndefined();
+    expect(engine.store.state.factions).toEqual({});
+  });
+
+  it('chapel-threshold content.json merges chapel-undead onto WorldState.factions', () => {
+    const chapelPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..', '..', 'starter-fantasy', 'src', 'content.json',
+    );
+    const pack = JSON.parse(readFileSync(chapelPath, 'utf8')) as ContentPack;
+    const engine = bootEngine();
+    const r = applyContentPack(engine, pack);
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.factions['chapel-undead']).toEqual({
+      id: 'chapel-undead', name: 'Chapel Undead', reputation: 0, disposition: 'neutral',
+    });
+    expect(r.dropped.find((d) => d.path.includes('controllingFaction'))).toBeUndefined();
+  });
+});
+
+describe('F-749aba8e — seedWorldFactionsFromMembership', () => {
+  it('writes defaults (name=factionId, reputation=0, disposition=neutral) for a bare membership row', () => {
+    const engine = bootEngine();
+    seedWorldFactionsFromMembership(engine.store.state, [
+      { factionId: 'chapel-undead', entityIds: ['ash-ghoul'] },
+    ]);
+    expect(engine.store.state.factions['chapel-undead']).toEqual({
+      id: 'chapel-undead',
+      name: 'chapel-undead',
+      reputation: 0,
+      disposition: 'neutral',
+    });
+  });
+
+  it('lifts authored name/reputation/disposition off the same membership row (no third list)', () => {
+    const engine = bootEngine();
+    seedWorldFactionsFromMembership(engine.store.state, [
+      {
+        factionId: 'colonial-navy',
+        entityIds: ['navy_sailor'],
+        cohesion: 0.8,
+        name: 'The Colonial Navy',
+        reputation: -35,
+        disposition: 'hostile',
+      },
+    ]);
+    expect(engine.store.state.factions['colonial-navy']).toEqual({
+      id: 'colonial-navy',
+      name: 'The Colonial Navy',
+      reputation: -35,
+      disposition: 'hostile',
+    });
+  });
+
+  it('does not replace a host-registered (or pack.factions-merged) record', () => {
+    const engine = bootEngine();
+    engine.store.state.factions['chapel-undead'] = {
+      id: 'chapel-undead', name: 'Chapel Undead', reputation: 4, disposition: 'wary',
+    };
+    seedWorldFactionsFromMembership(engine.store.state, [
+      { factionId: 'chapel-undead', entityIds: ['ash-ghoul'], reputation: 0, disposition: 'neutral' },
+    ]);
+    expect(engine.store.state.factions['chapel-undead'].reputation).toBe(4);
+    expect(engine.store.state.factions['chapel-undead'].name).toBe('Chapel Undead');
+  });
+
+  it('does not invent ids that were not on the membership roster', () => {
+    const engine = bootEngine();
+    seedWorldFactionsFromMembership(engine.store.state, [
+      { factionId: 'survivors', entityIds: ['medic_chen'] },
+    ]);
+    expect(Object.keys(engine.store.state.factions)).toEqual(['survivors']);
   });
 });
 

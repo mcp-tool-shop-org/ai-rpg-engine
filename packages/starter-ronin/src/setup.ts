@@ -49,6 +49,7 @@ import {
   itemCatalog,
 } from './content.js';
 import { roninMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 
 // Ronin-specific presentation rule: assassins perceive ronin as unpredictable
 const assassinPerception: PresentationRule = {
@@ -145,20 +146,21 @@ export function createGame(seed?: number): Engine {
   // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
   // modules this setup used to hand-list, same wiring order, same configs.
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const factions = [
+    {
+      factionId: 'takeda-clan',
+      entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'],
+      cohesion: 0.6,
+    },
+    {
+      factionId: 'shadow-network',
+      entityIds: ['shadow-assassin'],
+      cohesion: 0.9,
+    },
+  ];
   const worldStack = buildWorldStack({
     playerId: 'player',
-    factions: [
-      {
-        factionId: 'takeda-clan',
-        entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'],
-        cohesion: 0.6,
-      },
-      {
-        factionId: 'shadow-network',
-        entityIds: ['shadow-assassin'],
-        cohesion: 0.9,
-      },
-    ],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -262,6 +264,7 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'player';
   engine.store.state.locationId = 'castle-gate';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // F-92c78519: seed a small starting coin balance. trade-core's buy verb
   // (always registered via buildWorldStack) reads actor.resources.coin, and

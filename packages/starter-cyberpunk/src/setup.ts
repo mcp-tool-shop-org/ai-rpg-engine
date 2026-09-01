@@ -47,6 +47,7 @@ import {
   itemCatalog,
 } from './content.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 
 // Cyberpunk presentation rule: ICE agents flag all non-ICE as intrusion
 const iceSecurityFraming: PresentationRule = {
@@ -139,13 +140,14 @@ export function createGame(seed?: number): Engine {
   // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
   // modules this setup used to hand-list, same wiring order, same configs.
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const factions = [{
+    factionId: 'vault-ice',
+    entityIds: ['ice-sentry'],
+    cohesion: 0.95,
+  }];
   const worldStack = buildWorldStack({
     playerId: 'runner',
-    factions: [{
-      factionId: 'vault-ice',
-      entityIds: ['ice-sentry'],
-      cohesion: 0.95,
-    }],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -239,6 +241,7 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'runner';
   engine.store.state.locationId = 'street-level';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // F-92c78519: seed a small starting coin balance. trade-core's buy verb
   // (always registered via buildWorldStack) reads actor.resources.coin, and

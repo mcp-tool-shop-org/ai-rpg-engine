@@ -333,6 +333,14 @@
       "controllingFaction": "chapel-undead"
     }
   ],
+  "factions": {
+    "chapel-undead": {
+      "id": "chapel-undead",
+      "name": "Chapel Undead",
+      "reputation": 0,
+      "disposition": "neutral"
+    }
+  },
   "buildCatalog": {
     "packId": "chapel-threshold",
     "statBudget": 3,

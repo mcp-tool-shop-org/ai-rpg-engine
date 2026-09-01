@@ -94,6 +94,18 @@ describe('fantasy setup — cross-instance state isolation', () => {
   });
 });
 
+describe('fantasy setup — WorldState.factions (F-749aba8e)', () => {
+  it('chapel-undead lands in the registry from pack.factions / membership, not a third list', () => {
+    const engine = createGame(42);
+    expect(engine.store.state.factions['chapel-undead']).toEqual({
+      id: 'chapel-undead',
+      name: 'Chapel Undead',
+      reputation: 0,
+      disposition: 'neutral',
+    });
+  });
+});
+
 describe('fantasy setup — identity stamp owns playerId/locationId (F-bc7b8ab1)', () => {
   it('boots with playerId "player" and locationId "chapel-entrance" from applyContentPack\'s own identity stamp, with no manual override line', () => {
     // Pin, not a bug fix: this must read identically before and after

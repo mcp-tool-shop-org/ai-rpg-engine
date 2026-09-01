@@ -51,6 +51,7 @@ import {
   merchantQuests,
 } from './content.js';
 import { merchantMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 import { createContractCore, consignedLotsAreNotTransferable } from './contract-core.js';
 
 // Merchant-specific: an unbonded broker sees a bonded factor as a mark, not a
@@ -151,25 +152,26 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  const factions = [
+    {
+      factionId: 'assay-guild',
+      entityIds: ['assay-master-corvane', 'bonded-clerk-thrall', 'collections-enforcer'],
+      cohesion: 0.85,
+    },
+    {
+      factionId: 'harbour-authority',
+      entityIds: ['harbourmaster-drell'],
+      cohesion: 0.6,
+    },
+    {
+      factionId: 'crown-exchequer',
+      entityIds: ['exchequer-null', 'the-standing-account'],
+      cohesion: 0.9,
+    },
+  ];
   const worldStack = buildWorldStack({
     playerId: 'factor',
-    factions: [
-      {
-        factionId: 'assay-guild',
-        entityIds: ['assay-master-corvane', 'bonded-clerk-thrall', 'collections-enforcer'],
-        cohesion: 0.85,
-      },
-      {
-        factionId: 'harbour-authority',
-        entityIds: ['harbourmaster-drell'],
-        cohesion: 0.6,
-      },
-      {
-        factionId: 'crown-exchequer',
-        entityIds: ['exchequer-null', 'the-standing-account'],
-        cohesion: 0.9,
-      },
-    ],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -282,6 +284,7 @@ export function createGame(seed?: number): Engine {
 
   engine.store.state.playerId = 'factor';
   engine.store.state.locationId = 'counting-house';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // Registration issues the seal. This is the pack's checkpoint 0: the moment a
   // factor can consign at all, and the moment a ledger driver listening for

@@ -199,14 +199,17 @@ export type ContentPack = {
    */
   ruleProfiles?: Record<string, PackRuleProfile>;
   /**
-   * Optional faction registry keyed by {@link EntityBlueprint.faction} (F-d54f4d67).
+   * Optional faction registry keyed by {@link EntityBlueprint.faction} and
+   * `districts[].controllingFaction` (F-d54f4d67, F-749aba8e).
    * `EntityBlueprint.faction` was always copied verbatim onto EntityState.faction
    * at intake, but until now no pack key could ship the record that id resolves
    * against — the pointer landed, the registry did not. Overlay packs omit this
    * — apply then keeps copy-the-string on the id, unchanged. When present,
    * applyContentPack clones it and MERGES it onto WorldState.factions (never
    * replaces — an overlay pack must layer over factions a host already
-   * registered). Not sim-affecting — do not add to SIM_AFFECTING_KEYS
+   * registered). `districts[].controllingFaction` is walked against the
+   * post-merge registry whenever the pointer exists, not only when this key
+   * is present. Not sim-affecting — do not add to SIM_AFFECTING_KEYS
    * (world-forge hasher pin, same as ruleProfiles / entityAi / meta / manifest).
    */
   factions?: Record<string, PackFactionRecord>;
@@ -223,17 +226,36 @@ export type PackRuleProfile = {
 
 /**
  * Per-faction registry entry a JSON pack can author, keyed by
- * {@link EntityBlueprint.faction} (F-d54f4d67). Structural copy of core's
- * FactionState — content-schema sits beside core so the real type is
- * assignable, but this stays a separate named type (mirrors PackRuleProfile)
- * so the pack-authoring contract does not drift with FactionState's own
- * optional `data` field, which is not authorable here.
+ * {@link EntityBlueprint.faction} and `districts[].controllingFaction`
+ * (F-d54f4d67, F-749aba8e). Structural copy of core's FactionState —
+ * content-schema sits beside core so the real type is assignable, but this
+ * stays a separate named type (mirrors PackRuleProfile) so the pack-authoring
+ * contract does not drift with FactionState's own optional `data` field,
+ * which is not authorable here.
  */
 export type PackFactionRecord = {
   id: string;
   name: string;
   reputation: number;
   disposition: string;
+};
+
+/**
+ * FactionMembership row a TS pack can author (F-749aba8e). Structural
+ * superset of modules' FactionMembership — content-schema sits below
+ * modules so the real type is not imported. Optional name/reputation/
+ * disposition are the content opt-in to WorldState.factions; defaults
+ * at seed are name=factionId, reputation=0, disposition='neutral'.
+ * `seedWorldFactionsFromMembership` MERGES those onto the registry from
+ * this same roster (no third list).
+ */
+export type AuthoredFactionMembership = {
+  factionId: string;
+  entityIds: string[];
+  cohesion?: number;
+  name?: string;
+  reputation?: number;
+  disposition?: string;
 };
 
 /**

@@ -49,6 +49,7 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'ruleProfiles',
       'meta',
       'manifest',
+      'factions',
     ]) {
       expect(props[key], `missing properties.${key}`).toBeDefined();
     }

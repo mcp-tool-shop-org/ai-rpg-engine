@@ -67,6 +67,14 @@
       "controllingFaction": "my-game"
     }
   ],
+  "factions": {
+    "my-game": {
+      "id": "my-game",
+      "name": "My Game",
+      "reputation": 0,
+      "disposition": "neutral"
+    }
+  },
   "buildCatalog": {
     "packId": "my-game",
     "statBudget": 3,

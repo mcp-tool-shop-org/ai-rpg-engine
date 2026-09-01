@@ -128,6 +128,14 @@ export function createGame(seed?: number): Engine {
     // ...
     // const worldStack = buildWorldStack({
     //   playerId: 'player',
+    //   factions: [{
+    //     factionId: 'my-game',
+    //     entityIds: ['grunt'],
+    //     cohesion: 0.8,
+    //     name: 'My Game',
+    //     reputation: 0,
+    //     disposition: 'neutral',
+    //   }],
     //   tradeGenre: myRuleset.id,    // or a literal genre string
     //   craftingGenre: myRuleset.id,
     //   economyGenre: myRuleset.id,

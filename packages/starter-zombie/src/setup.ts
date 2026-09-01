@@ -46,6 +46,7 @@ import {
   itemCatalog,
 } from './content.js';
 import { zombieMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 
 // Zombie-specific: undead hunt by noise — perceive all living as prey
 const undeadHunger: PresentationRule = {
@@ -111,13 +112,14 @@ export function createGame(seed?: number): Engine {
   // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
   // modules this setup used to hand-list, same wiring order, same configs.
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const factions = [{
+    factionId: 'survivors',
+    entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'],
+    cohesion: 0.6,
+  }];
   const worldStack = buildWorldStack({
     playerId: 'survivor',
-    factions: [{
-      factionId: 'survivors',
-      entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'],
-      cohesion: 0.6,
-    }],
+    factions,
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -222,6 +224,7 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'survivor';
   engine.store.state.locationId = 'safehouse-lobby';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // Give antibiotics after accepting hospital mission
   engine.store.events.on('dialogue.ended', (event) => {

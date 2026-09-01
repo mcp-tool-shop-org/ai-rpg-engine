@@ -50,6 +50,7 @@ import {
   cordialFlaskEffect,
 } from './content.js';
 import { bountyHunterMinimalRuleset } from './ruleset.js';
+import { seedWorldFactionsFromMembership } from '@ai-rpg-engine/content-schema';
 import { createPursuitCore } from './pursuit-core.js';
 
 // The Rookery reads a sworn man the way the Ward reads a thief: as somebody
@@ -146,25 +147,26 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  const factions = [
+    {
+      factionId: 'bounty-office',
+      entityIds: ['clerk-hesper'],
+      cohesion: 0.8,
+    },
+    {
+      factionId: 'parish-watch',
+      entityIds: ['sergeant-pike', 'the-scrivener'],
+      cohesion: 0.5,
+    },
+    {
+      factionId: 'thieves-company',
+      entityIds: ['mother-slack', 'bludger', 'nightman', 'jonathan-quill'],
+      cohesion: 0.9,
+    },
+  ];
   const worldStack = buildWorldStack({
     playerId: 'thief-taker',
-    factions: [
-      {
-        factionId: 'bounty-office',
-        entityIds: ['clerk-hesper'],
-        cohesion: 0.8,
-      },
-      {
-        factionId: 'parish-watch',
-        entityIds: ['sergeant-pike', 'the-scrivener'],
-        cohesion: 0.5,
-      },
-      {
-        factionId: 'thieves-company',
-        entityIds: ['mother-slack', 'bludger', 'nightman', 'jonathan-quill'],
-        cohesion: 0.9,
-      },
-    ],
+    factions,
     environment: {
       hazards: [
         {
@@ -257,6 +259,7 @@ export function createGame(seed?: number): Engine {
 
   engine.store.state.playerId = 'thief-taker';
   engine.store.state.locationId = 'bounty-office';
+  seedWorldFactionsFromMembership(engine.store.state, factions);
 
   // Signing for a ticket is the pack's checkpoint 0: the moment the office
   // owns what you do next, and the moment a bill in your hand means something.
