@@ -36,6 +36,8 @@ import {
 import { statusCore } from './status-core.js';
 import { affiliationOf } from './targeting.js';
 import { classifyTag } from './tag-taxonomy.js';
+import { createCognitionCore } from './cognition-core.js';
+import { createFactionCognition, getEntityFaction } from './faction-cognition.js';
 
 function makeCompanion(npcId: string, overrides?: Partial<CompanionState>): CompanionState {
   return {
@@ -453,6 +455,87 @@ describe('faction assignment resolves the companion as an ally, not an enemy (F-
     engine.submitAction('recruit', { targetIds: ['aldric'] });
     expect(engine.world.entities.maren.faction).toBe(engine.world.entities.aldric.faction);
     expect(affiliationOf(engine.world.entities.maren, engine.world.entities.aldric)).toBe('ally');
+  });
+});
+
+describe('CompanionState.originFaction (F-14feff64, R3)', () => {
+  it('(1) pre-factioned recruit → originFaction preserved, entity.faction===party, affiliationOf ally both ways', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCompanionCore()],
+      entities: [
+        makePlayer(),
+        makeRecruitable('maren', 'Sister Maren', ['healer'], { faction: 'chapel-order' }),
+      ],
+      zones,
+    });
+    const events = engine.submitAction('recruit', { targetIds: ['maren'] });
+    const recruited = events.find((e) => e.type === 'companion.recruited');
+
+    const companion = getPartyState(engine.world).companions[0];
+    expect(companion.originFaction).toBe('chapel-order');
+    expect(engine.world.entities.maren.faction).toBe('party');
+    expect(engine.world.entities.player.faction).toBe('party');
+    expect(affiliationOf(engine.world.entities.player, engine.world.entities.maren)).toBe('ally');
+    expect(affiliationOf(engine.world.entities.maren, engine.world.entities.player)).toBe('ally');
+    expect(recruited!.payload.faction).toBe('party');
+    expect(recruited!.payload.originFaction).toBe('chapel-order');
+  });
+
+  it('(2) unfactioned recruit → originFaction omitted, entity.faction===\'party\'', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCompanionCore()],
+      entities: [makePlayer(), makeRecruitable('maren', 'Sister Maren', ['healer'])],
+      zones,
+    });
+    const events = engine.submitAction('recruit', { targetIds: ['maren'] });
+    const recruited = events.find((e) => e.type === 'companion.recruited');
+
+    const companion = getPartyState(engine.world).companions[0];
+    expect(companion.originFaction).toBeUndefined();
+    expect(companion).not.toHaveProperty('originFaction');
+    expect(engine.world.entities.maren.faction).toBe('party');
+    expect(recruited!.payload).not.toHaveProperty('originFaction');
+  });
+
+  it('(3) second recruit shares party faction, each keeps their own originFaction', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCompanionCore()],
+      entities: [
+        makePlayer(),
+        makeRecruitable('maren', 'Sister Maren', ['healer'], { faction: 'chapel-order' }),
+        makeRecruitable('aldric', 'Brother Aldric', ['diplomat'], { faction: 'watch' }),
+      ],
+      zones,
+    });
+    engine.submitAction('recruit', { targetIds: ['maren'] });
+    engine.submitAction('recruit', { targetIds: ['aldric'] });
+
+    const party = getPartyState(engine.world);
+    expect(engine.world.entities.maren.faction).toBe(engine.world.entities.aldric.faction);
+    expect(party.companions[0].originFaction).toBe('chapel-order');
+    expect(party.companions[1].originFaction).toBe('watch');
+    expect(affiliationOf(engine.world.entities.maren, engine.world.entities.aldric)).toBe('ally');
+  });
+
+  it('hydrate: a non-explicit registry slot follows living party identity, not originFaction', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCognitionCore(),
+        createFactionCognition({ factions: [] }),
+        createCompanionCore(),
+      ],
+      entities: [
+        makePlayer(),
+        makeRecruitable('maren', 'Sister Maren', ['healer'], { faction: 'chapel-order' }),
+      ],
+      zones,
+    });
+    expect(getEntityFaction(engine.world, 'maren')).toBe('chapel-order');
+    engine.submitAction('recruit', { targetIds: ['maren'] });
+    expect(getPartyState(engine.world).companions[0].originFaction).toBe('chapel-order');
+    expect(engine.world.entities.maren.faction).toBe('party');
+    expect(getEntityFaction(engine.world, 'maren')).toBe('party');
   });
 });
 

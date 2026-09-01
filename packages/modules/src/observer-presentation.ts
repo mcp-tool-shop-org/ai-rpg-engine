@@ -11,11 +11,12 @@ import type {
   ScalarValue,
 } from '@ai-rpg-engine/core';
 import { getCognition, getBelief } from './cognition-core.js';
-import { getEntityFaction, getFactionCognition } from './faction-cognition.js';
+import { resolveEntityFaction, getFactionCognition } from './faction-cognition.js';
 import type { FactionCognitionState } from './faction-cognition.js';
 import { getPerceptionLog } from './perception-filter.js';
 import type { PerceivedEvent } from './perception-filter.js';
 import { getZoneProperty } from './environment-core.js';
+import { affiliationOf } from './targeting.js';
 
 // --- Types ---
 
@@ -366,23 +367,29 @@ function buildObserverContext(
     clarity = perception?.clarity;
   }
 
-  // Faction info
-  const factionId = world.modules['faction-cognition']
-    ? getEntityFaction(world, observer.id)
-    : undefined;
+  // Identity (not hostility): auto-derived members still see faction cognition.
+  const factionId = resolveEntityFaction(world, observer.id);
   const factionState = factionId
     ? getFactionCognition(world, factionId)
     : undefined;
 
-  // Is the event actor hostile to the observer's faction?
+  // Hostility routes through affiliationOf (F-a07b5524, R3). Gate on both
+  // entity.faction fields so the type heuristic (player vs npc → enemy)
+  // cannot turn every unfactioned walk-in into an intruder. Belief overlay
+  // is an independent OR so an unfactioned witness who marked the actor
+  // hostile still gets the bias. The registry is not consulted here.
   let isActorHostile = false;
-  if (factionId && event.actorId) {
-    const actorFaction = getEntityFaction(world, event.actorId);
-    // Different faction = potentially hostile
-    if (actorFaction && actorFaction !== factionId) {
-      isActorHostile = true;
-    }
-    // Or check if the observer believes the actor is hostile
+  const actor = event.actorId ? world.entities[event.actorId] : undefined;
+  if (
+    actor
+    && (actor.resources.hp ?? 0) > 0
+    && observer.faction
+    && actor.faction
+    && affiliationOf(observer, actor) === 'enemy'
+  ) {
+    isActorHostile = true;
+  }
+  if (event.actorId) {
     const cognition = getCognition(world, observer.id);
     const hostileBelief = getBelief(cognition, event.actorId, 'hostile');
     if (hostileBelief?.value === true && hostileBelief.confidence > 0.5) {

@@ -189,6 +189,10 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
     // World-level (not district-scoped), so it rides beside economyReport as
     // its own independent conditional, not nested inside the districtId gate.
     const situationHint = getPersistedMoveRecommendation(world)?.situationHint;
+    // F-96c7710a: same moodHint/tone pair moveHandler attaches, omitted when
+    // the zone is unmapped. Independent of situationHint (world-level
+    // strategic-map line, not district tone).
+    const { moodHint, tone } = zoneMoodFields(world, zone.id);
 
     return [makeEvent(action, 'world.zone.inspected', {
       zoneId: zone.id,
@@ -210,6 +214,8 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
           }
         : {}),
       ...(situationHint ? { situationHint } : {}),
+      ...(moodHint ? { moodHint } : {}),
+      ...(tone ? { tone } : {}),
     })];
   }
 
@@ -230,9 +236,9 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
   })];
 }
 
-/** Shared by moveHandler and emitZoneEnteredForPlacement so both derive
- * moodHint/tone from the SAME computeDistrictMood call. An unmapped zone
- * (no district) returns both fields undefined. */
+/** Shared by moveHandler, inspectHandler, and emitZoneEnteredForPlacement so
+ * all three derive moodHint/tone from the SAME computeDistrictMood call. An
+ * unmapped zone (no district) returns both fields undefined. */
 function zoneMoodFields(world: WorldState, zoneId: string): { moodHint?: string; tone?: DistrictMood['tone'] } {
   const districtId = getDistrictForZone(world, zoneId);
   const districtState = districtId ? getDistrictState(world, districtId) : undefined;

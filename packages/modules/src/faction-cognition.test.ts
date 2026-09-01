@@ -8,6 +8,8 @@ import {
   getFactionCognition,
   getEntityFaction,
   getFactionMembers,
+  resolveEntityFaction,
+  registerFactionMembership,
   setFactionBelief,
   getFactionBelief,
   factionBelieves,
@@ -199,5 +201,113 @@ describe('faction-cognition', () => {
     const factionCog = getFactionCognition(engine.world, 'bandits');
     expect(factionCog.beliefs).toEqual([]);
     expect(factionCog.alertLevel).toBe(0);
+  });
+});
+
+describe('faction-cognition hydrate FROM entity.faction INTO the registry (F-7911928d, R3)', () => {
+  function makeNpc(id: string, faction?: string) {
+    return {
+      ...makeGuard(id, 'courtyard'),
+      ...(faction ? { faction } : {}),
+    };
+  }
+
+  test('(A) entity.faction only, empty config → getEntityFaction and getFactionMembers contain them', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [] }),
+      ],
+      entities: [player, makeNpc('guard_1', 'castle-guard')],
+      zones,
+      playerId: 'player',
+      startZone: 'courtyard',
+    });
+
+    expect(getEntityFaction(engine.world, 'guard_1')).toBe('castle-guard');
+    expect(getFactionMembers(engine.world, 'castle-guard')).toEqual(['guard_1']);
+    expect(getEntityFaction(engine.world, 'guard_1')).toBe(resolveEntityFaction(engine.world, 'guard_1'));
+    const cog = getFactionCognition(engine.world, 'castle-guard');
+    expect(cog.cohesion).toBe(0.8);
+  });
+
+  test('(B) explicit entityIds with no entity.faction → extra lands', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({
+          factions: [{ factionId: 'inner-circle', entityIds: ['spy'] }],
+        }),
+      ],
+      entities: [player, makeNpc('spy')],
+      zones,
+      playerId: 'player',
+      startZone: 'courtyard',
+    });
+
+    expect(engine.world.entities.spy.faction).toBeUndefined();
+    expect(getEntityFaction(engine.world, 'spy')).toBe('inner-circle');
+    expect(getFactionMembers(engine.world, 'inner-circle')).toContain('spy');
+  });
+
+  test('(C) empty config + no entity.faction → membership {} / factionMembers {}', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [] }),
+      ],
+      entities: [player, makeNpc('stranger')],
+      zones,
+      playerId: 'player',
+      startZone: 'courtyard',
+    });
+
+    expect(getEntityFaction(engine.world, 'player')).toBeUndefined();
+    expect(getEntityFaction(engine.world, 'stranger')).toBeUndefined();
+    const ns = engine.world.modules['faction-cognition'] as {
+      membership: Record<string, string>;
+      factionMembers: Record<string, string[]>;
+    };
+    expect(ns.membership).toEqual({});
+    expect(ns.factionMembers).toEqual({});
+  });
+
+  test('(D) explicit inner-circle beats authored castle-guard (registry-wins)', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({
+          factions: [{ factionId: 'inner-circle', entityIds: ['guard_1'] }],
+        }),
+      ],
+      entities: [player, makeNpc('guard_1', 'castle-guard')],
+      zones,
+      playerId: 'player',
+      startZone: 'courtyard',
+    });
+
+    expect(getEntityFaction(engine.world, 'guard_1')).toBe('inner-circle');
+    expect(resolveEntityFaction(engine.world, 'guard_1')).toBe('inner-circle');
+    expect(getFactionMembers(engine.world, 'inner-circle')).toContain('guard_1');
+    expect(getFactionMembers(engine.world, 'castle-guard')).not.toContain('guard_1');
+  });
+
+  test('registerFactionMembership adds a post-init extra that is not on any entity field', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [] }),
+      ],
+      entities: [player, makeNpc('spy')],
+      zones,
+      playerId: 'player',
+      startZone: 'courtyard',
+    });
+
+    registerFactionMembership(engine.world, 'inner-circle', 'spy');
+
+    expect(engine.world.entities.spy.faction).toBeUndefined();
+    expect(getEntityFaction(engine.world, 'spy')).toBe('inner-circle');
+    expect(getFactionMembers(engine.world, 'inner-circle')).toEqual(['spy']);
   });
 });

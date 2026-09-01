@@ -35,6 +35,7 @@ import type {
 import { makeEvent } from './make-event.js';
 import { applyStatus, removeStatus } from './status-core.js';
 import { registerStatusDefinitions } from './status-semantics.js';
+import { updateLivingFactionMembership } from './faction-cognition.js';
 
 // --- Types ---
 
@@ -48,6 +49,8 @@ export type CompanionState = {
   abilityTags: string[];   // ['intimidation-backup', 'medical-support']
   morale: number;          // 0-100, tracks how companion feels about traveling with player
   active: boolean;         // In the active party (vs dismissed/away)
+  /** Home guild captured at recruit, before the party-faction dual-write (F-14feff64). */
+  originFaction?: string;
 };
 
 export type PartyState = {
@@ -676,6 +679,12 @@ function recruitHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
   const authoredAbilities = parseCompanionAbilities(target.custom?.companionAbilities);
   const abilityTags = authoredAbilities.length > 0 ? authoredAbilities : [DEFAULT_ROLE_ABILITY_TAG[role]];
   const personalGoal = typeof target.custom?.personalGoal === 'string' ? target.custom.personalGoal : undefined;
+  // F-14feff64: capture home BEFORE the party-faction overwrite so
+  // affiliationOf can still read ally while the guild they came from lives
+  // on CompanionState.originFaction (not a third membership list).
+  const originFaction = typeof target.faction === 'string' && target.faction.length > 0
+    ? target.faction
+    : undefined;
 
   const party = getPartyState(world);
   const companion: CompanionState = {
@@ -684,6 +693,7 @@ function recruitHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
     joinedAtTick: tick,
     abilityTags,
     ...(personalGoal !== undefined ? { personalGoal } : {}),
+    ...(originFaction ? { originFaction } : {}),
     morale: 60,
     active: true,
   };
@@ -716,6 +726,9 @@ function recruitHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
   const partyFaction = actor.faction ?? DEFAULT_PARTY_FACTION;
   actor.faction = partyFaction;
   target.faction = partyFaction;
+  // Living identity follows the party faction; originFaction stays on the
+  // companion record, never written into the membership registry.
+  updateLivingFactionMembership(world, target.id, partyFaction);
 
   const events: ResolvedEvent[] = [];
   events.push(makeEvent(action, 'companion.recruited', {
@@ -723,6 +736,7 @@ function recruitHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
     npcName: target.name,
     role,
     faction: partyFaction,
+    ...(originFaction ? { originFaction } : {}),
     partySize: result.party.companions.length,
     maxSize: result.party.maxSize,
   }, {

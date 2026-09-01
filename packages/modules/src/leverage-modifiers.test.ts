@@ -341,6 +341,35 @@ describe('AbilityModifiers.rumorSuppressionChance reaches the burial', () => {
   });
 });
 
+describe('faction-route prefers CompanionState.originFaction (F-14feff64)', () => {
+  it("the guild they came from listens — originFaction keys the bonus, not the living party faction", () => {
+    const world = bareWorld();
+    world.entities['maren'] = {
+      id: 'maren', blueprintId: 'maren', type: 'npc', name: 'Sister Maren',
+      tags: ['companion'], stats: {}, resources: {}, statuses: [], zoneId: 'zone-a',
+      faction: 'party',
+    };
+    setPartyState(world, {
+      companions: [{
+        npcId: 'maren',
+        role: 'diplomat',
+        joinedAtTick: 0,
+        abilityTags: ['faction-route'],
+        morale: 70,
+        active: true,
+        originFaction: 'chapel-order',
+      }],
+      maxSize: 3,
+      cohesion: 70,
+    });
+
+    const home = composeLeverageModifiers(world, player(world), 'chapel-order');
+    expect(home.companionReputationBonus?.amount).toBe(10);
+    const living = composeLeverageModifiers(world, player(world), 'party');
+    expect(living.companionReputationBonus).toBeUndefined();
+  });
+});
+
 // --- Slice 3: the trade bundle ---------------------------------------------
 
 /** A party whose ability grants a flat commerce bonus. */

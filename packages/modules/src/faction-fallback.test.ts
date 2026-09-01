@@ -8,11 +8,10 @@
 // createFactionCognition registration anywhere except the one registry-wins
 // test. Each test was written RED against the pre-fallback tree.
 //
-// Consumers deliberately NOT covered here: observer-presentation (module-
-// presence gate kept by design — activating its cross-faction hostility
-// heuristic is a roadmap design item, not a fallback), inspectFaction
-// (registry-state inspector, correctly module-gated), belief-provenance
-// (unused import removed, no call site).
+// observer-presentation hostility now routes through affiliationOf
+// (F-a07b5524) rather than the module-gated getEntityFaction inequality.
+// inspectFaction remains a registry-state inspector (correctly module-gated).
+// belief-provenance: unused import removed, no call site.
 
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
@@ -145,12 +144,6 @@ describe('district-core × entity.faction (F-family: intruder inversion + dead s
 });
 
 describe('rumor-propagation × entity.faction (the dead loop)', () => {
-  // Load-bearing discovery from this test's own RED run: rumor-propagation
-  // DECLARES a hard module dependency on faction-cognition, so in shipped
-  // starters (zero createFactionCognition registrations) the module cannot
-  // even register — the loop is dead twice over. The fallback fixes the
-  // registered-but-unpopulated case below; making the module registrable
-  // without faction-cognition is a separate dependency-contract question.
   it('with faction-cognition registered but EMPTY, entity.faction still propagates a faction rumor', () => {
     const engine = createTestEngine({
       modules: [
@@ -158,6 +151,31 @@ describe('rumor-propagation × entity.faction (the dead loop)', () => {
         createPerceptionFilter(),
         createEnvironmentCore(),
         createFactionCognition({ factions: [] }),
+        createRumorPropagation({ propagationDelay: 2 }),
+      ],
+      entities: [player, npc('guard_1', 'courtyard', 'castle-guard')],
+      zones,
+      playerId: 'player',
+      startZone: 'courtyard',
+    });
+    engine.drainEvents();
+    engine.store.emitEvent('combat.contact.hit', {
+      attackerId: 'player',
+      targetId: 'guard_1',
+      damage: 5,
+    }, { actorId: 'player', targetIds: ['guard_1'] });
+
+    const rumors = getRumorLog(engine.world);
+    expect(rumors.length).toBeGreaterThan(0);
+    expect(rumors[0].targetFactionId).toBe('castle-guard');
+  });
+
+  it('F-7911928d: rumor-propagation registers WITHOUT faction-cognition and still keys off entity.faction', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createPerceptionFilter(),
+        createEnvironmentCore(),
         createRumorPropagation({ propagationDelay: 2 }),
       ],
       entities: [player, npc('guard_1', 'courtyard', 'castle-guard')],
@@ -197,17 +215,8 @@ describe('npc-agency × entity.faction (accuse reputation effects)', () => {
   });
 });
 
-describe('leverage-modifiers × entity.faction (companion faction-route bonus)', () => {
-  // Discovery from this test's own RED runs: recruit's dual-write
-  // (F-cf1ddc9f) OVERWRITES the companion's entity.faction to the shared
-  // party faction (actor.faction ?? 'party') so affiliationOf reads allies —
-  // the companion's ORIGIN faction is destroyed at recruit. So the
-  // faction-route bonus can only ever key the party's shared faction under
-  // current semantics; "the guild they came from listens" would need an
-  // originFaction preserved on CompanionState (roadmap design note). This
-  // test pins the mechanism working end-to-end through resolveEntityFaction
-  // with the faction recruit actually leaves in place.
-  it("a faction-route companion's resolved faction (the shared party faction) yields the reputation bonus", () => {
+describe('leverage-modifiers × originFaction (companion faction-route bonus, F-14feff64)', () => {
+  it("a faction-route companion's originFaction (the guild they came from) yields the reputation bonus, not the shared party faction", () => {
     const engine = createTestEngine({
       modules: [createCognitionCore(), createCompanionCore()],
       entities: [
@@ -221,15 +230,15 @@ describe('leverage-modifiers × entity.faction (companion faction-route bonus)',
     engine.submitAction('recruit', { targetIds: ['emissary'] });
     const party = getPartyState(engine.world);
     expect(party.companions).toHaveLength(1);
-    // Recruit rewrote the companion onto the player's faction:
     expect(engine.world.entities['emissary'].faction).toBe('heroes-guild');
-    // Mutate the module state directly — getPartyState can return a repaired
-    // clone, and the test's subject is faction resolution, not tag plumbing.
+    expect(party.companions[0].originFaction).toBe('castle-guard');
     const raw = engine.world.modules['companion-core'] as { companions: Array<{ abilityTags: string[] }> };
     raw.companions[0].abilityTags = ['faction-route'];
 
-    const mods = composeLeverageModifiers(engine.world, engine.world.entities['player'], 'heroes-guild');
-    expect(mods.companionReputationBonus?.amount).toBe(10);
+    const home = composeLeverageModifiers(engine.world, engine.world.entities['player'], 'castle-guard');
+    expect(home.companionReputationBonus?.amount).toBe(10);
+    const partyFaction = composeLeverageModifiers(engine.world, engine.world.entities['player'], 'heroes-guild');
+    expect(partyFaction.companionReputationBonus).toBeUndefined();
   });
 });
 

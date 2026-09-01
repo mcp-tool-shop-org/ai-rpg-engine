@@ -242,3 +242,103 @@ describe('Observer Presentation', () => {
     expect(presented.payload._subjectiveDescription).toBe('FROM ENGINE A');
   });
 });
+
+describe('hostile-faction-bias via affiliationOf (F-a07b5524)', () => {
+  function makeFactionedEngine(opts: {
+    observerFaction?: string;
+    actorFaction?: string;
+    factions?: Array<{ factionId: string; entityIds: string[] }>;
+  }): Engine {
+    const engine = new Engine({
+      manifest,
+      seed: 42,
+      modules: [
+        traversalCore,
+        createCognitionCore(),
+        createPerceptionFilter(),
+        createEnvironmentCore(),
+        createFactionCognition({ factions: opts.factions ?? [] }),
+        createObserverPresentation(),
+      ],
+    });
+    for (const zone of zones) engine.store.addZone(zone);
+    engine.store.addEntity({
+      ...player,
+      ...(opts.actorFaction ? { faction: opts.actorFaction } : {}),
+    });
+    engine.store.addEntity({
+      ...hostileGuard,
+      ...(opts.observerFaction ? { faction: opts.observerFaction } : {}),
+    });
+    engine.store.state.playerId = 'player';
+    engine.store.state.locationId = 'clearing';
+    return engine;
+  }
+
+  function enterAndPresent(engine: Engine) {
+    engine.submitAction('move', { targetIds: ['cave'] });
+    const moveEvent = engine.world.eventLog.find((e) => e.type === 'world.zone.entered')!;
+    return presentForObserver(moveEvent, 'guard', engine.world);
+  }
+
+  it('(1) different entity.faction, empty createFactionCognition({factions:[]}) → bias fires', () => {
+    const engine = makeFactionedEngine({
+      observerFaction: 'castle-guard',
+      actorFaction: 'party',
+      factions: [],
+    });
+    const view = enterAndPresent(engine);
+    expect(view._appliedRules).toContain('hostile-faction-bias');
+    expect(view.payload._hostileBias).toBe(true);
+  });
+
+  it('(2) same entity.faction → no bias', () => {
+    const engine = makeFactionedEngine({
+      observerFaction: 'castle-guard',
+      actorFaction: 'castle-guard',
+      factions: [],
+    });
+    const view = enterAndPresent(engine);
+    expect(view._appliedRules).not.toContain('hostile-faction-bias');
+  });
+
+  it('(3) hydrate/fill registry, same entities → _appliedRules unchanged vs (1)/(2)', () => {
+    const emptyDifferent = enterAndPresent(makeFactionedEngine({
+      observerFaction: 'castle-guard',
+      actorFaction: 'party',
+      factions: [],
+    }));
+    const filledDifferent = enterAndPresent(makeFactionedEngine({
+      observerFaction: 'castle-guard',
+      actorFaction: 'party',
+      factions: [
+        { factionId: 'castle-guard', entityIds: ['guard'] },
+        { factionId: 'party', entityIds: ['player'] },
+      ],
+    }));
+    expect(emptyDifferent._appliedRules).toEqual(filledDifferent._appliedRules);
+
+    const emptySame = enterAndPresent(makeFactionedEngine({
+      observerFaction: 'castle-guard',
+      actorFaction: 'castle-guard',
+      factions: [],
+    }));
+    const filledSame = enterAndPresent(makeFactionedEngine({
+      observerFaction: 'castle-guard',
+      actorFaction: 'castle-guard',
+      factions: [
+        { factionId: 'castle-guard', entityIds: ['guard', 'player'] },
+      ],
+    }));
+    expect(emptySame._appliedRules).toEqual(filledSame._appliedRules);
+  });
+
+  it('(4) unfactioned observer, no belief → no bias (type heuristic must not fire)', () => {
+    const engine = makeFactionedEngine({
+      actorFaction: 'party',
+      factions: [],
+    });
+    const view = enterAndPresent(engine);
+    expect(view._appliedRules).not.toContain('hostile-faction-bias');
+  });
+});

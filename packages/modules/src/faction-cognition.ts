@@ -41,6 +41,8 @@ type ModuleState = {
   factionCognition: Record<string, FactionCognitionState>;
   membership: Record<string, string>;         // entityId → factionId
   factionMembers: Record<string, string[]>;   // factionId → entityIds
+  /** Authored roster rows and registerFactionMembership extras — sticky over entity.faction. */
+  explicit: Record<string, true>;
 };
 
 // --- Module ---
@@ -48,6 +50,7 @@ type ModuleState = {
 export function createFactionCognition(config: FactionCognitionConfig): EngineModule {
   const membershipMap: Record<string, string> = {};
   const factionMembersMap: Record<string, string[]> = {};
+  const explicitMap: Record<string, true> = {};
   const initialCognition: Record<string, FactionCognitionState> = {};
 
   for (const faction of config.factions) {
@@ -59,6 +62,7 @@ export function createFactionCognition(config: FactionCognitionConfig): EngineMo
     };
     for (const entityId of faction.entityIds) {
       membershipMap[entityId] = faction.factionId;
+      explicitMap[entityId] = true;
     }
   }
 
@@ -72,6 +76,7 @@ export function createFactionCognition(config: FactionCognitionConfig): EngineMo
         factionCognition: initialCognition,
         membership: membershipMap,
         factionMembers: factionMembersMap,
+        explicit: explicitMap,
       } as ModuleState);
 
       // Handle rumor propagation events → update faction beliefs
@@ -90,12 +95,77 @@ export function createFactionCognition(config: FactionCognitionConfig): EngineMo
 
 // --- State Access ---
 
+const EMPTY_STATE = (): ModuleState => ({
+  factionCognition: {},
+  membership: {},
+  factionMembers: {},
+  explicit: {},
+});
+
 function getModuleState(world: WorldState): ModuleState {
-  return (world.modules['faction-cognition'] ?? {
-    factionCognition: {},
-    membership: {},
-    factionMembers: {},
-  }) as ModuleState;
+  const existing = world.modules['faction-cognition'] as ModuleState | undefined;
+  if (!existing) return EMPTY_STATE();
+  if (!existing.explicit) existing.explicit = {};
+  if (!existing.membership) existing.membership = {};
+  if (!existing.factionMembers) existing.factionMembers = {};
+  if (!existing.factionCognition) existing.factionCognition = {};
+  // Entities are added after Engine construction, so factory time cannot
+  // see entity.faction. Fill unset membership slots from living identity
+  // (F-7911928d). Explicit extras already in membership win.
+  hydrateFromWorld(world, existing);
+  return existing;
+}
+
+function ensureFactionCognition(state: ModuleState, factionId: string, cohesion = 0.8): void {
+  if (!state.factionCognition[factionId]) {
+    state.factionCognition[factionId] = { beliefs: [], alertLevel: 0, cohesion };
+  }
+}
+
+function assignMembership(
+  state: ModuleState,
+  entityId: string,
+  factionId: string,
+  explicit: boolean,
+): void {
+  const prev = state.membership[entityId];
+  if (prev && prev !== factionId) {
+    const list = state.factionMembers[prev];
+    if (list) state.factionMembers[prev] = list.filter((id) => id !== entityId);
+  }
+  state.membership[entityId] = factionId;
+  const members = state.factionMembers[factionId] ?? (state.factionMembers[factionId] = []);
+  if (!members.includes(entityId)) members.push(entityId);
+  if (explicit) state.explicit[entityId] = true;
+  ensureFactionCognition(state, factionId);
+}
+
+function hydrateFromWorld(world: WorldState, state: ModuleState): void {
+  for (const entity of Object.values(world.entities)) {
+    const faction = entity.faction;
+    if (!faction) continue;
+    if (state.membership[entity.id] !== undefined) continue;
+    assignMembership(state, entity.id, faction, false);
+  }
+}
+
+/**
+ * Post-init extra (other users, NPC join-faction). Sticky over entity.faction.
+ */
+export function registerFactionMembership(world: WorldState, factionId: string, entityId: string): void {
+  if (!world.modules['faction-cognition']) return;
+  assignMembership(getModuleState(world), entityId, factionId, true);
+}
+
+/**
+ * Move a non-explicit slot to follow living entity.faction (recruit).
+ * Explicit extras stay put. No-op when the namespace is absent.
+ */
+export function updateLivingFactionMembership(world: WorldState, entityId: string, factionId: string): void {
+  if (!world.modules['faction-cognition']) return;
+  const state = getModuleState(world);
+  if (state.explicit[entityId]) return;
+  assignMembership(state, entityId, factionId, false);
 }
 
 /** Get cognition state for a faction */
@@ -118,15 +188,10 @@ export function getEntityFaction(world: WorldState, entityId: string): string | 
 
 /**
  * Resolve an entity's faction for IDENTITY purposes: the membership registry
- * when a pack registered createFactionCognition, else the entity's own
- * authored `faction` field — the same plain signal targeting.ts's
- * affiliationOf, combat-intent, and companion-core already read directly.
- *
- * Read-side only; the registry mechanism is untouched. Exists because zero
- * shipped starters register createFactionCognition, so every consumer that
- * read getEntityFaction alone was faction-blind (or inverted) in every
- * shipped pack. Consumers needing registry SEMANTICS beyond identity
- * (beliefs, cohesion, members) still read the registry deliberately.
+ * (hydrated from entity.faction plus explicit extras, F-7911928d) when a
+ * pack registered createFactionCognition, else the entity's own authored
+ * `faction` field. After hydrate, getEntityFaction === resolveEntityFaction
+ * for authored-on-person identity.
  */
 export function resolveEntityFaction(world: WorldState, entityId: string): string | undefined {
   return getModuleState(world).membership[entityId] ?? world.entities[entityId]?.faction;

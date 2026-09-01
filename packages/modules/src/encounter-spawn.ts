@@ -97,6 +97,13 @@ export const MAX_SPAWN_CHANCE = 0.95;
 /** The tag that marks an entity as a unique boss (the engine-wide taxonomy). */
 export const BOSS_ROLE_TAG = 'role:boss';
 
+/**
+ * Quiet ticks after combat.encounter.cleared when the pack authored no
+ * cooldownTurns (F-33099b8e). Same absolute-tick ledger as authored
+ * cooldown; never shortens an already-future authored value.
+ */
+export const DEFAULT_POST_CLEAR_COOLDOWN = 2;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -458,6 +465,21 @@ export function createEncounterSpawn(config: EncounterSpawnConfig): EngineModule
         zoneTables: config.zoneTables,
         baseChance: config.baseChance ?? BASE_SPAWN_CHANCE,
         safetyStep: config.safetyStep ?? SAFETY_CHANCE_STEP,
+      });
+
+      // F-33099b8e: proactive liveByZone cleanup + default post-clear
+      // cooldown so bounce-back re-entry cannot restack when the pack
+      // authored none. Authored cooledUntilTick in the future wins.
+      ctx.events.on('combat.encounter.cleared', (event, world) => {
+        const zoneId = event.payload.zoneId;
+        if (typeof zoneId !== 'string') return;
+        const state = getEncounterSpawnState(world);
+        const stillLive = zoneHasLiveEncounter(world, state, zoneId);
+        if (event.payload.outcome === 'retreat' && stillLive) return;
+        state.cooledUntilTick ??= {};
+        if (state.cooledUntilTick[zoneId] === undefined) {
+          state.cooledUntilTick[zoneId] = event.tick + DEFAULT_POST_CLEAR_COOLDOWN;
+        }
       });
     },
   };

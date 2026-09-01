@@ -133,6 +133,133 @@ function hasEncounterClearedThisTick(world: WorldState, zoneId: string, tick: nu
   return false;
 }
 
+type EncounterClearedTrigger = 'defeated' | 'disengage';
+
+/**
+ * Dual-wire combat.encounter.cleared (F-f693d790, R4): one event, outcome
+ * 'victory'|'retreat'. Victory path is the existing last-hostile-defeated
+ * emit. Retreat path fires from combat.disengage.success — last-hostile-flee
+ * (player's zone has no living hostiles after the mover already left) and
+ * player-flee (emit even when hostiles remain in fromZoneId). Mutual-kill
+ * stays silent via the alive-player gate; companion/ally disengage is a no-op.
+ */
+function maybeEmitEncounterCleared(
+  world: WorldState,
+  ctx: { events: { emit: (event: ResolvedEvent) => void } },
+  tick: number,
+  trigger: EncounterClearedTrigger,
+  event: ResolvedEvent,
+  playerId: string,
+): void {
+  const playerEntity = world.entities[playerId];
+  if (!playerEntity?.zoneId) return;
+  if ((playerEntity.resources.hp ?? 0) <= 0) return;
+
+  if (trigger === 'defeated') {
+    if (hasEnemiesInZone(world, playerEntity)) return;
+    const clearedZoneId = playerEntity.zoneId;
+    if (hasEncounterClearedThisTick(world, clearedZoneId, tick)) return;
+
+    const defeatedId = event.payload.entityId as string;
+    const defeated = world.entities[defeatedId];
+    const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
+    const encounterId = defeated?.zoneId === clearedZoneId
+      && typeof defeated.custom?.encounterId === 'string'
+      ? defeated.custom.encounterId
+      : undefined;
+
+    ctx.events.emit({
+      id: genId(world, 'evt'),
+      tick,
+      type: 'combat.encounter.cleared',
+      actorId: playerId,
+      targetIds: survivorIds,
+      payload: {
+        zoneId: clearedZoneId,
+        outcome: 'victory',
+        finalDefeatEventId: event.id,
+        participants: {
+          survivors: survivorIds,
+          finalOpponent: { id: event.payload.entityId, name: event.payload.entityName },
+        },
+        ...(encounterId ? { encounterRef: encounterId } : {}),
+      },
+      tags: ['combat', 'encounter', 'cleared'],
+      presentation: {
+        channels: ['objective', 'narrator'],
+        priority: 'critical',
+        soundCues: ['combat.victory'],
+      },
+    });
+    return;
+  }
+
+  const entityId = event.payload.entityId as string;
+  const fromZoneId = event.payload.fromZoneId;
+  if (typeof entityId !== 'string' || typeof fromZoneId !== 'string') return;
+  const entity = world.entities[entityId];
+  if (!entity) return;
+
+  if (entityId === playerId) {
+    const hostilesRemain = getEntitiesInZone(world, fromZoneId)
+      .some(e => affiliationOf(playerEntity, e) === 'enemy');
+    if (!hostilesRemain) return;
+    if (hasEncounterClearedThisTick(world, fromZoneId, tick)) return;
+    const survivorIds = getEntitiesInZone(world, fromZoneId).map(e => e.id);
+    ctx.events.emit({
+      id: genId(world, 'evt'),
+      tick,
+      type: 'combat.encounter.cleared',
+      actorId: playerId,
+      targetIds: survivorIds,
+      payload: {
+        zoneId: fromZoneId,
+        outcome: 'retreat',
+        disengageEventId: event.id,
+        participants: { survivors: survivorIds },
+      },
+      tags: ['combat', 'encounter', 'cleared'],
+      presentation: {
+        channels: ['objective', 'narrator'],
+        priority: 'high',
+      },
+    });
+    return;
+  }
+
+  if (affiliationOf(playerEntity, entity) !== 'enemy') return;
+  if (hasEnemiesInZone(world, playerEntity)) return;
+  const clearedZoneId = playerEntity.zoneId;
+  if (hasEncounterClearedThisTick(world, clearedZoneId, tick)) return;
+  const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
+  const encounterId = fromZoneId === clearedZoneId
+    && typeof entity.custom?.encounterId === 'string'
+    ? entity.custom.encounterId
+    : undefined;
+  ctx.events.emit({
+    id: genId(world, 'evt'),
+    tick,
+    type: 'combat.encounter.cleared',
+    actorId: playerId,
+    targetIds: survivorIds,
+    payload: {
+      zoneId: clearedZoneId,
+      outcome: 'retreat',
+      disengageEventId: event.id,
+      participants: {
+        survivors: survivorIds,
+        finalOpponent: { id: entityId, name: (event.payload.entityName as string | undefined) ?? entity.name },
+      },
+      ...(encounterId ? { encounterRef: encounterId } : {}),
+    },
+    tags: ['combat', 'encounter', 'cleared'],
+    presentation: {
+      channels: ['objective', 'narrator'],
+      priority: 'high',
+    },
+  });
+}
+
 function safeApply(entity: EntityState, statusId: string, tick: number, world: WorldState): void {
   if (!hasStatus(entity, statusId)) {
     applyStatus(entity, statusId, tick, { stacking: 'refresh' }, world);
@@ -250,77 +377,10 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
           }
         }
 
-        // --- Encounter cleared: the PLAYER's zone has no living hostiles
-        // left (F-32948b79, carried:F-defb93a6). Extends this handler rather
-        // than adding a second listener. Scoped to the player's zone via the
-        // same affiliationOf/hasEnemiesInZone predicate this file already
-        // uses for positional texture (not combat-recovery.ts's tag-based
-        // checkZoneClearance — that sibling still drifts on the margin; a
-        // migration to affiliationOf there is a separate follow-up).
-        //
-        // ALIVE-PLAYER GATE (Director ruling): requiring hp > 0 AT CHECK TIME
-        // means a mutual/simultaneous kill — the player and the last hostile
-        // falling in the same action — reads as defeat, never victory.
-        const playerEntity = world.entities[playerId];
-        if (
-          playerEntity?.zoneId
-          && (playerEntity.resources.hp ?? 0) > 0
-          && !hasEnemiesInZone(world, playerEntity)
-        ) {
-          const clearedZoneId = playerEntity.zoneId;
-          // DE-DUP GUARD: a same-tick multi-kill AoE runs this handler once
-          // per defeat; only the first to observe zero remaining hostiles
-          // may emit.
-          if (!hasEncounterClearedThisTick(world, clearedZoneId, tick)) {
-            // participants.survivors is recomputed fresh from the PLAYER's
-            // zone — deliberately NOT the outer `zoneEntities` above, which
-            // is scoped to `defeated.zoneId` and may be a different zone
-            // when the triggering defeat happened elsewhere.
-            const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
-            // F-4a203504: encounterRef comes from the DEFEATED ENTITY's own
-            // stamped encounterId (encounter-spawn.ts's trySpawn stamps
-            // `custom.encounterId` on every procedurally-spawned participant
-            // at spawn time), never from encounter-spawn's zone-keyed
-            // `liveByZone` side table. `liveByZone` is cleaned up lazily —
-            // only on that zone's NEXT world.zone.entered scan — and a
-            // disengage-driven zoneId change (combat-core.ts's
-            // disengageHandler) never fires that event, so `liveByZone` can
-            // hold a stale, unrelated record for a zone the player only just
-            // re-entered by fleeing into it (two-encounters-one-session).
-            // Guarded on `defeated.zoneId === clearedZoneId` too: the
-            // survivorIds comment above already notes the triggering defeat
-            // can happen in a different zone than the one just cleared, and
-            // that defeated entity's own encounterId (if it even has one)
-            // would name ITS zone's encounter, not this one.
-            const encounterId = defeated.zoneId === clearedZoneId
-              && typeof defeated.custom?.encounterId === 'string'
-              ? defeated.custom.encounterId
-              : undefined;
-            ctx.events.emit({
-              id: genId(world, 'evt'),
-              tick,
-              type: 'combat.encounter.cleared',
-              actorId: playerId,
-              targetIds: survivorIds,
-              payload: {
-                zoneId: clearedZoneId,
-                outcome: 'victory',
-                finalDefeatEventId: event.id,
-                participants: {
-                  survivors: survivorIds,
-                  finalOpponent: { id: event.payload.entityId, name: event.payload.entityName },
-                },
-                ...(encounterId ? { encounterRef: encounterId } : {}),
-              },
-              tags: ['combat', 'encounter', 'cleared'],
-              presentation: {
-                channels: ['objective', 'narrator'],
-                priority: 'critical',
-                soundCues: ['combat.victory'],
-              },
-            });
-          }
-        }
+        // --- Encounter cleared (F-32948b79 + F-f693d790 R4): dual-wired
+        // through maybeEmitEncounterCleared so last-hostile-defeated AND
+        // disengage.success share one event with outcome 'victory'|'retreat'.
+        maybeEmitEncounterCleared(world, ctx, tick, 'defeated', event, playerId);
       });
 
       // --- Disengage success: remove ENGAGED, evaluate new zone ---
@@ -353,6 +413,11 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
             safeRemove(entity, ENGAGEMENT_STATES.PROTECTED, tick);
           }
         }
+
+        // F-f693d790 R4: last-hostile-flee / player-flee emit the same
+        // combat.encounter.cleared event with outcome:'retreat'. combat-core
+        // has already moved entity.zoneId before this event fires.
+        maybeEmitEncounterCleared(world, ctx, tick, 'disengage', event, playerId);
       });
 
       // --- Reposition success: re-evaluate engagement states ---
