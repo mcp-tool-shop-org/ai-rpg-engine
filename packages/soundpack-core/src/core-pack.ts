@@ -234,5 +234,17 @@ export const CORE_SOUND_PACK: SoundPackManifest = {
       source: 'voice-soundboard',
       voiceSoundboardEffect: 'sting_defeat',
     },
+    {
+      id: 'music_retreat_sting',
+      tags: ['sting', 'retreat'],
+      domain: 'music',
+      intensity: 'medium',
+      mood: ['tension', 'caution'],
+      durationClass: 'oneshot',
+      cooldownMs: 3000,
+      variants: [],
+      source: 'voice-soundboard',
+      voiceSoundboardEffect: 'whoosh',
+    },
   ],
 };
