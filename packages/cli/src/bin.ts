@@ -34,7 +34,7 @@ import { runProfile } from './profile.js';
 import { runAuditContent } from './audit-content.js';
 import { runGuardedAction } from './guard.js';
 import { runNpcTurns, runCompanionTurns } from './turns.js';
-import { runWorldTick } from '@ai-rpg-engine/modules';
+import { emitZoneEnteredForPlacement, runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
 import { buildExtraActions, parseExtraSelection, buildHudWorld, buildPartyStatusLine, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
@@ -558,6 +558,13 @@ export async function createNewSession(
   // F-5164895e: first snapshot after chargen wears starting kits (Gravewalker
   // chapel-lantern in the tool slot). Readers (HUD, chronicle) stay pure.
   ensureStartingLoadouts(engine.world);
+
+  // F-9b93f45b: pack.createGame places the player without emitting
+  // world.zone.entered (sidecar --start is the only other CLI stitch). After
+  // chargen so zoneId is final, synthesize the same arrival so F-c8f6fbe1
+  // records starting-zone mood. Do not also journal inspect.
+  const player = engine.world.entities[engine.world.playerId];
+  emitZoneEnteredForPlacement(engine, player?.zoneId ?? engine.world.locationId);
 
   return { engine, pack };
 }

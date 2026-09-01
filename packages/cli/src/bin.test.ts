@@ -7,7 +7,7 @@ import { Engine, SaveLoadError, type EngineModule, type EntityState, type Rulese
 import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import { createDialogueCore } from '@ai-rpg-engine/modules';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
-import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
+import { buildActionList, formatEventLine, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import { ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import { getPartyState, setPartyState, type CompanionState } from '@ai-rpg-engine/modules';
 import {
@@ -50,7 +50,7 @@ import { loadExternalPack, type LoadedPack } from './external-pack.js';
 import { allPacks } from './packs.js';
 import { runNpcTurns } from './turns.js';
 import { buildExtraActions } from './menu.js';
-import { renderSessionEnd } from './endgame.js';
+import { journalFromEventLog, renderSessionEnd } from './endgame.js';
 
 // --- Shared fixtures for the interactive-loop tests -------------------------
 
@@ -1297,6 +1297,84 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
       expect(playerA.custom?.backgroundId).toBe(playerB.custom?.backgroundId);
       expect(playerA.stats).toEqual(playerB.stats);
       expect(playerA.name).not.toBe('Wanderer');
+    });
+  });
+
+  // F-9b93f45b: default createNewSession used to be pack.createGame with no
+  // emitZoneEnteredForPlacement, so a played session that inspects and never
+  // moves never journals starting-zone mood. Stitch the sidecar --start helper
+  // after chargen; do not also journal inspect.
+  describe('createNewSession emitZoneEnteredForPlacement (F-9b93f45b)', () => {
+    it('createGame(42) then inspect, no move → chapel-entrance discovery matches live entered line minus "> "', async () => {
+      const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+      const session = await createNewSession(pack, 42, { defaultHero: true });
+      session.engine.submitAction('inspect', {});
+
+      const zoneId = 'chapel-entrance';
+      const entered = session.engine.world.eventLog.find(
+        (e) => e.type === 'world.zone.entered' && e.payload.zoneId === zoneId,
+      );
+      expect(entered).toBeDefined();
+      const live = formatEventLine(entered!);
+      const discoveries = journalFromEventLog(session.engine.world).query({ category: 'discovery' });
+      const discovery = discoveries.find((d) => d.zoneId === zoneId);
+
+      expect(session.engine.world.eventLog.some((e) => e.type === 'world.zone.inspected')).toBe(true);
+      expect(session.engine.world.eventLog.some((e) => e.type === 'world.zone.entered' && e.payload.zoneId !== zoneId)).toBe(false);
+      expect(live).toMatch(/^> Entered /);
+      expect(discovery?.description).toBe(live!.slice(2));
+      expect(discovery?.description).toContain('(');
+      expect(discoveries.filter((d) => d.zoneId === zoneId)).toHaveLength(1);
+      expect(discoveries.every((d) => d.description.startsWith('Entered'))).toBe(true);
+    });
+
+    it('quiet unmapped start still has no parens', async () => {
+      const pack = {
+        meta: { id: 'quiet-start', name: 'Quiet Start' },
+        createGame: (s?: number) => {
+          const engine = new Engine({ manifest: testManifest, seed: s });
+          engine.store.state.zones = {
+            clearing: { id: 'clearing', roomId: 'r', name: 'Forest Clearing', tags: [], neighbors: [] },
+          };
+          engine.store.state.locationId = 'clearing';
+          engine.store.addEntity({
+            id: 'player',
+            blueprintId: 'bp',
+            type: 'player',
+            name: 'Wanderer',
+            tags: ['player'],
+            stats: {},
+            resources: { hp: 10 },
+            statuses: [],
+            zoneId: 'clearing',
+          });
+          engine.store.state.playerId = 'player';
+          return engine;
+        },
+      } as never;
+      const session = await createNewSession(pack, 1);
+      const discovery = journalFromEventLog(session.engine.world)
+        .query({ category: 'discovery' })
+        .find((d) => d.zoneId === 'clearing');
+      expect(discovery?.description).toBe('Entered Forest Clearing');
+      expect(discovery?.description).not.toContain('(');
+      expect(discovery?.data).toEqual({});
+    });
+
+    it('leave-and-return still records the starting zone once', async () => {
+      const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+      const session = await createNewSession(pack, 42, { defaultHero: true });
+      session.engine.submitAction('move', { targetIds: ['chapel-nave'] });
+      session.engine.submitAction('move', { targetIds: ['chapel-entrance'] });
+
+      const discoveries = journalFromEventLog(session.engine.world)
+        .query({ category: 'discovery' })
+        .filter((d) => d.zoneId === 'chapel-entrance');
+      expect(discoveries).toHaveLength(1);
+      const entered = session.engine.world.eventLog.find(
+        (e) => e.type === 'world.zone.entered' && e.payload.zoneId === 'chapel-entrance',
+      )!;
+      expect(discoveries[0].description).toBe(formatEventLine(entered)!.slice(2));
     });
   });
 

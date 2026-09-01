@@ -916,6 +916,32 @@ describe('formatEvent — moodHint / situationHint hint placements (F-fdc1f590)'
     expect(text).toContain('You look around the Market Square. You see: Old Tomas.');
     expect(text).not.toContain('Situation:');
   });
+
+  // F-9b93f45b optional sibling: inspect already carries moodHint from
+  // walk-in; render it after the look-around clause. Omitted stays today's bytes.
+  it('inspect moodHint appends a parenthetical after the look-around clause', () => {
+    const text = renderEventLog([
+      cev('world.zone.inspected', {
+        zoneId: 'chapel-entrance', zoneName: 'Ruined Chapel Entrance', tags: [],
+        entities: [], interactables: [], exits: [], hazards: [],
+        moodHint: 'Chapel Grounds: calm and watchful',
+      }, { actorId: 'hero' }),
+    ]);
+    expect(text).toContain(
+      wrapToWidth('  > You look around Ruined Chapel Entrance. (Chapel Grounds: calm and watchful)').join('\n'),
+    );
+  });
+
+  it('omitted inspect moodHint: byte-identical to today\'s look-around line', () => {
+    const text = renderEventLog([
+      cev('world.zone.inspected', {
+        zoneId: 'chapel-entrance', zoneName: 'Ruined Chapel Entrance', tags: [],
+        entities: [], interactables: [], exits: [], hazards: [],
+      }, { actorId: 'hero' }),
+    ]);
+    expect(text).toContain('You look around Ruined Chapel Entrance.');
+    expect(text).not.toContain('(');
+  });
 });
 
 // CS-C-004: renderEventLog sliced the last N events BEFORE filtering, so the
