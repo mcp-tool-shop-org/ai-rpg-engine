@@ -12,7 +12,7 @@ import type {
 } from './chat-types.js';
 import type { DesignSession } from './session.js';
 import {
-  tryLoadSession, saveSession, renderSessionContext,
+  tryLoadSession, persistInFlight, renderSessionContext,
   recordEvent, addArtifact, addCritiqueIssues,
 } from './session.js';
 import { classifyIntent } from './chat-router.js';
@@ -206,6 +206,18 @@ export type ChatEngine = {
    * Same `onStep` liveness + early-abort contract as executeAllBuildSteps.
    */
   executeAllTuningSteps: (onStep?: BatchStepCallback) => Promise<string>;
+  /**
+   * Copy in-flight BuildState/TuningState from a loaded session onto this
+   * engine (F-3f17cbc3). Never writes pack files. Always resets the batch
+   * preview flag so the first yes re-previews. Derives pendingWriteBatch
+   * from the owning pool when pendingWriteBatchOwner is set; does not
+   * auto-promote when owner is missing.
+   */
+  hydrateInFlight: (session: DesignSession) => void;
+  /** Persist live in-flight state into the session file (auto-creates if needed). */
+  persistInFlight: () => Promise<void>;
+  /** Which flow currently owns pendingWriteBatch, if any. */
+  readonly pendingWriteBatchOwner: 'build' | 'tuning' | null;
 };
 
 export type ChatProcessOptions = {
@@ -309,6 +321,30 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return pendingWriteBatch;
   }
 
+  async function persistEngineInFlight(session?: DesignSession | null): Promise<void> {
+    const current = session === undefined ? await tryLoadSession(projectRoot) : session;
+    await persistInFlight(projectRoot, current, {
+      activeBuild,
+      activeTuning,
+      pendingWriteBatchOwner,
+    });
+  }
+
+  function hydrateInFlight(session: DesignSession): void {
+    activeBuild = session.activeBuild ?? null;
+    activeTuning = session.activeTuning ?? null;
+    pendingWriteBatch = null;
+    pendingWriteBatchOwner = null;
+    pendingWriteBatchPreviewShown = false;
+    const owner = session.pendingWriteBatchOwner ?? null;
+    if (owner === 'build' && activeBuild && Object.keys(activeBuild.stagedWrites).length > 0) {
+      refreshPendingWriteBatch(activeBuild.stagedWrites, 'build');
+    } else if (owner === 'tuning' && activeTuning && Object.keys(activeTuning.stagedWrites).length > 0) {
+      refreshPendingWriteBatch(activeTuning.stagedWrites, 'tuning');
+    }
+    pendingWriteBatchPreviewShown = false;
+  }
+
   async function process(userMessage: string, processOptions?: ChatProcessOptions): Promise<string> {
     const now = new Date().toISOString();
     const signal = processOptions?.signal;
@@ -361,6 +397,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       pendingWriteBatch = null;
       pendingWriteBatchOwner = null;
       pendingWriteBatchPreviewShown = false;
+      await persistEngineInFlight(session);
       const msg = 'Write cancelled.';
       addMessage(memory, { role: 'assistant', content: msg, timestamp: new Date().toISOString() });
       return msg;
@@ -524,6 +561,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       const { value: plan, notice } = capturePlanFromOutput<BuildPlan>(toolResult.output, 'build plan');
       if (plan) {
         activeBuild = createBuildState(plan);
+        await persistEngineInFlight(session);
       } else if (notice) {
         planNotices.push(notice);
       }
@@ -538,6 +576,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
           ? generateOperationalPlan(rawPlan.goal, session, lastAnalysis)
           : rawPlan;
         activeTuning = createTuningState(plan);
+        await persistEngineInFlight(session);
       } else if (notice) {
         planNotices.push(notice);
       }
@@ -571,7 +610,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       for (const event of toolResult.sessionEvents) {
         recordEvent(session, event.kind, event.detail);
       }
-      await saveSession(projectRoot, session);
+      await persistEngineInFlight(session);
     }
 
     // Present result
@@ -638,7 +677,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
     if (session) {
       recordEvent(session, 'content_applied', formatContentAppliedDetail(result));
-      await saveSession(projectRoot, session);
+      await persistEngineInFlight(session);
     }
 
     pendingWrite = null;
@@ -703,10 +742,6 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       return response;
     }
 
-    if (session) {
-      await saveSession(projectRoot, session);
-    }
-
     // F-71e4a9c3: clear ONLY the pool that produced this confirmed batch —
     // never both unconditionally. The other flow's stagedWrites (if any)
     // was never part of this consent and must survive to be surfaced later.
@@ -715,6 +750,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     pendingWriteBatch = null;
     pendingWriteBatchOwner = null;
     pendingWriteBatchPreviewShown = false;
+
+    await persistEngineInFlight(session);
 
     const response = lines.join('\n');
     addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
@@ -739,7 +776,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       // parse) so a further /undo targets a real path instead of a garbled,
       // self-referential one.
       recordEvent(session, 'content_applied', formatUndoResultDetail(result));
-      await saveSession(projectRoot, session);
+      await persistEngineInFlight(session);
     }
     const response = result.deleted
       ? `Removed: ${result.path} (undid a create)`
@@ -775,7 +812,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
   async function executeBuildStep(): Promise<string> {
     if (!activeBuild) return 'No active build. Use "build <goal>" to create one.';
-
+    try {
     const step = nextPendingStep(activeBuild);
     if (!step) {
       if (isBuildComplete(activeBuild)) {
@@ -784,7 +821,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
         const diag = buildDiagnostics(activeBuild, session);
         if (session) {
           recordEvent(session, 'build_plan_completed', `Build completed: ${activeBuild.plan.goal}`);
-          await saveSession(projectRoot, session);
+          await persistEngineInFlight(session);
         }
         // F-71e4a9c3: an earlier completion-promotion may have been refused
         // because a tuning batch was still unconfirmed at the time — retry
@@ -812,7 +849,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       const session = await tryLoadSession(projectRoot);
       if (session) {
         recordEvent(session, 'build_step_failed', `${step.command}: no tool`);
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
       return `Step ${step.id} failed: no tool for ${step.intent}`;
     }
@@ -893,13 +930,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
             recordEvent(session, event.kind, event.detail);
           }
         }
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
     } else {
       markStepFailed(activeBuild, step.id, toolResult.summary);
       if (session) {
         recordEvent(session, 'build_step_failed', `${step.command}: ${toolResult.summary}`);
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
     }
 
@@ -909,7 +946,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       finalizeBuild(activeBuild);
       if (session) {
         recordEvent(session, 'build_plan_completed', `Build: ${activeBuild.plan.goal}`);
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
       // Closes a gap the flush gate alone doesn't cover: once emit-pack
       // itself finally runs for real (the gate above now open), ITS OWN
@@ -956,6 +993,9 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const icon = toolResult.ok ? '●' : '✗';
     const collisionSuffix = collisionNote ? `\n⚠ ${collisionNote}` : '';
     return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${collisionSuffix}${consentSuffix}`;
+    } finally {
+      await persistEngineInFlight();
+    }
   }
 
   async function executeAllBuildSteps(onStep?: BatchStepCallback): Promise<string> {
@@ -1028,7 +1068,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
   async function executeTuningStep(): Promise<string> {
     if (!activeTuning) return 'No active tuning plan. Use "tune <goal>" to create one.';
-
+    try {
     const step = nextPendingTuningStep(activeTuning);
     if (!step) {
       if (isTuningComplete(activeTuning)) {
@@ -1036,7 +1076,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
         const session = await tryLoadSession(projectRoot);
         if (session) {
           recordEvent(session, 'tune_plan_completed', `Tuning completed: ${activeTuning.plan.goal}`);
-          await saveSession(projectRoot, session);
+          await persistEngineInFlight(session);
         }
         // F-71e4a9c3: mirrors executeBuildStep's identical retry — an
         // earlier completion-promotion may have been refused because a
@@ -1061,7 +1101,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       const session = await tryLoadSession(projectRoot);
       if (session) {
         recordEvent(session, 'tune_step_failed', `${step.command}: no tool`);
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
       return `Step ${step.id} failed: no tool for ${step.intent}`;
     }
@@ -1114,13 +1154,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
             recordEvent(session, event.kind, event.detail);
           }
         }
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
     } else {
       markTuningStepFailed(activeTuning, step.id, toolResult.summary);
       if (session) {
         recordEvent(session, 'tune_step_failed', `${step.command}: ${toolResult.summary}`);
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
     }
 
@@ -1129,7 +1169,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       finalizeTuning(activeTuning);
       if (session) {
         recordEvent(session, 'tune_plan_completed', `Tuning: ${activeTuning.plan.goal}`);
-        await saveSession(projectRoot, session);
+        await persistEngineInFlight(session);
       }
       // Mirrors executeBuildStep's identical completion promotion: once
       // there's truly nothing left to run, surface whatever's still staged
@@ -1152,6 +1192,9 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const icon = toolResult.ok ? '●' : '✗';
     const collisionSuffix = collisionNote ? `\n⚠ ${collisionNote}` : '';
     return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${collisionSuffix}${consentSuffix}`;
+    } finally {
+      await persistEngineInFlight();
+    }
   }
 
   async function executeAllTuningSteps(onStep?: BatchStepCallback): Promise<string> {
@@ -1230,6 +1273,9 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     executeAllBuildSteps,
     executeTuningStep,
     executeAllTuningSteps,
+    hydrateInFlight,
+    persistInFlight: () => persistEngineInFlight(),
+    get pendingWriteBatchOwner() { return pendingWriteBatchOwner; },
   };
 }
 

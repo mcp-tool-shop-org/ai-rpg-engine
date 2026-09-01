@@ -98,6 +98,23 @@ export function sessionDoctor(session: DesignSession): SessionDoctorResult {
     }
   }
 
+  if (session.activeBuild) {
+    const n = Object.keys(session.activeBuild.stagedWrites ?? {}).length;
+    diagnostics.push({
+      code: 'IN_FLIGHT_BUILD',
+      severity: 'info',
+      message: `${session.activeBuild.plan.goal} (${n} staged file${n === 1 ? '' : 's'})`,
+    });
+  }
+  if (session.activeTuning) {
+    const n = Object.keys(session.activeTuning.stagedWrites ?? {}).length;
+    diagnostics.push({
+      code: 'IN_FLIGHT_TUNING',
+      severity: 'info',
+      message: `${session.activeTuning.plan.goal} (${n} staged file${n === 1 ? '' : 's'})`,
+    });
+  }
+
   // Issues referencing targets not in artifacts
   const allArtifactIds = new Set(
     Object.values(session.artifacts).flatMap((ids) => Array.isArray(ids) ? ids : []),

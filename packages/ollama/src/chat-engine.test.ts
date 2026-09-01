@@ -12,7 +12,7 @@ import {
 } from './chat-engine.js';
 import { createBuildState, type BuildPlan, type BuildStep } from './chat-build-planner.js';
 import { createTuningState, type TuningPlan, type TuningStep } from './chat-balance-analyzer.js';
-import { createSession, saveSession } from './session.js';
+import { createSession, saveSession, loadSession } from './session.js';
 
 function mockClient(response: string): OllamaTextClient {
   return {
@@ -1316,6 +1316,227 @@ describe('decline resets discarded steps to pending (F-13d7b9e2)', () => {
 
       await engine.process('no');
       expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// --- In-flight BuildState/TuningState session persistence (F-3f17cbc3) ---
+// Persist-on-mutate (not persist-on-exit): a crash never reaches rl.close.
+// Restore copies plan/step/stagedWrites onto a fresh engine, never writes
+// pack files, and keeps the two-phase yes + decline-reset pins.
+
+describe('in-flight session persistence (F-3f17cbc3)', () => {
+  function factionScaffoldStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function emitPackStep(id: number, dependencies: number[]): BuildStep {
+    return {
+      id, description: 'emit-pack — assemble content/pack.json', command: 'emit-pack', intent: 'emit_pack',
+      params: {}, dependencies, artifactOutputs: [], usePriorContent: false, status: 'pending',
+    };
+  }
+  function roomStep(id: number, theme: string): BuildStep {
+    return {
+      id, description: `room ${theme}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuneRoomStep(id: number, theme: string): TuningStep {
+    return {
+      id, description: `tune room ${theme}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme }, dependencies: [], expectedEffect: 'none', status: 'pending',
+    };
+  }
+
+  it('executeBuildStep persists stagedWrites mid-batch; a new engine restores remaining pending steps and unconfirmed content', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-inflight-restore-'));
+    try {
+      const yaml = 'id: faction_a\nname: Faction A\nmembers:\n  - captain_a';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        factionScaffoldStep(2, 'second faction'),
+        emitPackStep(3, [2]),
+      ]));
+      await engine.executeBuildStep();
+      expect(Object.keys(engine.activeBuild!.stagedWrites)).toHaveLength(1);
+      expect(engine.activeBuild!.plan.steps[0].status).toBe('executed');
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+
+      const saved = await loadSession(dir);
+      expect(saved?.activeBuild).toBeTruthy();
+      expect(saved!.activeBuild!.stagedWrites['content/factions/faction_a.yaml']?.content)
+        .toContain('faction_a');
+      expect(saved!.activeBuild!.plan.steps[0].outputContent).toBeTruthy();
+
+      const restored = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      restored.hydrateInFlight(saved!);
+      expect(restored.activeBuild?.plan.goal).toBe('test build');
+      expect(restored.activeBuild?.plan.steps[0].status).toBe('executed');
+      expect(restored.activeBuild?.plan.steps[1].status).toBe('pending');
+      expect(Object.values(restored.activeBuild!.stagedWrites)).toHaveLength(1);
+      expect(restored.activeBuild!.generatedContent.length).toBeGreaterThan(0);
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('hydrateInFlight does not write any pack file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-inflight-no-pack-'));
+    try {
+      const yaml = 'id: faction_a\nname: Faction A\nmembers:\n  - captain_a';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        emitPackStep(2, [1]),
+      ]));
+      await engine.executeAllBuildSteps();
+      const saved = await loadSession(dir);
+      expect(saved?.activeBuild).toBeTruthy();
+
+      const restored = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      restored.hydrateInFlight(saved!);
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+      await expect(access(join(dir, 'content', 'factions', 'faction_a.yaml'))).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('first yes after restore still previews (does not apply); second yes writes only the owning pool', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-inflight-two-yes-'));
+    try {
+      const yaml = 'id: restore-room\nname: Restore Room\nzones:\n  - id: nave\n    name: Nave';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'restore one')]));
+      await engine.executeBuildStep();
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      const saved = await loadSession(dir);
+      expect(saved?.pendingWriteBatchOwner).toBe('build');
+
+      const restored = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      restored.hydrateInFlight(saved!);
+      expect(restored.pendingWriteBatch).not.toBeNull();
+      expect(restored.pendingWriteBatchOwner).toBe('build');
+
+      const preview = await restored.process('yes');
+      expect(preview).not.toMatch(/Written:/);
+      expect(preview).toMatch(/yes/i);
+      await expect(access(join(dir, 'content', 'rooms', 'restore-room.yaml'))).rejects.toThrow();
+
+      const applied = await restored.process('yes');
+      expect(applied).toContain('Written');
+      await access(join(dir, 'content', 'rooms', 'restore-room.yaml'));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('decline after restore resets discarded steps and does not emit pack.json', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-inflight-decline-'));
+    try {
+      const yaml = 'id: faction_a\nname: Faction A\nmembers:\n  - captain_a';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        emitPackStep(2, [1]),
+      ]));
+      await engine.executeAllBuildSteps();
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+      const saved = await loadSession(dir);
+
+      const restored = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      restored.hydrateInFlight(saved!);
+      const declined = await restored.process('no');
+      expect(declined).toMatch(/cancelled/i);
+      expect(restored.activeBuild!.plan.steps[0].status).toBe('pending');
+      expect(restored.activeBuild!.plan.steps[1].status).toBe('pending');
+      expect(restored.activeBuild!.stagedWrites).toEqual({});
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+
+      const after = await restored.executeBuildStep();
+      expect(after).not.toContain('emit-pack');
+      expect(restored.activeBuild!.plan.steps[1].status).toBe('pending');
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('independent build/tuning pools survive persist and restore', async () => {
+    const responses = [
+      'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
+      'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
+    ];
+    let call = 0;
+    const dir = await mkdtemp(join(tmpdir(), 'chat-inflight-pools-'));
+    try {
+      const engine = createChatEngine({
+        client: {
+          async generate(_input: PromptInput): Promise<PromptResult> {
+            return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+          },
+        },
+        projectRoot: dir,
+        rawMode: true,
+      });
+      engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'build one')]));
+      await engine.executeBuildStep();
+      engine.activeTuning = createTuningState({
+        goal: 'test tuning', steps: [tuneRoomStep(1, 'tune one')], warnings: [],
+      } satisfies TuningPlan);
+      await engine.executeTuningStep();
+
+      const saved = await loadSession(dir);
+      expect(saved?.activeBuild?.stagedWrites['content/rooms/build-room.yaml']?.content)
+        .toContain('build-room');
+      expect(saved?.activeTuning?.stagedWrites['content/rooms/tune-room.yaml']?.content)
+        .toContain('tune-room');
+
+      const restored = createChatEngine({
+        client: mockClient('unused'),
+        projectRoot: dir,
+        rawMode: true,
+      });
+      restored.hydrateInFlight(saved!);
+      expect(Object.values(restored.activeBuild!.stagedWrites)[0].content).toContain('build-room');
+      expect(Object.values(restored.activeTuning!.stagedWrites)[0].content).toContain('tune-room');
+      // Owner was build (first to promote); do not auto-promote the other pool.
+      expect(restored.pendingWriteBatchOwner).toBe('build');
+      expect(restored.pendingWriteBatch?.[0].content).toContain('build-room');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not auto-promote a batch when pendingWriteBatchOwner is missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-inflight-no-promote-'));
+    try {
+      const yaml = 'id: faction_a\nname: Faction A\nmembers:\n  - captain_a';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        factionScaffoldStep(2, 'second faction'),
+        emitPackStep(3, [2]),
+      ]));
+      await engine.executeBuildStep();
+      const saved = await loadSession(dir);
+      expect(saved?.pendingWriteBatchOwner ?? null).toBeNull();
+      expect(Object.keys(saved!.activeBuild!.stagedWrites).length).toBeGreaterThan(0);
+
+      const restored = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      restored.hydrateInFlight(saved!);
+      expect(restored.pendingWriteBatch).toBeNull();
+      expect(restored.pendingWriteBatchOwner).toBeNull();
+      expect(Object.keys(restored.activeBuild!.stagedWrites).length).toBeGreaterThan(0);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import {
   handleSlashCommand, runChatShell, persistTranscriptAtExit,
   formatChatTurn, formatTranscriptPretty, beginThinking,
-  formatExitStagedWarning,
+  formatExitStagedWarning, formatResumeInFlightBanner,
 } from './chat-shell.js';
 import { setDisplayMode, formatHeading } from './chat-studio.js';
 import { MAX_EXPERIMENT_RUNS } from './chat-experiments.js';
@@ -744,12 +744,9 @@ describe('handleSlashCommand — /undo and /models', () => {
   });
 });
 
-// F-a63c0e57 (wave-4, addendum-scoped: warn-on-exit ONLY this wave -- full
-// BuildState/TuningState session persistence is a roadmap item, not built
-// here). Before this fix, a crash/Ctrl+C/closed terminal between the flush
-// gate firing (or any step staging content) and the user answering yes/no
-// permanently and silently destroyed every byte of unconfirmed staged
-// content, with zero warning anywhere.
+// F-a63c0e57: warn-on-exit for unconfirmed staged content. F-3f17cbc3 now
+// serializes BuildState/TuningState into the session file; this warning
+// stays as defense in depth (persist refusal / over-budget attach).
 describe('formatExitStagedWarning (F-a63c0e57)', () => {
   function scaffoldStep(id: number): BuildStep {
     return {
@@ -880,5 +877,119 @@ describe('runChatShell — warns on exit with unconfirmed staged content (F-a63c
       expect(err).toMatch(/unconfirmed staged content/i);
       expect(err).toContain('haunted market district');
     });
+  });
+});
+
+// F-3f17cbc3: resume banner (not the exit-loss wording) after hydrating
+// in-flight BuildState/TuningState from the session file.
+describe('formatResumeInFlightBanner (F-3f17cbc3)', () => {
+  function scaffoldStep(id: number): BuildStep {
+    return {
+      id, description: `step ${id}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuningStep(id: number): TuningStep {
+    return {
+      id, description: `tune ${id}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: `tune-${id}` }, dependencies: [],
+      expectedEffect: 'none', status: 'pending',
+    };
+  }
+
+  it('returns null when nothing is staged', () => {
+    const engine = makeEngine();
+    expect(formatResumeInFlightBanner(engine)).toBeNull();
+  });
+
+  it('names the build goal, every staged path, and yes/no|/step — not the exit-loss wording', () => {
+    const engine = makeEngine();
+    engine.activeBuild = createBuildState({
+      goal: 'haunted market', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+    } satisfies BuildPlan);
+    engine.activeBuild.stagedWrites['content/rooms/market-hall.yaml'] = {
+      content: 'id: market-hall', suggestedPath: 'content/rooms/market-hall.yaml',
+      label: 'room: market-hall', sourceStepId: 1,
+    };
+    const banner = formatResumeInFlightBanner(engine);
+    expect(banner).not.toBeNull();
+    expect(banner).toContain('haunted market');
+    expect(banner).toContain('content/rooms/market-hall.yaml');
+    expect(banner).toMatch(/yes/i);
+    expect(banner).toMatch(/no/i);
+    expect(banner).toMatch(/\/step/);
+    expect(banner).not.toMatch(/lose|lost/i);
+    expect(banner).not.toMatch(/exiting now/i);
+  });
+
+  it('names the tuning goal and every staged path', () => {
+    const engine = makeEngine();
+    engine.activeTuning = createTuningState({
+      goal: 'paranoia pass', steps: [tuningStep(1)], warnings: [],
+    } satisfies TuningPlan);
+    engine.activeTuning.stagedWrites['content/rooms/tuned-room.yaml'] = {
+      content: 'id: tuned-room', suggestedPath: 'content/rooms/tuned-room.yaml',
+      label: 'room: tuned-room', sourceStepId: 1,
+    };
+    const banner = formatResumeInFlightBanner(engine);
+    expect(banner).toContain('paranoia pass');
+    expect(banner).toContain('content/rooms/tuned-room.yaml');
+  });
+});
+
+describe('runChatShell — resumes in-flight batches from the session file (F-3f17cbc3)', () => {
+  let projectRoot: string;
+
+  afterEach(async () => {
+    if (projectRoot) {
+      try { await rm(projectRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('prints a resume banner (not the exit-loss wording) when .ai-session.json holds stagedWrites', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'chat-shell-resume-'));
+    const { createSession, saveSession } = await import('./session.js');
+    const session = createSession('resume-test');
+    session.activeBuild = createBuildState({
+      goal: 'haunted market',
+      steps: [{
+        id: 1, description: 'room', command: 'create-room', intent: 'scaffold',
+        params: { kind: 'room', theme: 'market' }, dependencies: [],
+        artifactOutputs: ['rooms'], usePriorContent: false, status: 'executed',
+      }],
+      estimatedSteps: 1,
+      warnings: [],
+    } satisfies BuildPlan);
+    session.activeBuild.stagedWrites['content/rooms/market-hall.yaml'] = {
+      content: 'id: market-hall', suggestedPath: 'content/rooms/market-hall.yaml',
+      label: 'room: market-hall', sourceStepId: 1,
+    };
+    await saveSession(projectRoot, session);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    void runChatShell({
+      client: mockClient('ok'),
+      projectRoot,
+      saveTranscripts: false,
+      input,
+      output,
+    });
+
+    await vi.waitFor(() => {
+      const logged = logSpy.mock.calls.flat().join('\n');
+      expect(logged).toContain('haunted market');
+      expect(logged).toContain('content/rooms/market-hall.yaml');
+    });
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).not.toMatch(/exiting now will lose/i);
+    expect(errSpy.mock.calls.flat().join('\n')).not.toMatch(/exiting now will lose/i);
+
+    input.end();
   });
 });

@@ -185,6 +185,7 @@ export {
   tryLoadSession,
   SessionLoadError,
   saveSession,
+  persistInFlight,
   deleteSession,
   endSession,
   listSessions,
@@ -218,6 +219,9 @@ export {
 } from './session.js';
 export type {
   DesignSession,
+  PendingWriteBatchOwner,
+  InFlightPersistInput,
+  PersistInFlightResult,
   SessionArtifacts,
   SessionIssue,
   SessionEvent,

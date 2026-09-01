@@ -119,6 +119,50 @@ describe('sessionDoctor', () => {
     expect(result.diagnostics.some(d => d.code === 'HISTORY_AT_CAP')).toBe(true);
   });
 
+  it('reports IN_FLIGHT_BUILD with goal and staged file count (F-3f17cbc3)', () => {
+    const s = createSession('inflight-build');
+    addThemes(s, ['gothic']);
+    s.activeBuild = {
+      plan: { goal: 'haunted market', steps: [], estimatedSteps: 0, warnings: [] },
+      startedAt: '2026-01-01T00:00:00.000Z',
+      status: 'executing',
+      generatedContent: [],
+      stagedWrites: {
+        'content/rooms/a.yaml': {
+          content: 'id: a', suggestedPath: 'content/rooms/a.yaml', label: 'a', sourceStepId: 1,
+        },
+        'content/rooms/b.yaml': {
+          content: 'id: b', suggestedPath: 'content/rooms/b.yaml', label: 'b', sourceStepId: 2,
+        },
+      },
+    };
+    const result = sessionDoctor(s);
+    const diag = result.diagnostics.find(d => d.code === 'IN_FLIGHT_BUILD');
+    expect(diag).toBeTruthy();
+    expect(diag!.message).toContain('haunted market');
+    expect(diag!.message).toMatch(/2 staged/);
+  });
+
+  it('reports IN_FLIGHT_TUNING with goal and staged file count (F-3f17cbc3)', () => {
+    const s = createSession('inflight-tune');
+    addThemes(s, ['gothic']);
+    s.activeTuning = {
+      plan: { goal: 'paranoia pass', steps: [], warnings: [] },
+      startedAt: '2026-01-01T00:00:00.000Z',
+      status: 'executing',
+      stagedWrites: {
+        'content/rooms/t.yaml': {
+          content: 'id: t', suggestedPath: 'content/rooms/t.yaml', label: 't', sourceStepId: 1,
+        },
+      },
+    };
+    const result = sessionDoctor(s);
+    const diag = result.diagnostics.find(d => d.code === 'IN_FLIGHT_TUNING');
+    expect(diag).toBeTruthy();
+    expect(diag!.message).toContain('paranoia pass');
+    expect(diag!.message).toMatch(/1 staged/);
+  });
+
   it('does not flag issues targeting global', () => {
     const s = createSession('global-ok');
     addThemes(s, ['gothic']);
