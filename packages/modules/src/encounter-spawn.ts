@@ -467,19 +467,18 @@ export function createEncounterSpawn(config: EncounterSpawnConfig): EngineModule
         safetyStep: config.safetyStep ?? SAFETY_CHANCE_STEP,
       });
 
-      // F-33099b8e: proactive liveByZone cleanup + default post-clear
-      // cooldown so bounce-back re-entry cannot restack when the pack
-      // authored none. Authored cooledUntilTick in the future wins.
+      // F-33099b8e / F-a7e22505: proactive liveByZone cleanup + default
+      // post-clear cooldown so bounce-back re-entry cannot restack when
+      // the pack authored none — or when an authored spawn-time value has
+      // already elapsed. Authored cooledUntilTick still in the future wins
+      // (never shortened).
       ctx.events.on('combat.encounter.cleared', (event, world) => {
         const zoneId = event.payload.zoneId;
         if (typeof zoneId !== 'string') return;
         const state = getEncounterSpawnState(world);
         const stillLive = zoneHasLiveEncounter(world, state, zoneId);
         if (event.payload.outcome === 'retreat' && stillLive) return;
-        state.cooledUntilTick ??= {};
-        if (state.cooledUntilTick[zoneId] === undefined) {
-          state.cooledUntilTick[zoneId] = event.tick + DEFAULT_POST_CLEAR_COOLDOWN;
-        }
+        armDefaultCooldownIfElapsed(state, zoneId, event.tick);
       });
     },
   };
@@ -491,6 +490,23 @@ export function createEncounterSpawn(config: EncounterSpawnConfig): EngineModule
 
 function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Arm DEFAULT_POST_CLEAR_COOLDOWN when the zone has no cooledUntilTick, or
+ * the existing value has already elapsed (<= tick). An authored value still
+ * in the future is left untouched (F-a7e22505 future-wins).
+ */
+function armDefaultCooldownIfElapsed(
+  state: EncounterSpawnState,
+  zoneId: string,
+  tick: number,
+): void {
+  state.cooledUntilTick ??= {};
+  const existing = state.cooledUntilTick[zoneId];
+  if (existing === undefined || existing <= tick) {
+    state.cooledUntilTick[zoneId] = tick + DEFAULT_POST_CLEAR_COOLDOWN;
+  }
 }
 
 /** A zone's last spawn still has a living member standing in it? */
@@ -505,7 +521,13 @@ function zoneHasLiveEncounter(
     const entity = world.entities[id];
     return !!entity && (entity.resources.hp ?? 0) > 0 && entity.zoneId === zoneId;
   });
-  if (!live) delete state.liveByZone[zoneId]; // pack cleared — table is live again
+  if (!live) {
+    delete state.liveByZone[zoneId];
+    // F-e1b0084d: a leftover pack that later dies or leaves must settle the
+    // street — player-flee's stillLive no-op left liveByZone in place, and
+    // bounce-back re-entry used to restack with zero quiet ticks.
+    armDefaultCooldownIfElapsed(state, zoneId, world.meta.tick);
+  }
   return live;
 }
 

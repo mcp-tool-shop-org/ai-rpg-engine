@@ -618,11 +618,13 @@ describe('encounter-spawn — legacy saves do not spawn-burst (P8-WL-006)', () =
 });
 
 // ---------------------------------------------------------------------------
-// F-33099b8e — default post-clear cooldown on combat.encounter.cleared.
-// A zone with no authored cooldownTurns used to restack on bounce-back
-// re-entry; victory / last-hostile-retreat now arm DEFAULT_POST_CLEAR_COOLDOWN
-// (2 ticks) on the same cooledUntilTick ledger as authored cooldowns.
-// Player-flee with the pack still alive in fromZoneId must NOT arm it.
+// F-33099b8e / F-a7e22505 / F-e1b0084d — default post-clear cooldown on
+// combat.encounter.cleared. A zone with no authored cooldownTurns used to
+// restack on bounce-back re-entry; victory / last-hostile-retreat now arm
+// DEFAULT_POST_CLEAR_COOLDOWN (2 ticks) on the same cooledUntilTick ledger
+// as authored cooldowns. An elapsed spawn-time authored value is treated as
+// missing (future-wins, never shortened). Player-flee with the pack still
+// alive in fromZoneId must NOT arm it; a later pack vacate still must.
 // ---------------------------------------------------------------------------
 
 describe('encounter-spawn — post-clear cooldown (F-33099b8e)', () => {
@@ -717,5 +719,117 @@ describe('encounter-spawn — post-clear cooldown (F-33099b8e)', () => {
     const after = getEncounterSpawnState(engine.world);
     expect(after.liveByZone['zone-b']).toBeUndefined();
     expect(after.cooledUntilTick?.['zone-b']).toBe(clearTick + DEFAULT_POST_CLEAR_COOLDOWN);
+  });
+
+  it('(5) F-a7e22505: authored cooldownTurns:2 elapsed by clear (spawnTick+5) still arms the default — re-enter clearTick+1 → no spawn; clearTick+2 → allowed', () => {
+    const engine = makeEngine({ baseChance: 1 });
+    const spawnTick = engine.world.meta.tick;
+    const state = getEncounterSpawnState(engine.world);
+    engine.store.addEntity(raiderInZone('pack-1', 'zone-b'));
+    engine.world.entities['pack-1'].resources.hp = 0;
+    state.liveByZone['zone-b'] = { encounterId: 'road-ambush', entityIds: ['pack-1'] };
+    // Spawn-time authored cooldown as an absolute tick (trySpawn :636-640).
+    state.cooledUntilTick = { 'zone-b': spawnTick + 2 };
+
+    for (let i = 0; i < 5; i++) engine.store.advanceTick();
+    const clearTick = engine.world.meta.tick;
+    expect(clearTick).toBe(spawnTick + 5);
+
+    engine.store.emitEvent('combat.encounter.cleared', {
+      zoneId: 'zone-b',
+      outcome: 'victory',
+    });
+
+    // Elapsed authored value must not block the default (future-wins, not iff-undefined).
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBe(
+      clearTick + DEFAULT_POST_CLEAR_COOLDOWN,
+    );
+
+    engine.store.advanceTick(); // clearTick+1
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    expect(runEncounterSpawnStep(engine)).toEqual([]);
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBe(
+      clearTick + DEFAULT_POST_CLEAR_COOLDOWN,
+    );
+
+    engine.store.advanceTick(); // clearTick+2 — default elapsed, spawn allowed
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    const reports = runEncounterSpawnStep(engine);
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBeUndefined();
+    expect(Array.isArray(reports)).toBe(true);
+  });
+
+  it('(6) F-e1b0084d: player-flee then pack dies — subsequent cleared of the combat zone arms the default; re-enter next tick → no spawn; tick+2 → allowed', () => {
+    const engine = makeEngine({ baseChance: 1 });
+    engine.store.addEntity(raiderInZone('pack-1', 'zone-b'));
+    const state = getEncounterSpawnState(engine.world);
+    state.liveByZone['zone-b'] = { encounterId: 'road-ambush', entityIds: ['pack-1'] };
+
+    engine.store.emitEvent('combat.encounter.cleared', {
+      zoneId: 'zone-b',
+      outcome: 'retreat',
+    });
+    expect(getEncounterSpawnState(engine.world).liveByZone['zone-b']).toEqual({
+      encounterId: 'road-ambush',
+      entityIds: ['pack-1'],
+    });
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBeUndefined();
+
+    engine.world.entities['pack-1'].resources.hp = 0;
+    const vacateTick = engine.world.meta.tick;
+    engine.store.emitEvent('combat.encounter.cleared', {
+      zoneId: 'zone-b',
+      outcome: 'victory',
+    });
+
+    expect(getEncounterSpawnState(engine.world).liveByZone['zone-b']).toBeUndefined();
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBe(
+      vacateTick + DEFAULT_POST_CLEAR_COOLDOWN,
+    );
+
+    engine.store.advanceTick(); // next tick
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    expect(runEncounterSpawnStep(engine)).toEqual([]);
+
+    engine.store.advanceTick(); // tick+2
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    const reports = runEncounterSpawnStep(engine);
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBeUndefined();
+    expect(Array.isArray(reports)).toBe(true);
+  });
+
+  it('(7) F-e1b0084d: player-flee then pack leaves — lazy liveByZone vacate on re-entry arms the default (no second cleared)', () => {
+    const engine = makeEngine({ baseChance: 1 });
+    engine.store.addEntity(raiderInZone('pack-1', 'zone-b'));
+    const state = getEncounterSpawnState(engine.world);
+    state.liveByZone['zone-b'] = { encounterId: 'road-ambush', entityIds: ['pack-1'] };
+
+    engine.store.emitEvent('combat.encounter.cleared', {
+      zoneId: 'zone-b',
+      outcome: 'retreat',
+    });
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBeUndefined();
+
+    // Pack chases / flees; no subsequent combat.encounter.cleared names zone-b.
+    engine.world.entities['pack-1'].zoneId = 'zone-a';
+
+    engine.store.advanceTick();
+    const reenterTick = engine.world.meta.tick;
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    expect(runEncounterSpawnStep(engine)).toEqual([]);
+    expect(getEncounterSpawnState(engine.world).liveByZone['zone-b']).toBeUndefined();
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBe(
+      reenterTick + DEFAULT_POST_CLEAR_COOLDOWN,
+    );
+
+    engine.store.advanceTick(); // reenterTick+1 still quiet
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    expect(runEncounterSpawnStep(engine)).toEqual([]);
+
+    engine.store.advanceTick(); // reenterTick+2 elapsed
+    engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'player' });
+    const reports = runEncounterSpawnStep(engine);
+    expect(getEncounterSpawnState(engine.world).cooledUntilTick?.['zone-b']).toBeUndefined();
+    expect(Array.isArray(reports)).toBe(true);
   });
 });
