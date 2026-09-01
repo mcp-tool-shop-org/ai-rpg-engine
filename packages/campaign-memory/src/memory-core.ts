@@ -71,6 +71,16 @@ export type CampaignMemoryCoreConfig = {
  * relationship). data.participants carries the event's own
  * payload.participants (survivors + finalOpponent) verbatim, truthy-gated —
  * this module reads it, it never re-derives clearance itself.
+ * F-860c77bb: categoriesFor returns [] when payload.outcome === 'retreat'
+ * (same event name, not a second RecordCategory). Missing/unknown outcome
+ * still maps to 'combat' for legacy hosts. data.outcome is stamped when
+ * present, truthy-gated.
+ * F-21739f16: companion-joined / alliance rows stamp CompanionState.originFaction
+ * (home guild id captured at recruit). Prefer payload.originFaction, else
+ * duck-type world.modules['companion-core'].companions; NEVER read
+ * entity.faction (post-recruit that is the party id). Alliance rows whose
+ * targetFactionId matches an active companion's originFaction also stamp
+ * data.factionRouteNpcId. No new RecordCategory.
  *
  * F-c1949ae0 (consolidate) is still not called from this file.
  */
@@ -117,6 +127,12 @@ function categoriesFor(event: ResolvedEvent): RecordCategory[] {
   if (event.type === 'leverage.resolved') {
     const sub = event.payload?.subAction;
     return typeof sub === 'string' && ALLIANCE_SUBACTIONS.has(sub) ? ['alliance'] : [];
+  }
+  // F-860c77bb: a flee-clear uses the same event name. Skip the victory
+  // journal (and witness fear) rather than inventing a 'retreat' category.
+  if (event.type === 'combat.encounter.cleared') {
+    if (stringPayload(event.payload ?? {}, 'outcome') === 'retreat') return [];
+    return ['combat'];
   }
   const mapped = EVENT_CATEGORY[event.type];
   if (!mapped) return [];
@@ -193,6 +209,45 @@ function loadBank(
 function stringPayload(payload: Record<string, unknown>, key: string): string | undefined {
   const value = payload[key];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Duck-type world.modules['companion-core'] (flat PartyState). Campaign-memory
+ * stays modules-import-free; CompanionState.originFaction is a named field
+ * the producer emits, not a type we import.
+ */
+function companionCoreEntries(world: WorldState): Array<Record<string, unknown>> {
+  const ns = world.modules['companion-core'];
+  if (!isPlainObject(ns) || !Array.isArray(ns.companions)) return [];
+  return ns.companions.filter(isPlainObject);
+}
+
+/** Home guild id for one companion. NEVER falls back to entity.faction. */
+function originFactionOfCompanion(world: WorldState, npcId: string | undefined): string | undefined {
+  if (!npcId) return undefined;
+  const match = companionCoreEntries(world).find((c) => c.npcId === npcId);
+  return match ? stringPayload(match, 'originFaction') : undefined;
+}
+
+/**
+ * Active companion whose originFaction equals the alliance target.
+ * `active === false` is dismissed/away; a missing `active` still matches
+ * (duck-type — the field may be absent on older namespace fixtures).
+ */
+function factionRouteCompanion(
+  world: WorldState,
+  factionId: string | undefined,
+): { npcId: string; originFaction: string } | undefined {
+  if (!factionId) return undefined;
+  for (const c of companionCoreEntries(world)) {
+    if (c.active === false) continue;
+    const originFaction = stringPayload(c, 'originFaction');
+    const npcId = stringPayload(c, 'npcId');
+    if (originFaction === factionId && npcId) {
+      return { npcId, originFaction };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -423,6 +478,21 @@ function recordLiveEvent(
   // read verbatim — never re-derived from world state.
   const participants =
     event.type === 'combat.encounter.cleared' ? encounterParticipants(payload) : undefined;
+  const outcome =
+    event.type === 'combat.encounter.cleared' ? stringPayload(payload, 'outcome') : undefined;
+
+  // F-21739f16: prefer payload.originFaction, else duck-type companion-core.
+  // Never entity.faction — recruit overwrites that to the party id.
+  const originFaction =
+    category === 'companion-joined'
+      ? (stringPayload(payload, 'originFaction') ?? originFactionOfCompanion(world, targetId))
+      : undefined;
+  const partyFaction =
+    category === 'companion-joined' ? stringPayload(payload, 'faction') : undefined;
+  const factionRoute =
+    category === 'alliance'
+      ? factionRouteCompanion(world, stringPayload(payload, 'targetFactionId') ?? targetId)
+      : undefined;
 
   const actor = world.entities[actorId];
   const target = targetId ? world.entities[targetId] : undefined;
@@ -492,6 +562,15 @@ function recordLiveEvent(
       // module re-deriving clearance. Truthy-gated — omitted entirely
       // (never `participants: undefined`) when the event carries none.
       ...(participants ? { participants } : {}),
+      // F-860c77bb: stamp outcome when present so a journal reader does not
+      // re-derive victory vs anything else. Truthy-gated, same omit rule.
+      ...(outcome ? { outcome } : {}),
+      // F-21739f16: home guild vs party id. Omit rather than originFaction: undefined.
+      ...(originFaction ? { originFaction } : {}),
+      ...(partyFaction ? { partyFaction } : {}),
+      ...(factionRoute
+        ? { originFaction: factionRoute.originFaction, factionRouteNpcId: factionRoute.npcId }
+        : {}),
     },
   });
 
