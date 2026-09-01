@@ -181,9 +181,8 @@ describe('TurnPresenter: victory/defeat stings (F-0671a25f)', () => {
 
 // F-deb1375c / R4: TurnPresenter already deriveStingCue → resolveMusicSting
 // → scheduleStingInto. A flee-clear must not schedule music_victory_sting
-// or paint triumph (green-bold). Cue id combat.retreat is media's map key;
-// until that row lands resolveMusicSting is undefined and no sting fires —
-// still not music_victory_sting.
+// or paint triumph (green-bold). Cue id combat.retreat maps to
+// music_retreat_sting (media F-1b6a21ea).
 describe('TurnPresenter: retreat-cleared (F-deb1375c / R4)', () => {
   const retreatCleared = () =>
     ev(
@@ -198,7 +197,9 @@ describe('TurnPresenter: retreat-cleared (F-deb1375c / R4)', () => {
     expect(
       result.audioCommands.some((c) => c.action === 'sting' && c.resourceId === 'music_victory_sting'),
     ).toBe(false);
-    expect(result.audioCommands.some((c) => c.action === 'sting')).toBe(false);
+    expect(
+      result.audioCommands.some((c) => c.action === 'sting' && c.resourceId === 'music_retreat_sting'),
+    ).toBe(true);
     expect(result.plan.tone).not.toBe('triumph');
     expect(result.plan.tone).toBe('combat');
     expect(result.plan.uiEffects).toEqual([]);

@@ -649,6 +649,24 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
     expect(validateNarrationPlan(plan)).toEqual([]);
   });
 
+  it('a zone-entry turn threads payload.zoneId into resolveZoneMood as the second argument', () => {
+    const zoneWithTone: NarrationSourceEvent = {
+      type: 'world.zone.entered',
+      payload: { zoneId: 'crypt', zoneName: 'Crypt', tone: 'dread' },
+      presentation: { priority: 'normal', soundCues: ['scene.enter'] },
+    };
+    const seen: Array<{ tone: string; zoneId?: string }> = [];
+    buildNarrationPlan({
+      sceneText: 'Entered the crypt.',
+      events: [zoneWithTone],
+      resolveZoneMood: (tone, zoneId) => {
+        seen.push({ tone, zoneId });
+        return { trackId: 'music_dread', layerId: 'ambient_drone' };
+      },
+    });
+    expect(seen).toEqual([{ tone: 'dread', zoneId: 'crypt' }]);
+  });
+
   it('a zone-entry turn with an injected resolveZoneMood uses ITS trackId/layerId over the fallback', () => {
     const zoneWithTone: NarrationSourceEvent = {
       type: 'world.zone.entered',

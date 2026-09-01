@@ -43,6 +43,7 @@ import {
   resolveSoundCue,
   resolveMusicSting,
   districtToneToSoundMood,
+  hashRoll,
   SoundRegistry,
 } from '@ai-rpg-engine/soundpack-core';
 import { formatEventLine, type RenderOptions } from './renderer.js';
@@ -196,20 +197,21 @@ export class TurnPresenter {
   }
 
   /**
-   * F-901767f5 (wave-2 stitch): compose soundpack-core's district-tone
-   * bridge with the mood-aware registry query — the ZoneMoodResolver
-   * buildNarrationPlan's zone-entry music path consumes. Roll is pinned to 0
-   * (first id-sorted match) so the same tone always resolves the same
-   * stem/bed — deterministic and replayable per the engine's determinism
-   * contract; per-session variety is a future lever, not this wiring's job.
-   * Per-field partial results are returned as-is: buildNarrationPlan falls
-   * back per-field to its documented scene.enter targets.
+   * F-901767f5 (wave-2 stitch) + F-cf6a6952: compose soundpack-core's
+   * district-tone bridge with the mood-aware registry query. Roll is
+   * hashRoll(zoneId) when the zone-entry payload carries a zoneId, else 0
+   * — deterministic per zone, still the first id-sorted match on a 1-stem
+   * CORE pack. Per-field partial results are returned as-is.
    */
-  private resolveZoneMood = (tone: string): { trackId?: string; layerId?: string } | undefined => {
+  private resolveZoneMood = (
+    tone: string,
+    zoneId?: string,
+  ): { trackId?: string; layerId?: string } | undefined => {
     const moods = districtToneToSoundMood(tone);
     if (!moods) return undefined;
-    const stem = this.zoneRegistry.pickMusicStem({ mood: [...moods] }, 0);
-    const bed = this.zoneRegistry.pickAmbientBed({ mood: [...moods] }, 0);
+    const roll = zoneId ? hashRoll(zoneId) : 0;
+    const stem = this.zoneRegistry.pickMusicStem({ mood: [...moods] }, roll);
+    const bed = this.zoneRegistry.pickAmbientBed({ mood: [...moods] }, roll);
     if (!stem && !bed) return undefined;
     return {
       ...(stem ? { trackId: stem.id } : {}),
@@ -250,7 +252,7 @@ export class TurnPresenter {
     // after-text commands. Still layers over the stem — never replaces it.
     const stingCue = deriveStingCue(events, world.playerId);
     const sting = stingCue ? resolveMusicSting(stingCue) : undefined;
-    if (sting) this.director.scheduleStingInto(audioCommands, sting.trackId);
+    if (sting) this.director.scheduleStingInto(audioCommands, sting.trackId, { now });
 
     return {
       plan,

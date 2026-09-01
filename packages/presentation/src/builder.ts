@@ -95,7 +95,10 @@ export type BuildNarrationPlanInput = {
  * injection posture) — the real districtToneToSoundMood-backed resolver is
  * composed by the caller, not imported here.
  */
-export type ZoneMoodResolver = (tone: string) => { trackId?: string; layerId?: string } | undefined;
+export type ZoneMoodResolver = (
+  tone: string,
+  zoneId?: string,
+) => { trackId?: string; layerId?: string } | undefined;
 
 /** Event types whose presence marks a turn as combat presentation. */
 const DEFEAT_EVENT = 'combat.entity.defeated';
@@ -456,9 +459,11 @@ export function buildNarrationPlan(input: BuildNarrationPlanInput): NarrationPla
   );
   if (zoneEnteredEvent) {
     const tone = zoneEnteredEvent.payload?.tone;
+    const zoneIdRaw = zoneEnteredEvent.payload?.zoneId;
+    const zoneId = typeof zoneIdRaw === 'string' && zoneIdRaw.length > 0 ? zoneIdRaw : undefined;
     const resolved =
       typeof tone === 'string' && tone.length > 0 && input.resolveZoneMood
-        ? input.resolveZoneMood(tone)
+        ? input.resolveZoneMood(tone, zoneId)
         : undefined;
     musicCue = {
       action: 'play',
