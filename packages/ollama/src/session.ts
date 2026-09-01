@@ -2,7 +2,7 @@
 // Active copy lives in .ai-session.json; named slots live under .ai-sessions/<slug>.json.
 // Commands read session state to enrich prompts but never require it.
 
-import { readFile, writeFile, unlink, stat, mkdir, readdir, rename, copyFile } from 'node:fs/promises';
+import { readFile, writeFile, unlink, stat, mkdir, readdir, rename } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { CritiqueIssue } from './parsers.js';
 import type { BuildState } from './chat-build-planner.js';
@@ -596,8 +596,12 @@ export async function tryLoadSession(projectRoot: string): Promise<DesignSession
 
 /**
  * Write `contents` via sibling `.tmp` then rename so a crash mid-write cannot
- * replace a restorable session with truncated JSON (F-3f17cbc3). Mirrors
- * apply-preview's Windows-safe rename (copy+unlink when dest exists).
+ * replace a restorable session with truncated JSON (F-3f17cbc3).
+ *
+ * On EPERM/EEXIST/EACCES (Windows dest locked or exists), do **not** copyFile
+ * over dest — that can truncate the crash copy. Stage dest.new, then
+ * dest → dest.bak, then dest.new → dest so dest bytes stay intact until
+ * replacement is complete (F-3eee19a1).
  */
 async function atomicWriteFile(file: string, contents: string): Promise<void> {
   const tmpPath = `${file}.tmp`;
@@ -607,11 +611,30 @@ async function atomicWriteFile(file: string, contents: string): Promise<void> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException | null)?.code;
     if (code === 'EEXIST' || code === 'EPERM' || code === 'EACCES') {
-      await copyFile(tmpPath, file);
-      await unlink(tmpPath);
+      await replaceExistingAtomic(file, tmpPath, contents);
       return;
     }
     throw err;
+  }
+}
+
+/** Sibling-write replacement: dest is not touched until dest.new is complete. */
+async function replaceExistingAtomic(file: string, tmpPath: string, contents: string): Promise<void> {
+  const newPath = `${file}.new`;
+  const bakPath = `${file}.bak`;
+  try {
+    await rename(tmpPath, newPath);
+  } catch {
+    await writeFile(newPath, contents, 'utf-8');
+    try { await unlink(tmpPath); } catch { /* leftover tmp is not dest */ }
+  }
+  try { await unlink(bakPath); } catch { /* no prior bak */ }
+  await rename(file, bakPath);
+  try {
+    await rename(newPath, file);
+  } catch (replaceErr) {
+    try { await rename(bakPath, file); } catch { /* dest unrestorable */ }
+    throw replaceErr;
   }
 }
 
@@ -647,9 +670,30 @@ function inFlightForPersist<T extends { status: string; stagedWrites: Record<str
 }
 
 /**
+ * Load `.ai-sessions/untitled.json` with the same contract as
+ * {@link resumeNamedSession} (readSessionFile; missing → null). Used by
+ * persistInFlight so auto-create cannot clobber an ended untitled slot
+ * (F-2b2bfb7b).
+ */
+async function loadUntitledNamedSlot(projectRoot: string): Promise<DesignSession | null> {
+  try {
+    return await readSessionFile(namedSessionPath(projectRoot, 'untitled'));
+  } catch (err) {
+    if (err instanceof SessionLoadError && err.code === 'SESSION_NOT_FOUND') return null;
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/**
  * Attach live BuildState/TuningState onto the session file (creating one if
  * needed) so a crash cannot destroy an unconfirmed /build or /tune batch.
  * Persist-on-mutate, not persist-on-exit (F-3f17cbc3).
+ *
+ * If `session` is null and `.ai-sessions/untitled.json` exists, load that
+ * named slot and attach in-flight onto it so artifacts/history survive.
+ * Only `createSession('untitled')` when no named slot exists (F-2b2bfb7b).
+ * Never writes pack files and never calls applyConfirmed.
  *
  * If stringify would exceed MAX_SESSION_JSON_BYTES, refuse the in-flight
  * attach, leave the previous session bytes untouched, and warn.
@@ -659,7 +703,18 @@ export async function persistInFlight(
   session: DesignSession | null,
   inflight: InFlightPersistInput,
 ): Promise<PersistInFlightResult> {
-  const target = session ?? createSession('untitled');
+  let target: DesignSession;
+  if (session) {
+    target = session;
+  } else {
+    try {
+      target = await loadUntitledNamedSlot(projectRoot) ?? createSession('untitled');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Warning: could not persist in-flight session: ${msg}`);
+      return { session: createSession('untitled'), persisted: false };
+    }
+  }
   const build = inFlightForPersist(inflight.activeBuild ?? null);
   const tuning = inFlightForPersist(inflight.activeTuning ?? null);
   const owner = inflight.pendingWriteBatchOwner ?? null;
@@ -821,7 +876,7 @@ export async function switchSession(projectRoot: string, name: string): Promise<
     await saveSession(projectRoot, current);
   }
   const json = JSON.stringify(target, null, 2) + '\n';
-  await writeFile(sessionPath(projectRoot), json, 'utf-8');
+  await atomicWriteFile(sessionPath(projectRoot), json);
   return target;
 }
 
@@ -836,7 +891,7 @@ export async function resumeNamedSession(
   const named = namedSessionPath(projectRoot, name);
   try {
     const target = await readSessionFile(named);
-    await writeFile(sessionPath(projectRoot), JSON.stringify(target, null, 2) + '\n', 'utf-8');
+    await atomicWriteFile(sessionPath(projectRoot), JSON.stringify(target, null, 2) + '\n');
     return target;
   } catch (err) {
     if (err instanceof SessionLoadError && err.code === 'SESSION_NOT_FOUND') return null;

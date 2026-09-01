@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { tmpdir } from 'node:os';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createSession,
@@ -569,6 +569,32 @@ describe('session', () => {
       expect((await loadSession(tempDir))?.name).toBe('harbor');
     });
 
+    it('switchSession leaves no leftover .tmp on the active crash copy (F-3eee19a1)', async () => {
+      const harbor = createSession('harbor');
+      addThemes(harbor, ['salt-road']);
+      await saveSession(tempDir, harbor);
+      const underdark = createSession('underdark');
+      addThemes(underdark, ['mycelium']);
+      await saveSession(tempDir, underdark);
+
+      await switchSession(tempDir, 'harbor');
+      const active = join(tempDir, '.ai-session.json');
+      expect(JSON.parse(await readFile(active, 'utf-8')).name).toBe('harbor');
+      await expect(readFile(`${active}.tmp`, 'utf-8')).rejects.toThrow();
+    });
+
+    it('resumeNamedSession leaves no leftover .tmp on the active crash copy (F-3eee19a1)', async () => {
+      const s = createSession('harbor');
+      addThemes(s, ['salt']);
+      await saveSession(tempDir, s);
+      await endSession(tempDir);
+
+      await resumeNamedSession(tempDir, 'harbor');
+      const active = join(tempDir, '.ai-session.json');
+      expect(JSON.parse(await readFile(active, 'utf-8')).themes).toEqual(['salt']);
+      await expect(readFile(`${active}.tmp`, 'utf-8')).rejects.toThrow();
+    });
+
     it('exportSession writes JSON (and optionally a path)', async () => {
       await saveSession(tempDir, createSession('harbor'));
       const toStdout = await exportSession(tempDir);
@@ -737,6 +763,54 @@ describe('session', () => {
       expect(loaded).not.toBeNull();
       expect(loaded!.activeBuild?.plan.goal).toBe('untitled build');
       expect(loaded!.activeBuild?.stagedWrites['content/rooms/a.yaml']?.content).toBe('id: a');
+    });
+
+    it('persistInFlight resumes an existing untitled named slot instead of clobbering it (F-2b2bfb7b)', async () => {
+      const existing = createSession('untitled');
+      addThemes(existing, ['haunted-market']);
+      addArtifact(existing, 'rooms', 'market-hall');
+      recordEvent(existing, 'build_plan_completed', 'Build completed: haunted market');
+      await mkdir(join(tempDir, '.ai-sessions'), { recursive: true });
+      await writeFile(
+        join(tempDir, '.ai-sessions', 'untitled.json'),
+        JSON.stringify(existing, null, 2) + '\n',
+        'utf-8',
+      );
+      expect(await loadSession(tempDir)).toBeNull();
+
+      const plan: BuildPlan = {
+        goal: 'haunted market', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+      };
+      const build = createBuildState(plan);
+      build.stagedWrites['content/rooms/stall.yaml'] = {
+        content: 'id: stall', suggestedPath: 'content/rooms/stall.yaml',
+        label: 'room: stall', sourceStepId: 1,
+      };
+      const result = await persistInFlight(tempDir, null, {
+        activeBuild: build, activeTuning: null, pendingWriteBatchOwner: 'build',
+      });
+      expect(result.persisted).toBe(true);
+      expect(result.session.themes).toEqual(['haunted-market']);
+      expect(result.session.artifacts.rooms).toContain('market-hall');
+      expect(result.session.history.some(e => e.kind === 'session_start')).toBe(true);
+      expect(result.session.history.some(e => e.kind === 'build_plan_completed')).toBe(true);
+      expect(result.session.activeBuild?.plan.goal).toBe('haunted market');
+
+      const named = JSON.parse(
+        await readFile(join(tempDir, '.ai-sessions', 'untitled.json'), 'utf-8'),
+      ) as DesignSession;
+      expect(named.themes).toEqual(['haunted-market']);
+      expect(named.artifacts.rooms).toContain('market-hall');
+      expect(named.history.some(e => e.kind === 'build_plan_completed')).toBe(true);
+      expect(named.activeBuild?.plan.goal).toBe('haunted market');
+      expect(named.activeBuild?.stagedWrites['content/rooms/stall.yaml']?.content).toBe('id: stall');
+
+      const active = await loadSession(tempDir);
+      expect(active?.artifacts.rooms).toContain('market-hall');
+      expect(active?.history.some(e => e.kind === 'build_plan_completed')).toBe(true);
+      expect(active?.activeBuild?.plan.goal).toBe('haunted market');
+
+      await expect(readFile(join(tempDir, 'content', 'pack.json'), 'utf-8')).rejects.toThrow();
     });
 
     it('persistInFlight clears a finished plan with empty stagedWrites (keeps history)', async () => {
