@@ -374,10 +374,16 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
   });
 
   it('cognition-only factions stay OUT of playerReputations — no invented neutral zeros diluting averages', () => {
-    const engine = makeGame(); // chapel-undead lives in faction-cognition only
+    const engine = makeGame();
+    // chapel-undead is now in WorldState.factions (R3 membership seed). A
+    // cognition-only id must not have an authored baseline or reputation_*.
+    const ns = engine.store.state.modules['faction-cognition'] as {
+      factionCognition: Record<string, { beliefs: unknown[]; alertLevel: number; cohesion: number }>;
+    };
+    ns.factionCognition['ghost-choir'] = { beliefs: [], alertLevel: 0, cohesion: 0.8 };
     const inputs = buildEndgameInputs(engine.world);
-    expect(inputs.factionStates.some((f) => f.factionId === 'chapel-undead')).toBe(true);
-    expect(inputs.playerReputations.some((r) => r.factionId === 'chapel-undead')).toBe(false);
+    expect(inputs.factionStates.some((f) => f.factionId === 'ghost-choir')).toBe(true);
+    expect(inputs.playerReputations.some((r) => r.factionId === 'ghost-choir')).toBe(false);
   });
 
   it('companions are read from world.modules["companion-core"].companions', () => {
@@ -478,10 +484,16 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
 
     // Same death after a hunted, hated run: heat 85 (defeat-fallout's global),
     // every faction hostile, no companions → checkExile's thresholds fire.
+    // R3 seeds chapel-undead onto WorldState.factions at 0; exile requires
+    // EVERY reputation < -30, so the seeded roster must be hostile too.
     const lived = makeGame();
     lived.store.state.factions['chapel-order'] = {
       id: 'chapel-order', name: 'Chapel Order', reputation: -60, disposition: 'hostile',
     };
+    for (const faction of Object.values(lived.store.state.factions)) {
+      faction.reputation = -60;
+      faction.disposition = 'hostile';
+    }
     lived.store.state.globals['player_heat'] = 85;
     (lived.store.state.modules['world-tick'] as { pressures: unknown[] }).pressures = [
       makeTestPressure('wp-a'),
