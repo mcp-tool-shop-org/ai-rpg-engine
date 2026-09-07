@@ -1,3 +1,14 @@
+# --- Measured CI cost (dogfood-swarm SKILL item 8) --------------------------
+# 8 billable min per push across 3 jobs (5.9 min actual wall time),
+# measured 2026-09-07 from run 34122798052. Most expensive jobs:
+#     4 min  build-and-test (22)  (3.0 min wall)
+#     2 min  build-and-test (24)  (1.9 min wall)
+#     2 min  Docker smoke (CLI image)  (1.0 min wall)
+# GitHub bills per JOB, rounded UP to the minute, x2 Windows / x10 macOS, so
+# billable minutes exceed wall time — many short jobs cost more than one long
+# one. This number is measured, never estimated; re-measure after any change:
+#   gh api repos/mcp-tool-shop-org/ai-rpg-engine/actions/runs/<id>/jobs
+# ---------------------------------------------------------------------------
 name: CI
 
 permissions:
