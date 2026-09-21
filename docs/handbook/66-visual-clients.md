@@ -28,6 +28,9 @@ Handshake capabilities are additive:
 
 `felt` is `AudioCommand[]` (cue ids; overlay stings do not replace the zone stem), optional `speaker` (the spoken line once), and `uiEffects`. It is omitted when `audio` is off so exact-match clients stay stable. It is **never** in the state hash. Writers play it from the submit/advance result and ignore `sim/tick.felt` so overlay stings do not double. Observers never get those RPC results; they play the tick.
 
+`audio` negotiation ships from **v3.12.0**. A host that does not ask for it sees the same
+bytes it saw before, which is the point of an additive capability.
+
 A `--content` sidecar boot still needs `--manifest` (`SIDECAR_MANIFEST_REQUIRED`).
 
 ## The Godot client (ai-rpg-stage)
