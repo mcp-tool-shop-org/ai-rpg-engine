@@ -7,7 +7,7 @@ sidebar:
 
 A guide to building simulation-driven RPG worlds — from first room to experiment-driven balancing.
 
-Current release: **v3.11.0**. Tuning and depth on the consumer surface: `bounty` is reachable on authored content, `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'`, faction membership lives in three places (person, kept registry, companion origin), `/build` staged writes survive a crash, and a new session emits the starting-zone entered event. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
+Current release: **v3.12.0**. The first pixel host gets a contract: sidecar `capabilities.audio` negotiates a `felt` payload — cue ids, overlay stings that do not replace the zone stem, the spoken line once, and a client's lie budget — additive, omitted when the capability is off, and never hashed. Chapter 66 writes down what a visual host may lie about and what stays the sim's, and a hanging DNS lookup in `webfetch` now reports as a timeout instead of a blocked URL. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
 
 ---
 

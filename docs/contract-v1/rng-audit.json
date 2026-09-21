@@ -38,7 +38,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 378
+      "sessionEvents": 379
     },
     {
       "packId": "black-flag-requiem",
@@ -56,7 +56,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 413
+      "sessionEvents": 417
     },
     {
       "packId": "dust-devils-bargain",
@@ -65,7 +65,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 254
+      "sessionEvents": 256
     },
     {
       "packId": "signal-loss",
@@ -74,7 +74,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 380
+      "sessionEvents": 384
     },
     {
       "packId": "crimson-court",
@@ -83,7 +83,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 376
+      "sessionEvents": 384
     },
     {
       "packId": "iron-colosseum",
@@ -101,7 +101,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 288
+      "sessionEvents": 291
     },
     {
       "packId": "salt-road-ledger",
@@ -119,7 +119,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 270
+      "sessionEvents": 273
     }
   ]
 }

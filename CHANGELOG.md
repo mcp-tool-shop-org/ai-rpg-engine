@@ -5,14 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.12.0] - 2026-09-21
 
-### Fixed
-- **Webfetch names a DNS deadline as a timeout.** A hanging hop-1 lookup is
-  no longer inferred from wall-clock `elapsed >= dnsTimeout` after the gate
-  collapsed timeout into `false`. Node 22 CI could fire `setTimeout` a
-  millisecond early and report `URL not allowed` instead of `timed out`
-  (`F-c4a128fc`). NXDOMAIN / blocked hosts still fail closed as not allowed.
+**A host that draws can hear the world.** The sidecar learns one more
+negotiated capability, and it is the one a pixel client needs: with
+`capabilities.audio` on, every submit, advance and matching tick carries the
+felt of that moment — the cue ids to play, the sting that rides over the zone
+stem instead of replacing it, the line a character actually spoke, and the
+shake a client is allowed to add on its own. None of it is hashed, so a host
+that plays it and a host that ignores it still agree on the world. Chapter 66
+writes that contract down for any visual client, and `webfetch` stops calling
+a hung DNS lookup a blocked URL.
 
 ### Added
 - **Sidecar `capabilities.audio`.** A negotiated, additive felt payload on
@@ -20,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not replace the zone stem), optional `speaker` (the spoken line once), and
   `uiEffects` for a client's lie budget. Omitted when the capability is off.
   Never hashed.
+
+### Fixed
+- **Webfetch names a DNS deadline as a timeout.** A hanging hop-1 lookup is
+  no longer inferred from wall-clock `elapsed >= dnsTimeout` after the gate
+  collapsed timeout into `false`. Node 22 CI could fire `setTimeout` a
+  millisecond early and report `URL not allowed` instead of `timed out`
+  (`F-c4a128fc`). NXDOMAIN / blocked hosts still fail closed as not allowed.
 
 ### Docs
 - **Handbook ch.66 Visual Clients.** Sidecar hosts, the felt payload, and the
