@@ -15,10 +15,7 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/mcp-tool-shop-org/ai-rpg-engine' },
       ],
       sidebar: [
-        {
-          label: 'Handbook',
-          autogenerate: { directory: 'handbook' },
-        },
+        { label: 'Handbook', items: [{ autogenerate: { directory: 'handbook' } }] },
       ],
       customCss: ['./src/styles/starlight-custom.css'],
       disable404Route: true,

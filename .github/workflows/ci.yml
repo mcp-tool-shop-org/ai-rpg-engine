@@ -31,6 +31,9 @@ on:
       - 'docs/check-docs-integrity.mjs'
       - 'docs/mixed-game-viability-proof.ts'
       - '.github/workflows/**'
+      - 'site/package.json'
+      - 'site/package-lock.json'
+      - 'site/astro.config.mjs'
   pull_request:
     paths:
       - 'packages/**'
@@ -47,6 +50,9 @@ on:
       - 'docs/check-docs-integrity.mjs'
       - 'docs/mixed-game-viability-proof.ts'
       - '.github/workflows/**'
+      - 'site/package.json'
+      - 'site/package-lock.json'
+      - 'site/astro.config.mjs'
   workflow_dispatch:
 
 concurrency:
