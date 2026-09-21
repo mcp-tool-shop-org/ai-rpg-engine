@@ -1,0 +1,145 @@
+{
+  "schema": "roleos-citation-receipt/v1",
+  "kind": "citation-verification",
+  "tool": "roleos verify-citations",
+  "input": "docs/study-swarm/felt-world.dispatch.md",
+  "verdict": "escalate",
+  "blocking": false,
+  "advisory": true,
+  "citations_sha256": "d8ba1934120c37bc846347852db2312d5b7564c23d031b6240154c502ba8abc2",
+  "prism_receipt": {
+    "id": "prism-01m30d2bxxgn4kxqgwep61kngx",
+    "signature": "e93b43829a116a87f379df6743866c53b8646e9a9b042d8dd328f7d3bb1225f9d88538acb7768e7369cea87f1417d238c349d7f67754a0407e9cac460cbda30a",
+    "verdict": "escalate"
+  },
+  "retrieval_pins": [
+    {
+      "id": "c1",
+      "identifier": "10.1016/j.entcom.2020.100359",
+      "query": "https://api.crossref.org/works/10.1016/j.entcom.2020.100359?mailto=verify%40prism-verify.dev",
+      "source_sha256": "25b56dd54334b66b58d633ea0e13619cdf9590bd4547250f685ddab2c39ec29c",
+      "existence": "resolved"
+    },
+    {
+      "id": "c2",
+      "identifier": "10.1145/3613904.3642656",
+      "query": "https://api.crossref.org/works/10.1145/3613904.3642656?mailto=verify%40prism-verify.dev",
+      "source_sha256": "04027b0306fc3a1060e0fb2cc5a960f7f0b82cb2a69c9b95fcd229c8efa7ff4a",
+      "existence": "resolved"
+    },
+    {
+      "id": "c3",
+      "identifier": "arXiv:2011.09201",
+      "query": "https://export.arxiv.org/api/query?id_list=2011.09201",
+      "source_sha256": "6a6db713e948e8d6a4b85d329d539d673cb3a58ecaf4c93937431773e1894bd9",
+      "existence": "resolved"
+    },
+    {
+      "id": "c4",
+      "identifier": "10.26503/dl.v2018i1.936",
+      "query": "https://api.crossref.org/works/10.26503/dl.v2018i1.936?mailto=verify%40prism-verify.dev",
+      "source_sha256": "d765c210814e1baa3aa5f3ab385d6324a3b4ed0077687ea3ad6a88fa8bdfbebe",
+      "existence": "resolved"
+    },
+    {
+      "id": "c5",
+      "identifier": "10.1145/3311350.3347171",
+      "query": "https://api.crossref.org/works/10.1145/3311350.3347171?mailto=verify%40prism-verify.dev",
+      "source_sha256": "edc64488acbe1c61316d9cf7f5583bfb7a43942f60ab9f0596a62a863ca9ee96",
+      "existence": "resolved"
+    },
+    {
+      "id": "c6",
+      "identifier": "10.1145/1314683.1314689",
+      "query": "https://api.crossref.org/works/10.1145/1314683.1314689?mailto=verify%40prism-verify.dev",
+      "source_sha256": "2a8c717b198706715b3b9873b698c7f56f30c2aea559b69400af0be04a0c687b",
+      "existence": "resolved"
+    },
+    {
+      "id": "c7",
+      "identifier": "10.1177/0018720813510735",
+      "query": "https://api.crossref.org/works/10.1177/0018720813510735?mailto=verify%40prism-verify.dev",
+      "source_sha256": "695ad54db6b348b6164f6f6affd9495f7896f3bdb807911aa490a8a956a4971e",
+      "existence": "resolved"
+    },
+    {
+      "id": "c8",
+      "identifier": "10.1080/00140139508925269",
+      "query": "https://api.crossref.org/works/10.1080/00140139508925269?mailto=verify%40prism-verify.dev",
+      "source_sha256": "2537638fe914509fc86000e0d4f15aadb67b3cb55691c38c0dc3928b43dc7d2f",
+      "existence": "resolved"
+    },
+    {
+      "id": "c9",
+      "identifier": "10.1109/CIG.2019.8847951",
+      "query": "https://api.crossref.org/works/10.1109/CIG.2019.8847951?mailto=verify%40prism-verify.dev",
+      "source_sha256": "def65c16b9856f5a1194848ca08e5ac74d008a891957687b289059395ba69fb3",
+      "existence": "resolved"
+    },
+    {
+      "id": "c10",
+      "identifier": "10.1080/15213269.2018.1507827",
+      "query": "https://api.crossref.org/works/10.1080/15213269.2018.1507827?mailto=verify%40prism-verify.dev",
+      "source_sha256": "3396da2556aa260c5913b70ab1438ba8206b5b181c9bee4bdb75b363dd53be61",
+      "existence": "resolved"
+    },
+    {
+      "id": "c11",
+      "identifier": "10.1037/0022-0663.93.1.187",
+      "query": "https://api.crossref.org/works/10.1037/0022-0663.93.1.187?mailto=verify%40prism-verify.dev",
+      "source_sha256": "1f908eeb26e039c68216862bf8c93c88890bc8416860d123f2dee56f3b932d64",
+      "existence": "resolved"
+    },
+    {
+      "id": "c12",
+      "identifier": "10.1037/0022-0663.94.1.156",
+      "query": "https://api.crossref.org/works/10.1037/0022-0663.94.1.156?mailto=verify%40prism-verify.dev",
+      "source_sha256": "932f4e95fa94b04bd58869faa3a5e01dbcd425276244c40478801bf8ed48ddc1",
+      "existence": "resolved"
+    },
+    {
+      "id": "c13",
+      "identifier": "10.1037/a0026147",
+      "query": "https://api.crossref.org/works/10.1037/a0026147?mailto=verify%40prism-verify.dev",
+      "source_sha256": "9375ecf30463080b76db5ea31bec3787ce6860fc3d044fdf0c356dc9cdda154b",
+      "existence": "resolved"
+    },
+    {
+      "id": "c14",
+      "identifier": "10.1002/acp.1787",
+      "query": "https://api.crossref.org/works/10.1002/acp.1787?mailto=verify%40prism-verify.dev",
+      "source_sha256": "1cca06ed33b12d3d185be99eb82a48c6d0fda290ebb4b9673f0f35d6c2aa43c8",
+      "existence": "resolved"
+    },
+    {
+      "id": "c15",
+      "identifier": "10.1037/1076-898X.7.3.171",
+      "query": "https://api.crossref.org/works/10.1037/1076-898X.7.3.171?mailto=verify%40prism-verify.dev",
+      "source_sha256": "f09d036ef43aa498f94bd95b24bbf8a8b1eedfec8d48c3640d155ba0309374e5",
+      "existence": "resolved"
+    },
+    {
+      "id": "c16",
+      "identifier": "10.1098/rstb.2009.0138",
+      "query": "https://api.crossref.org/works/10.1098/rstb.2009.0138?mailto=verify%40prism-verify.dev",
+      "source_sha256": "13b7c2007a2f04d12118115a26d6338a77abedcaab4964287ba8f4bd02526bf9",
+      "existence": "resolved"
+    },
+    {
+      "id": "c17",
+      "identifier": "10.1080/15213269.2015.1015740",
+      "query": "https://api.crossref.org/works/10.1080/15213269.2015.1015740?mailto=verify%40prism-verify.dev",
+      "source_sha256": "2bf0b446098b5f8155ef93d418ebb45cd2aa5beba48777b6187c78646725f2cf",
+      "existence": "resolved"
+    },
+    {
+      "id": "c18",
+      "identifier": "10.1016/j.intcom.2010.04.005",
+      "query": "https://api.crossref.org/works/10.1016/j.intcom.2010.04.005?mailto=verify%40prism-verify.dev",
+      "source_sha256": "bb146daa5be65813a3afd5f1835648ed4ca6bb571ef7d9cffddd42c8176c09a7",
+      "existence": "resolved"
+    }
+  ],
+  "local_panel": null,
+  "chain_sha256": "55b8c854faeaca10943e1a045a35cf75246dbdfeb31762c44e22ce6536fad99a"
+}

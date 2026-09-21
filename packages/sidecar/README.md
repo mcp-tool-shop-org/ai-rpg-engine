@@ -141,7 +141,7 @@ the renderer.
 | `load` | `Engine.deserialize`, rebase every live session, push a snapshot-shaped baseline. Writers only. |
 | `shutdown` | Orderly stop. May omit `id` (fire-and-forget). Observers refused. |
 
-Notifications: `sim/tick` (events + delta + hash + `snapshotSeq`; `canonicalHash` when negotiated), `sim/closing`.
+Notifications: `sim/tick` (events + delta + hash + `snapshotSeq`; `canonicalHash` when negotiated; `felt` when `audio` is on), `sim/closing`. Writers play `felt` from the submit/advance result and ignore `sim/tick.felt` so overlay stings do not double. Observers never get those RPC results; they play the tick.
 
 `initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second hash, never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`), `listActions`, `presentation` (tick/replay events are `engine.presentAll`; hidden events dropped), `audio` (submit/advance/tick carry a `felt` payload of cue-ids, an optional spoken line, and UI effects — presentation-only, never hashed). Incremental ticks are withheld until that session has served `snapshot`. Two `writes: true` sessions serialize mutations by session-order then JSON-RPC id.
 

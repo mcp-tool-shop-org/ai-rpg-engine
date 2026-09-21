@@ -1112,3 +1112,134 @@ describe('F-9bb888dc — LOAD invalidates packIntake (composes F-7d41ae63)', () 
   });
 });
 
+describe('felt audio capability — additive, never hashed', () => {
+  it('omits felt when audio is not negotiated', () => {
+    const { call, sent } = boot();
+    call(METHODS.SNAPSHOT);
+    const reply = call(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+    const result = reply?.result as { felt?: unknown; hash: string };
+    expect(result.felt).toBeUndefined();
+    const tick = sent.find((m) => m.method === NOTIFICATIONS.TICK);
+    expect((tick?.params as { felt?: unknown } | undefined)?.felt).toBeUndefined();
+  });
+
+  it('echoes capabilities.audio and attaches felt without changing the hash', () => {
+    const engine = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const silent: RpcMessage[] = [];
+    const silentServer = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => silent.push(m));
+    silentServer.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    silentServer.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SNAPSHOT, params: {} });
+    silentServer.handle({
+      jsonrpc: '2.0',
+      id: 3,
+      method: METHODS.SUBMIT_ACTION,
+      params: { verb: 'brand' },
+    });
+    const silentResult = silent.find((m) => m.id === 3)?.result as { hash: string; felt?: unknown };
+
+    const engine2 = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const heard: RpcMessage[] = [];
+    const heardServer = new SidecarServer({ engine: engine2, engineVersion: '3.8.0-test' }, (m) =>
+      heard.push(m),
+    );
+    heardServer.handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: METHODS.INITIALIZE,
+      params: { capabilities: { audio: true } },
+    });
+    expect(heardServer.capabilities.audio).toBe(true);
+    heardServer.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SNAPSHOT, params: {} });
+    heardServer.handle({
+      jsonrpc: '2.0',
+      id: 3,
+      method: METHODS.SUBMIT_ACTION,
+      params: { verb: 'brand' },
+    });
+    const heardResult = heard.find((m) => m.id === 3)?.result as {
+      hash: string;
+      felt?: { audio: unknown[] };
+    };
+    expect(heardResult.felt).toBeDefined();
+    expect(Array.isArray(heardResult.felt?.audio)).toBe(true);
+    expect(heardResult.hash).toBe(silentResult.hash);
+    const tick = heard.find((m) => m.method === NOTIFICATIONS.TICK);
+    expect((tick?.params as { felt?: unknown } | undefined)?.felt).toEqual(heardResult.felt);
+  });
+
+  it('advance also attaches felt when audio is on', () => {
+    const { engine } = boot();
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
+    server.handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: METHODS.INITIALIZE,
+      params: { capabilities: { audio: true } },
+    });
+    server.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SNAPSHOT, params: {} });
+    server.handle({ jsonrpc: '2.0', id: 3, method: METHODS.ADVANCE, params: { rounds: 1 } });
+    const result = sent.find((m) => m.id === 3)?.result as { felt?: { audio: unknown[] } };
+    expect(result.felt).toBeDefined();
+    expect(Array.isArray(result.felt?.audio)).toBe(true);
+  });
+
+  it('an observer with audio plays felt from the replicated tick', async () => {
+    const { a, b } = dualLoopback(true);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true });
+    await b.client.initialize({
+      notifications: true,
+      hashes: true,
+      writes: false,
+      audio: true,
+    });
+    expect(b.server.capabilities.audio).toBe(true);
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    const writerTick = a.client.receivedTicks.at(-1);
+    const observerTick = b.client.receivedTicks.at(-1);
+    expect(writerTick?.felt).toBeUndefined();
+    expect(observerTick?.felt).toBeDefined();
+    expect(Array.isArray(observerTick?.felt?.audio)).toBe(true);
+  });
+});
+
+

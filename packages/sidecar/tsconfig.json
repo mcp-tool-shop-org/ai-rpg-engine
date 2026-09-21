@@ -8,9 +8,10 @@
     "src"
   ],
   "references": [
-    {
-      "path": "../core"
-    }
+    { "path": "../core" },
+    { "path": "../presentation" },
+    { "path": "../audio-director" },
+    { "path": "../soundpack-core" }
   ],
   "exclude": [
     "src/**/*.test.ts"
