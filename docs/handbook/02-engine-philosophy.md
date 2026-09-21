@@ -44,6 +44,8 @@ The engine tracks both the objective truth and the presented version of events.
 
 This allows games built with AI RPG Engine to experiment with perception, misinformation, and discovery without breaking the underlying simulation.
 
+A visual host is the same split. Occupancy in the sim is a **zone id**. A Godot sprite may tween across diamonds, a camera may shake, a toast may flash — those are presentation lies and they are never hashed. A `CharacterBody2D` that collides on its own is a second physics world. See [Chapter 66](./66-visual-clients.md).
+
 ---
 
 ## Events Drive Everything

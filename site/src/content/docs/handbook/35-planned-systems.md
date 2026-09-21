@@ -64,6 +64,10 @@ Rumor lifecycle engine with mutation mechanics. Rumors now mutate as they spread
 
 NPCs that travel with the player, maintaining their own cognition state. The `companion-core` module manages party state, companion morale, cohesion, and ability modifiers. The `companion-reactions` module evaluates departure risk and companion reactions to player decisions. Companions observe the same events through different perception filters, forming independent beliefs that may contradict the narrator or the player's understanding.
 
+## Shipped as a visual host
+
+The Godot 4 client [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) consumes the sidecar: felt audio (`capabilities.audio`), a 2:1 dimetric harbour, Foundry 8-dir characters, and a lie budget that cannot write hashed occupancy. It is a host, not an engine module. See [Chapter 66](./66-visual-clients.md).
+
 ## Planned
 
 ### Stealth Systems

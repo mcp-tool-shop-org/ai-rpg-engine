@@ -11,6 +11,8 @@ sidebar:
 
 No grid. No hexes. No distance tracking. Positioning is zone-based: entities occupy zones, zones have neighbors, and engagement statuses describe where you are relative to the fight. Four engagement states, two battlefield tags, and deterministic formula modifiers. If a pack needs richer spatial effects, use resources and abilities — not new engagement states.
 
+A visual client may *draw* a diamond grid (the Godot stage does). That grid is not this chapter. Clicks that stay inside the current zone never reach `move`. Clicks that cross a neighbour do. See [Chapter 66](./66-visual-clients.md).
+
 ## Engagement State Reference
 
 ### ENGAGED (`engagement:engaged`)

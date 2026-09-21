@@ -63,6 +63,7 @@ How the engine processes actions, events, perception, and cognition.
 - [AI Cognition](./08-ai-cognition.md) — beliefs, intent, morale, memory
 - [Perception Layers](./09-perception-layers.md) — sensory channels, clarity, distortion
 - [Narrative Authority](./12-narrative-authority.md) — truth vs presentation, unreliable narration
+- [Visual Clients](./66-visual-clients.md) — sidecar hosts, felt audio, the Godot 4 dimetric client
 
 ### Living Systems
 
@@ -177,6 +178,7 @@ build → simulate → analyze → tune → experiment
 32. [Save Files](./32-save-files.md)
 33. [Deterministic Replay](./33-deterministic-replay.md)
 34. [Observability](./34-observability.md)
+66. [Visual Clients](./66-visual-clients.md) — sidecar, felt, Godot dimetric harbour
 
 ### Part IX — Live Systems
 
