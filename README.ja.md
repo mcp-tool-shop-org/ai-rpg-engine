@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -22,23 +22,25 @@
 
 ## これは何なのか
 
-- **モジュールライブラリ** — 30以上のエンジンモジュールがあり、戦闘、知覚、認知、派閥、噂、移動、仲間などをカバー
-- **コンポジションツールキット** — `buildCombatStack()` で戦闘を約7行で構成、`new Engine({ modules })` でゲームを起動
-- **シミュレーションランタイム** — 決定的なティック、再生可能なアクションログ、シードされた乱数生成
-- **AIデザインスタジオ**（オプション） — スキャフォールディング、批評、バランス分析、調整、Ollamaを介した実験
-- **オプションのオンレジャーレイヤー** — `@ai-rpg-engine/ledger-adapter` は、ゲームのコインと取引可能なアイテムを実際のXRPL **テストネット**トークンで裏付け、チェックポイントで決済します。これは、決定的なコアとは完全に独立しています（オプション。これがない場合でも、実行はバイト単位で同一になります）。
+- **モジュールライブラリ** — 戦闘、知覚、認知、派閥、噂、移動、仲間など、30以上のエンジンモジュールを網羅
+- **コンポジションツールキット** — `buildCombatStack()` で戦闘を約7行で記述、`new Engine({ modules })` でゲームを起動
+- **シミュレーションランタイム** — 決定的な処理、再生可能なアクションログ、シード値による乱数生成
+- **AIデザインスタジオ**（オプション） — テンプレート、批評、バランス分析、調整、Ollama を介した実験
+- **オプションのオンチェーンレイヤー** — `@ai-rpg-engine/ledger-adapter` を使用して、ゲーム内のコインや取引可能なアイテムを実際の XRPL **テストネット** トークンで裏付け、チェックポイントで決済。完全に決定的なコアの外で動作（オプション；これがない場合でも、実行結果はバイト単位で同一）
+- **オプションのビジュアルホスト** — `@ai-rpg-engine/sidecar` に加えて、Godot 4 クライアント [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage)。エンジン自体はまだピクセルを出力しない。ステージは 2:1 の等角投影法で港を描画し、`felt` のオーディオを再生する。占有状態はゾーン ID として保持される。
 
 ## これは何ではないのか
 
 - Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
-- Not a visual engine — it outputs structured events, not pixels
+- Not a visual engine — it outputs structured events, not pixels. Drawing is a host's job (terminal, or Godot)
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## 現在の状況（v3.11.0）
+## 現在の状況（v3.12.0）
 
 **What works and is tested:**
+- **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
 - **Tuning and depth (v3.11):** `bounty` fires on authored content again (the v3.10 listener cleanup put black-flag's two navy kills 36 quiet rounds apart; heat grace is that measured gap, wake still two kills). A fight that ends because someone ran says so: `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'` — not a second event, not a victory sting, not a journaled win. Faction membership has three honest locations: `entity.faction` on the person, a kept registry that hydrates from it and still takes extras, and `CompanionState.originFaction` so the guild they came from still listens. Zone music rolls per `zoneId`; stings honor cooldowns; `/build` staged writes survive a crash; a new CLI session emits the starting-zone entered event so KEY MOMENTS see the first mood. 8356 tests.
 - **The world reaches the player (v3.10):** two cycles of producers finally land on the player's senses. All eight narrator-voice hints render — NPC texture and faction bias frame the speaker, the manner hint rides the speaker line, party presence / world pressure / open opportunities close the dialogue frame as asides, and district mood and situation reports join the event log. The always-on HUD gains the party line. Combat honesty arrives as a real event: `combat.encounter.cleared` fires exactly once when the last hostile falls (a mutual kill reads as defeat, a companion's death no longer renders triumph, and the nine starter listeners that fanfared every kill are gone), mapped to the victory sting through the per-turn presenter. Zone entry resolves tone-aware music — a grim district actually sounds grim — and the spoken-output contract is real: `NarrationPlan.asides` carries dialogue fragments exactly once, `SpeakerCue.emotion` carries the manner hint verbatim, ready for a TTS embedder. Sidecar clients see pack-intake `dropped[]`/`advisories` on `initialize`, guided `/build` batches stage every step behind one batched consent (with a CREATE-aware undo and a decline that can't hollow the gate), scaffolded factions survive `emit-pack`, and faction identity resolves from the entity's own authored `faction` everywhere it used to need a registry no shipped pack populates — un-inverting district intruder tracking and reviving rumor propagation. A played-session e2e pins the whole surface frame-by-frame, NO_COLOR byte-identical.
 - **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
@@ -86,15 +88,15 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8356 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8364 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-**不完全または未完成な点:**
-- AIを活用したワールド構築スタジオ（Ollamaレイヤー）は、シミュレーションコアよりもテストが不十分であり、ローカルのOllamaデーモンが必要。これは完全にオプションであり、エンジンと`run`ループにはネットワークは不要。
-- ナレーション/オーディオスタックは、決定的なオーディオコマンドを生成するが、**ターミナルオーディオバックエンドは存在しない**。つまり、音は何も再生されない。これらのコマンドは、GUI/Web埋め込みのための統合フックである。
-- マルチプレイヤー（2人の人間プレイヤーが1つの世界を共有）は**実装されていない**。これはネットワークレイヤーであり、意図的にスコープ外である。現在のプロファイルは、単一のコントローラーを対象としている。
-- `replay --replay`は、再シミュレーションの代わりに保存データを復元する。v2.9以降、これは**決定的な**方向性であり、一時的なものではない。`Engine.serialize()`はすでに実績のある完全な状態のスナップショットであり、再シミュレーションでは、アクションログの外にあるワールドティック/エンカウンターの状態を追跡する必要がある。v2.9では、実績のある復元パスで複数のチェックポイント保存スロットが提供される。真のイベントソースによる再シミュレーションは計画されていない。
-- v3.1は、v3.0の3つの定義された制限を解除した。ジャンル固有の**初期リソース**、ジャンル固有の*修理*レシピ、および`deny`/`bury-scandal`メニューのインターフェースがすべて実装された。残る唯一の制限は、新しいジャンルの修理レシピに、作成者が定義した`statDelta`（小さなステータスボーナス）が含まれていることだが、`resolveRepair`はまだ適用されない。修理は*復元*、`modify`は*アップグレード*であるため、修理をアップグレードとして扱うことはコード内でマークされ、**v3.2/v3.3に延期**される。これは、意図的なメカニズムであり、静的で不活性なフィールドではない。また、`obligation-exists`には、作成者が定義したデモ（ブラザー・アルドリック）が1つ含まれている。この条件は、コンテンツ作成者がより多くのダイアログを制御できるように、ライブで設定されている。
-- ドキュメントは豊富だが、すべてのハンドブックページが最新のAPIを反映しているわけではない。
+**What is rough or incomplete:**
+- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
+- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound in `run`. The Godot stage is the first host that actually plays `felt` cue ids (mixer + optional TTS). Overlay stings must not replace the zone stem
+- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
+- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
+- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
+- Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
 
@@ -330,6 +332,7 @@ const warCry: AbilityDefinition = {
 | [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | オプトインによるオンチェーン決済 — 決定性ファイアウォール、L0/L1/L2統合レベル、プレイモード、安全対策、および実証済みの海賊デモ |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | 6つの戦闘の柱、5つのアクション、一目でわかるステータス |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | 段階的なbuildCombatStack、ステータスマッピング、リソースプロファイル |
+| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | サイドカーホスト、フェルト製のペイロード、ゴドーの二等辺港——プレゼンテーションの内容は異なる可能性があるが、占有領域のIDは変わらない。 |
 | [Handbook](site/src/content/docs/handbook/index.md) | 包括的なハンドブック — すべてのシステム、および4つの付録 |
 | [Composition Model](docs/composition-model.md) | 6つの再利用可能なレイヤーとその組み合わせ方 |
 | [Examples](docs/examples/) | 実行可能なTypeScriptの例（型チェック済み + CIでの動作テスト済み） — エンティティごとの混合パーティー、共有プロファイル、クロスワールド、ゼロから |
@@ -343,7 +346,7 @@ const warCry: AbilityDefinition = {
 
 ### 現在の状況
 
-両方の構成要素は完成 — **386個のファイルにわたる8356回のテスト**、`buildCombatStack`と`buildWorldStack`の12個すべての初期設定、印刷されたシードに基づいて決定的なバイト単位での再現、完全なAIによる意思決定スコアリング、および、スキャフォールディング、実行、検証、および検査を行うCLI。v3.xシリーズにより、世界が生き生きとしたものになった（名前付きのNPC、25種類の動詞を使用したソーシャルレイヤー、ジャンル経済 — v3.0〜v3.1）、プレイヤーが所有するアセットをXRPLテストネットにオプトインサイドチャネルとして配置（v3.2〜v3.4）、2つのシステム優先の初期設定を作成し、それらをエンジンを改良するためのツールに変えた（v3.5〜v3.6）、戦略レイヤーを強化し、その結果が現実的な影響を与えるようにした（v3.7〜v3.8）、ホストにエンジンサーフェスにGodotをアタッチするための機能を追加（v3.8.1）、作成ループを閉じ、スタジオセッションまたは単純なJSONパックから、最初から最後までプレイ可能な世界を生成できるようにした（v3.9）、戦略レイヤー全体をプレイヤーの感覚に統合（v3.10）、そして、**それらの感覚が到達する深さを調整した — 報酬の付与、撤退を結果とする、3つのロケーションにまたがる派閥のメンバーシップ、クラッシュから生き残る`/build`（v3.11）**。
+Both composition spines are complete — **8364 tests across 388 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), tuned the depth those senses now reach (v3.11), and **gave a drawing host the felt of a tick — the first pixel client, a Godot 4 dimetric harbour, runs on that contract (v3.12)**.
 
 **最近のリリース（v2.4.0〜v3.0.0）：**
 - v2.4.0 — パーティー戦闘（味方ターゲティング/回復/バフ/蘇生、ステータス効果システム（修正子+DoT/HoT+リアクティブトリガー）、プラグインプロファイルフェーズ1、コンテンツ`validate`/`scaffold` CLI）
@@ -356,7 +359,7 @@ const warCry: AbilityDefinition = {
 
 ### 次へ
 
-v3.11は、調整と深さに関する作業を完了しました。残っているのは、このシリーズの残骸ではなく、より後の段階での作業です。
+v3.12では、フェルト製の契約と最初の図面ホストが終了しました。残っているのは、このバージョンではなく、後続のサイクルでの作業です。
 
 - 繁栄した家族をテーマにした環境設定（トーンブリッジとゾーンごとのロールシップ；COREにはまだ繁栄の要素はない）
 - マルチプレイヤー — 1つの世界を共有する2人の*人間*プレイヤー（ネットワークレイヤー、意図的に延期；単一コントローラーによる共有プロファイルは本日、[`shared-profiles.ts`](docs/examples/shared-profiles.ts)としてリリース）

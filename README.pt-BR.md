@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.md">English</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.md">English</a>
 </p>
 
 <p align="center">
@@ -22,11 +22,12 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 
 ## O que é
 
-- Uma **biblioteca de módulos** — mais de 30 módulos do motor que abrangem combate, percepção, cognição, facções, rumores, deslocamento, companheiros e muito mais
-- Um **conjunto de ferramentas de composição** — `buildCombatStack()` configura o combate em cerca de 7 linhas; `new Engine({ modules })` inicia o jogo
-- Um **ambiente de execução de simulação** — ciclos determinísticos, registros de ações reproduzíveis, RNG com sementes
-- Um **estúdio de design de IA** (opcional) — estrutura, crítica, análise de equilíbrio, ajuste, experimentos via Ollama
-- Uma **camada opcional na blockchain** — `@ai-rpg-engine/ledger-adapter` garante que a moeda e os itens negociáveis de um jogo sejam respaldados por tokens reais da **testnet** XRPL, liquidados em pontos de verificação, totalmente fora do núcleo determinístico (opcional; uma execução é idêntica em termos de bytes sem ela)
+- Uma **biblioteca de módulos** — mais de 30 módulos de motor que abrangem combate, percepção, cognição, facções, rumores, deslocamento, companheiros e muito mais.
+- Um **conjunto de ferramentas de composição** — `buildCombatStack()` integra o combate em cerca de 7 linhas; `new Engine({ modules })` inicia o jogo.
+- Um **ambiente de execução de simulação** — ciclos determinísticos, registos de ações reproduzíveis, gerador de números aleatórios com semente.
+- Um **estúdio de design de IA** (opcional) — estrutura, análise crítica, análise de equilíbrio, ajuste, experimentos através do Ollama.
+- Uma **camada opcional no registo** — `@ai-rpg-engine/ledger-adapter` garante que a moeda e os itens negociáveis de um jogo sejam suportados por tokens reais da **testnet** XRPL, liquidados em pontos de verificação, totalmente fora do núcleo determinístico (opcional; uma execução é idêntica em termos de bytes sem ele).
+- Um **host visual opcional** — `@ai-rpg-engine/sidecar` mais o cliente Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). O motor ainda não gera pixels. O cenário desenha um porto dimétrico com proporção de 2:1 e reproduz o áudio `felt`. A ocupação permanece como um ID de zona.
 
 ## O que não é
 
@@ -36,9 +37,10 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 
 ---
 
-## Estado atual (v3.11.0)
+## Estado atual (v3.12.0)
 
 **What works and is tested:**
+- **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
 - **Tuning and depth (v3.11):** `bounty` fires on authored content again (the v3.10 listener cleanup put black-flag's two navy kills 36 quiet rounds apart; heat grace is that measured gap, wake still two kills). A fight that ends because someone ran says so: `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'` — not a second event, not a victory sting, not a journaled win. Faction membership has three honest locations: `entity.faction` on the person, a kept registry that hydrates from it and still takes extras, and `CompanionState.originFaction` so the guild they came from still listens. Zone music rolls per `zoneId`; stings honor cooldowns; `/build` staged writes survive a crash; a new CLI session emits the starting-zone entered event so KEY MOMENTS see the first mood. 8356 tests.
 - **The world reaches the player (v3.10):** two cycles of producers finally land on the player's senses. All eight narrator-voice hints render — NPC texture and faction bias frame the speaker, the manner hint rides the speaker line, party presence / world pressure / open opportunities close the dialogue frame as asides, and district mood and situation reports join the event log. The always-on HUD gains the party line. Combat honesty arrives as a real event: `combat.encounter.cleared` fires exactly once when the last hostile falls (a mutual kill reads as defeat, a companion's death no longer renders triumph, and the nine starter listeners that fanfared every kill are gone), mapped to the victory sting through the per-turn presenter. Zone entry resolves tone-aware music — a grim district actually sounds grim — and the spoken-output contract is real: `NarrationPlan.asides` carries dialogue fragments exactly once, `SpeakerCue.emotion` carries the manner hint verbatim, ready for a TTS embedder. Sidecar clients see pack-intake `dropped[]`/`advisories` on `initialize`, guided `/build` batches stage every step behind one batched consent (with a CREATE-aware undo and a decline that can't hollow the gate), scaffolded factions survive `emit-pack`, and faction identity resolves from the entity's own authored `faction` everywhere it used to need a registry no shipped pack populates — un-inverting district intruder tracking and reviving rumor propagation. A played-session e2e pins the whole surface frame-by-frame, NO_COLOR byte-identical.
 - **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
@@ -86,15 +88,15 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8356 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8364 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-**O que é incompleto ou inacabado:**
-- O estúdio de criação de mundos de IA (camada Ollama) é testado de forma menos rigorosa do que o núcleo de simulação e precisa de um daemon Ollama local; é totalmente opcional — o motor e o loop `run` não precisam de rede.
-- A pilha de narração/áudio cria comandos de áudio determinísticos, mas não há **nenhum backend de áudio terminal** — nada emite som; os comandos são um ponto de integração para um incorporador de GUI/web.
-- O modo multijogador (dois jogadores humanos compartilhando um mundo) **não** está implementado — é uma camada de rede, intencionalmente fora do escopo; os perfis atuais têm como alvo um único controlador.
-- `replay --replay` restaura o arquivo salvo em vez de ress simular — e, após a v2.9, essa é a **direção** definida, não um adiamento: `Engine.serialize()` já é um snapshot completo e comprovado do estado, enquanto a ress simulação teria que rastrear o estado do mundo/encontro que existe fora do registro de ações. A v2.9 oferece slots de salvamento com vários pontos de verificação nesse caminho de restauração comprovado; a ress simulação baseada em eventos não está planejada.
-- A v3.1 encerrou os três limites nomeados da v3.0 — **fornecimento inicial** do gênero, receitas de *reparo* específicas do gênero e a superfície do menu `deny` / `bury-scandal`, tudo isso agora está disponível. O limite real que permanece: essas novas receitas de reparo de gênero carregam um `statDelta` criado (um pequeno bônus de estatística) que `resolveRepair` ainda não aplica — o reparo *restaura*, `modify` *melhora* — então, o reparo como melhoria é marcado no código e **adiado para a v3.2/v3.3** como uma mecânica deliberada, não um campo inerte silencioso. E `obligation-exists` é lançado com uma demonstração criada (Irmão Aldric); a condição está ativa para que os criadores de conteúdo adicionem mais diálogos.
-- A documentação é extensa, mas nem todas as páginas do manual refletem as APIs mais recentes.
+**What is rough or incomplete:**
+- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
+- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound in `run`. The Godot stage is the first host that actually plays `felt` cue ids (mixer + optional TTS). Overlay stings must not replace the zone stem
+- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
+- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
+- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
+- Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
 
@@ -327,6 +329,7 @@ Os 12 mundos iniciais são **exemplos de composição** — eles demonstram como
 | [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Integração opcional no livro-razão — o firewall de determinismo, níveis de integração L0/L1/L2, modos de jogo, mecanismos de segurança e a demonstração de pirata testada ao vivo |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco ações, estados em resumo |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Construa passo a passo o combatStack, mapeamento de estatísticas, perfis de recursos |
+| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | O host do Sidecar, a carga de dados, o porto dimétrico do Godot — a apresentação pode ser diferente, a ocupação permanece como um ID de zona. |
 | [Handbook](site/src/content/docs/handbook/index.md) | Manual abrangente — todos os sistemas, mais 4 apêndices |
 | [Composition Model](docs/composition-model.md) | As 6 camadas reutilizáveis e como elas se combinam |
 | [Examples](docs/examples/) | Exemplos executáveis em TypeScript (verificados por tipo + testados em comportamento no CI) — festa mista por entidade, perfis compartilhados, entre mundos, do zero |
@@ -340,7 +343,7 @@ Os 12 mundos iniciais são **exemplos de composição** — eles demonstram como
 
 ### Onde estamos agora
 
-Both composition spines are complete — **8356 tests across 386 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), and **tuned the depth those senses now reach — bounty on-ramp, retreat-as-outcome, three-location faction membership, crash-surviving `/build` (v3.11)**.
+Ambas as estruturas de composição estão completas — **8223 testes em 385 arquivos**, todos os 12 personagens iniciais em `buildCombatStack` **e** `buildWorldStack`, reprodução determinística e idêntica em termos de bytes com base nas sementes definidas, pontuação completa das decisões da IA e uma CLI que cria, executa, valida e inspeciona. O ciclo v3.x deu vida ao mundo (personagens não jogáveis com nomes, a camada social com 25 verbos, economias de gênero — v3.0–v3.1), colocou ativos de propriedade do jogador na testnet XRPL como um canal secundário opcional (v3.2–v3.4), criou dois personagens iniciais inovadores e transformou-os em ferramentas de aprimoramento do motor (v3.5–v3.6), aprimorou e fortaleceu a camada estratégica até que as consequências deixem marcas reais (v3.7–v3.8), forneceu aos hosts a superfície do Engine com as necessidades de anexação do Godot (v3.8.1), fechou o ciclo de criação para que uma sessão de estúdio ou um pacote JSON básico produza um mundo jogável de ponta a ponta (v3.9) e **colocou toda a camada estratégica nos sentidos do jogador — dicas, grupo, vitória, música orientada pelo humor e a trama — comprovado por uma sessão de teste completa (v3.10)**.
 
 **Ciclo de lançamento recente (v2.4.0–v3.0.0):**
 - v2.4.0 — Combate em grupo (ataque/cura/buff/revive em aliados, efeito de status (modificadores + DoT/HoT + gatilhos reativos), Fase 1 dos Perfis plug-in, conteúdo CLI `validate`/`scaffold`
@@ -353,7 +356,7 @@ Both composition spines are complete — **8356 tests across 386 files**, all 12
 
 ### Próximo
 
-A v3.11 encerrou a fase de ajustes e aprofundamento. O que resta é o trabalho das fases posteriores, e não os elementos remanescentes desta fase:
+A versão 3.12 encerrou o contrato e o primeiro host de desenho. O que resta é o trabalho das fases posteriores, e não os elementos remanescentes desta fase:
 
 - Um ambiente de prosperidade familiar (a ponte de tons e o sistema de rolagem por zona; o CORE ainda não possui um elemento de prosperidade)
 - Multijogador — dois jogadores *humanos* que compartilham um mundo (uma camada de rede, intencionalmente adiada; os perfis compartilhados com um único controlador estão disponíveis hoje como [`shared-profiles.ts`](docs/examples/shared-profiles.ts))

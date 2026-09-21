@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.md">English</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.md">English</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -22,23 +22,25 @@
 
 ## यह क्या है
 
-- एक **मॉड्यूल लाइब्रेरी** - 30 से अधिक इंजन मॉड्यूल जो युद्ध, धारणा, अनुभूति, गुट, अफवाहें, यात्रा, साथी और अन्य चीजों को कवर करते हैं
-- एक **कंपोज़िशन टूलकिट** - `buildCombatStack()` लगभग 7 पंक्तियों में युद्ध प्रणाली स्थापित करता है; `new Engine({ modules })` गेम शुरू करता है
-- एक **सिमुलेशन रनटाइम** - निर्धारित टिक, दोहराए जा सकने वाले क्रिया लॉग, सीडेड आरएनजी
-- एक **एआई डिज़ाइन स्टूडियो** (वैकल्पिक) - ढांचा, आलोचना, संतुलन विश्लेषण, ट्यूनिंग, ओलामा के माध्यम से प्रयोग
-- एक **वैकल्पिक ऑन-लेजर लेयर** - `@ai-rpg-engine/ledger-adapter` एक गेम के सिक्के और व्यापार योग्य वस्तुओं का समर्थन वास्तविक एक्सआरपीएल **टेस्टनेट** टोकन के साथ करता है, जो चेकपॉइंट पर तय किए जाते हैं, पूरी तरह से निर्धारित कोर के बाहर (वैकल्पिक; इसके बिना एक रन बाइट-समान होता है)
+- एक **मॉड्यूल लाइब्रेरी** — 30 से अधिक इंजन मॉड्यूल, जिनमें युद्ध, धारणा, अनुभूति, गुट, अफवाहें, आवागमन, साथी और अन्य शामिल हैं।
+- एक **कंपोज़िशन टूलकिट** — `buildCombatStack()` युद्ध को लगभग 7 पंक्तियों में जोड़ता है; `new Engine({ modules })` गेम शुरू करता है।
+- एक **सिमुलेशन रनटाइम** — नियतात्मक टिक, दोहराए जा सकने वाले एक्शन लॉग, सीडेड आरएनजी।
+- एक **एआई डिज़ाइन स्टूडियो** (वैकल्पिक) — ढांचा, आलोचना, संतुलन विश्लेषण, ट्यूनिंग, ओलामा के माध्यम से प्रयोग।
+- एक **वैकल्पिक ऑन-लेजर लेयर** — `@ai-rpg-engine/ledger-adapter` गेम के सिक्के और व्यापार योग्य वस्तुओं का समर्थन वास्तविक एक्सआरपीएल **टेस्टनेट** टोकन के साथ करता है, जो चेकपॉइंट पर तय किए जाते हैं, और पूरी तरह से नियतात्मक कोर से बाहर होते हैं (वैकल्पिक; इसके बिना एक रन बाइट-समान होता है)।
+- एक **वैकल्पिक विज़ुअल होस्ट** — `@ai-rpg-engine/sidecar` और गॉडोट 4 क्लाइंट [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage)। इंजन अभी भी पिक्सेल उत्सर्जित नहीं करता है। स्टेज 2:1 डाइमेट्रिक बंदरगाह बनाता है और `felt` ऑडियो चलाता है। अधिभोग एक ज़ोन आईडी बना रहता है।
 
 ## यह क्या नहीं है
 
 - Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
-- Not a visual engine — it outputs structured events, not pixels
+- Not a visual engine — it outputs structured events, not pixels. Drawing is a host's job (terminal, or Godot)
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## वर्तमान स्थिति (संस्करण 3.11.0)
+## वर्तमान स्थिति (v3.12.0)
 
 **What works and is tested:**
+- **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
 - **Tuning and depth (v3.11):** `bounty` fires on authored content again (the v3.10 listener cleanup put black-flag's two navy kills 36 quiet rounds apart; heat grace is that measured gap, wake still two kills). A fight that ends because someone ran says so: `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'` — not a second event, not a victory sting, not a journaled win. Faction membership has three honest locations: `entity.faction` on the person, a kept registry that hydrates from it and still takes extras, and `CompanionState.originFaction` so the guild they came from still listens. Zone music rolls per `zoneId`; stings honor cooldowns; `/build` staged writes survive a crash; a new CLI session emits the starting-zone entered event so KEY MOMENTS see the first mood. 8356 tests.
 - **The world reaches the player (v3.10):** two cycles of producers finally land on the player's senses. All eight narrator-voice hints render — NPC texture and faction bias frame the speaker, the manner hint rides the speaker line, party presence / world pressure / open opportunities close the dialogue frame as asides, and district mood and situation reports join the event log. The always-on HUD gains the party line. Combat honesty arrives as a real event: `combat.encounter.cleared` fires exactly once when the last hostile falls (a mutual kill reads as defeat, a companion's death no longer renders triumph, and the nine starter listeners that fanfared every kill are gone), mapped to the victory sting through the per-turn presenter. Zone entry resolves tone-aware music — a grim district actually sounds grim — and the spoken-output contract is real: `NarrationPlan.asides` carries dialogue fragments exactly once, `SpeakerCue.emotion` carries the manner hint verbatim, ready for a TTS embedder. Sidecar clients see pack-intake `dropped[]`/`advisories` on `initialize`, guided `/build` batches stage every step behind one batched consent (with a CREATE-aware undo and a decline that can't hollow the gate), scaffolded factions survive `emit-pack`, and faction identity resolves from the entity's own authored `faction` everywhere it used to need a registry no shipped pack populates — un-inverting district intruder tracking and reviving rumor propagation. A played-session e2e pins the whole surface frame-by-frame, NO_COLOR byte-identical.
 - **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
@@ -86,15 +88,15 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8356 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8364 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-**क्या कच्चा या अधूरा है:**
-- एआई दुनिया-निर्माण स्टूडियो (ओलामा परत) सिमुलेशन कोर की तुलना में कम परीक्षण किया गया है, और इसे एक स्थानीय ओलामा डेमॉन की आवश्यकता होती है; यह पूरी तरह से वैकल्पिक है - इंजन और `run` लूप को किसी नेटवर्क की आवश्यकता नहीं है।
-- कथन/ऑडियो स्टैक नियतात्मक ऑडियो कमांड बनाता है, लेकिन इसमें **कोई टर्मिनल ऑडियो बैकएंड नहीं** है - कोई भी ध्वनि नहीं बजाता; कमांड एक GUI/वेब एम्बेडर के लिए एकीकरण हुक हैं।
-- मल्टीप्लेयर (एक ही दुनिया साझा करने वाले दो मानव खिलाड़ी) **नहीं** बनाया गया है - यह एक नेटवर्किंग परत है, जानबूझकर दायरे से बाहर; आज के प्रोफाइल एक एकल नियंत्रक को लक्षित करते हैं।
-- `replay --replay` पुन: अनुकरण करने के बजाय सहेजे गए डेटा को पुनर्स्थापित करता है - और v2.9 के बाद यह **निश्चित** दिशा है, कोई विलंब नहीं: `Engine.serialize()` पहले से ही एक सिद्ध पूर्ण-अवस्था स्नैपशॉट है, जबकि पुन: अनुकरण को दुनिया-टिक/मुठभेड़ अवस्था का पीछा करना होगा जो कार्रवाई लॉग के बाहर मौजूद है। v2.9 उस सिद्ध पुनर्स्थापना पथ पर बहु-चेकपॉइंट सहेजने के स्लॉट भेजता है; वास्तविक घटना-आधारित पुन: अनुकरण की योजना नहीं है।
-- v3.1 ने v3.0 के तीन नामित सीमाओं को बंद कर दिया - शैली **शुरुआती आपूर्ति**, शैली-विशिष्ट *मरम्मत* व्यंजन, और `deny` / `bury-scandal` मेनू सतह अब सभी भेजते हैं। एकमात्र ईमानदार सीमा जो बनी हुई है: उन नए शैली मरम्मत व्यंजनों में एक निर्मित `statDelta` (एक छोटा सा आँकड़ा बोनस) होता है जो `resolveRepair` अभी तक लागू नहीं करता है - मरम्मत *पुनर्स्थापित करती है*, `modify` *अपग्रेड करती है* - इसलिए मरम्मत-को-अपग्रेड के रूप में कोड में चिह्नित किया गया है और इसे जानबूझकर **v3.2/v3.3 तक स्थगित** कर दिया गया है, न कि एक मौन निष्क्रिय क्षेत्र के रूप में। और `obligation-exists` एक निर्मित डेमो (भाई एल्ड्रिक) के साथ भेजता है; शर्त सामग्री लेखकों के लिए अधिक संवाद को गेट करने के लिए लाइव है।
-- प्रलेखन व्यापक है लेकिन हर हैंडबुक पृष्ठ नवीनतम एपीआई को प्रतिबिंबित नहीं करता है।
+**What is rough or incomplete:**
+- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
+- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound in `run`. The Godot stage is the first host that actually plays `felt` cue ids (mixer + optional TTS). Overlay stings must not replace the zone stem
+- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
+- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
+- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
+- Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
 
@@ -335,6 +337,7 @@ const warCry: AbilityDefinition = {
 | [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | ऑप्ट-इन ऑन-लेजर सेटलमेंट - नियतिवादी फ़ायरवॉल, L0/L1/L2 एकीकरण स्तर, प्ले मोड, सुरक्षा रेल, और लाइव-सिद्ध समुद्री डाकू डेमो |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | छह युद्ध स्तंभ, पाँच क्रियाएं, एक नज़र में स्थितियाँ |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | चरण-दर-चरण buildCombatStack, आँकड़ा मैपिंग, संसाधन प्रोफ़ाइल |
+| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | साइडकार होस्ट, महसूस की जाने वाली सामग्री, गॉडोट डाइमेट्रिक हार्बर — प्रस्तुति में अंतर हो सकता है, अधिभोग एक ज़ोन आईडी बना रहता है। |
 | [Handbook](site/src/content/docs/handbook/index.md) | व्यापक हैंडबुक - प्रत्येक प्रणाली, साथ में 4 परिशिष्ट |
 | [Composition Model](docs/composition-model.md) | 6 पुन: प्रयोज्य परतें और वे कैसे मिलकर काम करती हैं |
 | [Examples](docs/examples/) | चलाने योग्य टाइपस्क्रिप्ट उदाहरण (टाइप-चेक + CI में व्यवहार-परीक्षण) - प्रति-इकाई मिश्रित पार्टी, साझा प्रोफ़ाइल, क्रॉस-वर्ल्ड, स्क्रैच से |
@@ -348,7 +351,7 @@ const warCry: AbilityDefinition = {
 
 ### हम अभी कहाँ हैं
 
-दोनों संरचनात्मक आधार पूर्ण हैं — **386 फ़ाइलों में 8356 परीक्षण**, `buildCombatStack` और `buildWorldStack` पर सभी 12 प्रारंभिक तत्व, मुद्रित बीज के तहत नियतात्मक बाइट-समान पुनरावृत्ति, पूर्ण एआई निर्णय स्कोरिंग, और एक CLI जो ढांचा तैयार करता है, चलाता है, मान्य करता है और निरीक्षण करता है। v3.x श्रृंखला ने दुनिया को जीवंत बना दिया (नाम वाले गैर-खिलाड़ी पात्र, 25-क्रिया सामाजिक सतह, शैली अर्थव्यवस्थाएं — v3.0–v3.1), खिलाड़ी के स्वामित्व वाली संपत्तियों को XRPL परीक्षण नेटवर्क पर एक वैकल्पिक साइड चैनल के रूप में रखा (v3.2–v3.4), दो सिस्टम-आधारित प्रारंभिक तत्वों को बनाया और उन्हें इंजन-सुधार उपकरणों में बदल दिया (v3.5–v3.6), रणनीतिक परत को तब तक मजबूत किया जब तक कि परिणामों से वास्तविक निशान न बन जाएं (v3.7–v3.8), मेजबानों को इंजन सतह पर गॉडोट अटैच की आवश्यकता दी (v3.8.1), लेखक प्रक्रिया को इस तरह बंद किया कि एक स्टूडियो सत्र या एक साधारण JSON पैक एक संपूर्ण, खेलने योग्य दुनिया का निर्माण करे (v3.9), पूरी रणनीतिक परत को खिलाड़ी की इंद्रियों पर रखा (v3.10), और **उस गहराई को समायोजित किया जो अब ये इंद्रियां प्राप्त करती हैं — इनाम-आधारित शुरुआत, परिणाम के रूप में वापसी, तीन-स्थान गुट सदस्यता, दुर्घटना से बचने वाला `/build` (v3.11)**।
+दोनों संरचनात्मक आधार पूर्ण हैं — **388 फ़ाइलों में 8364 परीक्षण**, `buildCombatStack` और `buildWorldStack` पर सभी 12 शुरुआती बिंदु, मुद्रित बीज के तहत नियतात्मक बाइट-समान पुनरावृत्ति, पूर्ण एआई निर्णय स्कोरिंग, और एक CLI जो ढांचा तैयार करता है, चलाता है, मान्य करता है और निरीक्षण करता है। v3.x आर्क ने दुनिया को जीवंत बना दिया (नाम वाले NPC, 25-क्रिया सामाजिक सतह, शैली अर्थव्यवस्थाएं — v3.0–v3.1), खिलाड़ी के स्वामित्व वाली संपत्तियों को XRPL टेस्टनेट पर एक वैकल्पिक साइड चैनल के रूप में रखा (v3.2–v3.4), दो सिस्टम-आधारित शुरुआती बिंदुओं को बनाया और उन्हें इंजन-पॉलिशिंग उपकरणों में बदल दिया (v3.5–v3.6), रणनीतिक परत को प्रकाशित और मजबूत किया जब तक कि परिणाम वास्तविक निशान न छोड़ दें (v3.7–v3.8), होस्ट को इंजन सतह पर गॉडोट अटैच की आवश्यकता दी (v3.8.1), लेखकन चक्र को बंद कर दिया ताकि एक स्टूडियो सत्र या एक साधारण JSON पैक एक संपूर्ण, खेलने योग्य दुनिया का निर्माण करे (v3.9), पूरी रणनीतिक परत को खिलाड़ी की इंद्रियों पर रखा (v3.10), उन इंद्रियों की गहराई को समायोजित किया जो अब पहुंचती हैं (v3.11), और **एक ड्राइंग होस्ट को एक टिक की अनुभूति दी — पहला पिक्सेल क्लाइंट, एक गॉडोट 4 डाइमेट्रिक हार्बर, उस अनुबंध पर चलता है (v3.12)**।
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
@@ -361,11 +364,11 @@ const warCry: AbilityDefinition = {
 
 ### अगला
 
-v3.11 ने समायोजन और गहराई की प्रक्रिया को समाप्त कर दिया। अब जो बचा है, वह इस प्रक्रिया का अगला चरण है, न कि इसका अवशेष:
+v3.12 ने महसूस किए जाने वाले अनुबंध और पहले ड्राइंग होस्ट को बंद कर दिया। जो बचा है वह बाद के चक्र का काम है, न कि इस चक्र का बचा हुआ हिस्सा:
 
-- एक समृद्ध-परिवार परिवेश (टोन ब्रिज और प्रति-क्षेत्र रोल शिप; CORE में अभी भी कोई समृद्ध आधार नहीं है)
-- मल्टीप्लेयर — एक ही दुनिया साझा करने वाले दो *मानव* खिलाड़ी (एक नेटवर्किंग परत, जानबूझकर स्थगित; एकल-नियंत्रक साझा प्रोफाइल आज [`shared-profiles.ts`](docs/examples/shared-profiles.ts) के रूप में जारी किए गए)
-- क्रमबद्ध सूत्र ओवरराइड — प्रति-प्रोफ़ाइल सूत्र समायोजन (एक सूत्र DSL पर निर्भर; प्रोफ़ाइल में आज आँकड़े मैपिंग हैं, क्लोजर नहीं)
+- एक समृद्ध-परिवार परिवेशी बिस्तर (टोन ब्रिज और प्रति-ज़ोन रोल शिप; CORE में अभी भी कोई समृद्ध आधार नहीं है)
+- मल्टीप्लेयर — एक ही दुनिया को साझा करने वाले दो *मानव* खिलाड़ी (एक नेटवर्किंग परत, जानबूझकर स्थगित; एकल-नियंत्रक साझा प्रोफ़ाइल आज [`shared-profiles.ts`](docs/examples/shared-profiles.ts) के रूप में शिप की जाती है)
+- क्रमबद्ध सूत्र ओवरराइड — प्रति-प्रोफ़ाइल सूत्र ट्यूनिंग (एक सूत्र DSL पर अवरुद्ध; प्रोफ़ाइल में आज आँकड़े मैपिंग होते हैं, क्लोजर नहीं)
 
 ### गंतव्य: प्लग-इन प्रोफ़ाइल
 
