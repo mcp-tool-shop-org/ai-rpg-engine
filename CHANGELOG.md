@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Webfetch names a DNS deadline as a timeout.** A hanging hop-1 lookup is
+  no longer inferred from wall-clock `elapsed >= dnsTimeout` after the gate
+  collapsed timeout into `false`. Node 22 CI could fire `setTimeout` a
+  millisecond early and report `URL not allowed` instead of `timed out`
+  (`F-c4a128fc`). NXDOMAIN / blocked hosts still fail closed as not allowed.
+
 ### Added
 - **Sidecar `capabilities.audio`.** A negotiated, additive felt payload on
   submit/advance/`sim/tick`: `AudioCommand[]` (cue ids, overlay stings that do

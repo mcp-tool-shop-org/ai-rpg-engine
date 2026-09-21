@@ -192,6 +192,17 @@ function traversal(parsed: URL): boolean {
 /** Default budget for the DNS resolution step in isAllowedUrlResolved(). */
 export const DEFAULT_RESOLVE_TIMEOUT_MS = 5_000;
 
+type UrlGate =
+  | { allow: true }
+  | { allow: false; reason: 'syntax' | 'blocked' | 'timeout' };
+
+const DNS_TIMEOUT_CODE = 'DNS_TIMEOUT';
+
+function isDnsTimeout(err: unknown): boolean {
+  return typeof err === 'object' && err !== null
+    && (err as { code?: unknown }).code === DNS_TIMEOUT_CODE;
+}
+
 /**
  * The real SSRF gate: isAllowedUrl() plus DNS resolution for plain hostnames.
  *
@@ -211,49 +222,66 @@ export const DEFAULT_RESOLVE_TIMEOUT_MS = 5_000;
  * run through the SAME blocklist isAllowedUrl() applies to literals — the
  * URL is rejected if any resolved address is blocked, or if resolution
  * itself fails or does not complete within resolveTimeoutMs (fail closed).
+ * Timeout and blocked are both `false` here; webfetch() uses gateResolvedUrl
+ * when it must name the timeout.
  */
 export async function isAllowedUrlResolved(
   url: string,
   resolveTimeoutMs = DEFAULT_RESOLVE_TIMEOUT_MS,
 ): Promise<boolean> {
-  if (!isAllowedUrl(url)) return false;
+  return (await gateResolvedUrl(url, resolveTimeoutMs)).allow;
+}
+
+/**
+ * Same gate as {@link isAllowedUrlResolved}, but timeout is not collapsed into
+ * a boolean. webfetch() must name a DNS deadline as a request timeout; a
+ * blocked/NXDOMAIN host is "URL not allowed". Inferring that from
+ * `elapsed >= dnsTimeout` after a boolean miss-fires when setTimeout runs a
+ * millisecond early (Node 22 CI, F-c4a128fc).
+ */
+async function gateResolvedUrl(
+  url: string,
+  resolveTimeoutMs = DEFAULT_RESOLVE_TIMEOUT_MS,
+): Promise<UrlGate> {
+  if (!isAllowedUrl(url)) return { allow: false, reason: 'syntax' };
 
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return false;
+    return { allow: false, reason: 'syntax' };
   }
   const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
 
   // Already fully validated (or rejected) as an IP literal by isAllowedUrl().
-  if (parseV4(host) || parseV6(host)) return true;
+  if (parseV4(host) || parseV6(host)) return { allow: true };
 
-  // A plain DNS name: resolve it and validate every address it maps to
-  // before this URL may be treated as allowed.
-  return resolvesToOnlyPublicAddresses(host, resolveTimeoutMs);
+  return resolvePublicAddresses(host, resolveTimeoutMs);
 }
 
 /**
- * True only when `hostname` resolves to at least one address and every
- * resolved address is public. Any failure mode — resolver error, empty
- * answer, or a resolution that does not settle within `timeoutMs` — rejects
- * (fail closed): an SSRF guard that hangs open on a slow or broken resolver
- * defeats its own purpose.
+ * Public addresses only. Resolver error / empty answer → blocked. A lookup
+ * that does not settle within `timeoutMs` → timeout. Fail closed either way:
+ * an SSRF guard that hangs open on a slow resolver defeats its own purpose.
  */
-async function resolvesToOnlyPublicAddresses(hostname: string, timeoutMs: number): Promise<boolean> {
+async function resolvePublicAddresses(hostname: string, timeoutMs: number): Promise<UrlGate> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const addresses = await Promise.race([
       lookup(hostname, { all: true, verbatim: true }),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('DNS resolution timed out')), timeoutMs);
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error('DNS resolution timed out'), { code: DNS_TIMEOUT_CODE }));
+        }, timeoutMs);
       }),
     ]);
-    if (!Array.isArray(addresses) || addresses.length === 0) return false;
-    return addresses.every(({ address, family }) => isPublicResolvedAddress(address, family));
-  } catch {
-    return false;
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      return { allow: false, reason: 'blocked' };
+    }
+    const publicEvery = addresses.every(({ address, family }) => isPublicResolvedAddress(address, family));
+    return publicEvery ? { allow: true } : { allow: false, reason: 'blocked' };
+  } catch (err) {
+    return { allow: false, reason: isDnsTimeout(err) ? 'timeout' : 'blocked' };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
@@ -432,13 +460,12 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
       }
 
       const dnsTimeout = Math.min(DEFAULT_RESOLVE_TIMEOUT_MS, remainingBeforeDns);
-      const dnsStarted = Date.now();
-      const allowed = await isAllowedUrlResolved(currentUrl, dnsTimeout);
+      const gate = await gateResolvedUrl(currentUrl, dnsTimeout);
       const remaining = deadline - Date.now();
-      if (remaining <= 0 || (!allowed && Date.now() - dnsStarted >= dnsTimeout)) {
+      if (remaining <= 0 || (!gate.allow && gate.reason === 'timeout')) {
         return failClosed(`Request timed out after ${timeoutMs}ms`);
       }
-      if (!allowed) {
+      if (!gate.allow) {
         return failClosed('URL not allowed: must be public http/https');
       }
 
