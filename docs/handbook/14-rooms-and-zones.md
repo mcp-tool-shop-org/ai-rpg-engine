@@ -36,3 +36,7 @@ Zones have both static properties (defined in content) and dynamic properties (m
 ## Exits and Connectivity
 
 Exits define how zones connect. Each exit specifies a target zone and an optional direction label. The traversal module validates movement against available exits before allowing zone transitions.
+
+## What a visual client may draw
+
+The sim still stores **zone ids**, not cells. A Godot host may paint those zones as 2:1 dimetric diamonds on one continuous ground, Y-sort buildings, and tween a sprite between clicks. That drawing is presentation. `move` still names a neighbour zone. Intra-zone walking that never submits is a client lie and is not occupancy. See [Chapter 66](./66-visual-clients.md).

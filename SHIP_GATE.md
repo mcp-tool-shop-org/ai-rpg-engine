@@ -38,7 +38,7 @@
 - [ ] `[cli]` SKIP: library, not a standalone CLI tool
 - [ ] `[cli|mcp|desktop]` SKIP: library, no logging levels
 - [ ] `[mcp]` SKIP: not an MCP server
-- [x] `[complex]` HANDBOOK.md: comprehensive handbook at docs/handbook/ with 67 chapters + 4 appendices (2026-07-28)
+- [x] `[complex]` HANDBOOK.md: comprehensive handbook at docs/handbook/ with 68 chapters + 4 appendices (2026-09-20; ch.66 visual clients)
 
 ## D. Shipping Hygiene
 

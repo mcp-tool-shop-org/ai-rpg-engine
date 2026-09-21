@@ -40,7 +40,13 @@ COPY --from=build /app/packages ./packages
 COPY --from=build /app/templates ./templates
 RUN npm ci --omit=dev --ignore-scripts
 
-# A non-root user for the runtime.
+# The 2026-08-30 node:24-bookworm-slim digest still ships libpcre2 10.42-1.
+# 10.42-1+deb12u1 closes CVE-2026-86145 / 89157 / 89161 (Trivy HIGH, fixed).
+# docker-smoke fails the job on fixable HIGH/CRITICAL OS packages.
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 \
+ && rm -rf /var/lib/apt/lists/*
 USER node
 ENTRYPOINT ["node", "/app/packages/cli/dist/bin.js"]
 CMD ["--help"]

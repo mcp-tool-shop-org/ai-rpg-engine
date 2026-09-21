@@ -6,9 +6,9 @@ sidebar:
 ---
 
 
-AI RPG Engine is a terminal RPG simulation engine.
+AI RPG Engine is a composition simulation for RPGs.
 
-It provides the systems needed to build interactive worlds that run entirely in the terminal. These worlds can contain characters that think, environments that change, and events that unfold according to simulation rules rather than rigid scripts.
+It provides the systems needed to build interactive worlds: characters that think, environments that change, events that unfold according to rules rather than rigid scripts. The shipped no-GPU player is the terminal `run` loop. Hosts that draw pixels attach over the sidecar — the Godot 4 client is [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). The engine still does not emit pixels.
 
 AI RPG Engine is designed around a simple idea:
 
@@ -28,7 +28,7 @@ The engine then runs those systems together.
 
 When a player performs an action, the engine processes that action through the simulation and produces events that describe what happened.
 
-Those events are then presented to the player through the terminal interface.
+Those events are then presented by a host: the terminal UI, or a sidecar client such as the Godot stage.
 
 Because the engine separates simulation truth from presentation, it can support complex narrative techniques such as unreliable narration, perception differences between characters, and layered storytelling.
 

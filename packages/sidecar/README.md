@@ -90,6 +90,7 @@ var init_id := client.initialize({
   "writes": true,           # false = observer overlay (ticks only)
   "listActions": true,
   "presentation": true,     # presentAll + FOW; omit for raw ticks
+  "audio": true,            # felt payload: AudioCommand[] + SpeakerCue + UiEffects
 })
 # await client.completed for init_id, then:
 client.snapshot({ "omitEventLog": true })  # replay covers presentation
@@ -98,6 +99,8 @@ client.advance(1)  # sends METHOD_ADVANCE with a JSON-RPC id
 # Save is Engine.serialize (rngState + actionLog), not a SNAPSHOT delta:
 # client.save() / client.load_save(serialized)
 ```
+
+The shipped Godot 4 host is [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). Play camera is 2:1 dimetric (TileMapLayer 256×128), not a graph of postage-stamp rooms. Occupancy in the sim is still a **zone id**: a click inside the current zone walks as presentation; a click in a neighbour zone submits `move`. `felt` is never hashed. Do not put `CharacterBody2D` on this wire. Handbook: [Visual Clients](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/66-visual-clients/).
 
 ## Design
 
@@ -140,7 +143,7 @@ the renderer.
 
 Notifications: `sim/tick` (events + delta + hash + `snapshotSeq`; `canonicalHash` when negotiated), `sim/closing`.
 
-`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second hash, never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`), `listActions`, `presentation` (tick/replay events are `engine.presentAll`; hidden events dropped). Incremental ticks are withheld until that session has served `snapshot`. Two `writes: true` sessions serialize mutations by session-order then JSON-RPC id.
+`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second hash, never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`), `listActions`, `presentation` (tick/replay events are `engine.presentAll`; hidden events dropped), `audio` (submit/advance/tick carry a `felt` payload of cue-ids, an optional spoken line, and UI effects — presentation-only, never hashed). Incremental ticks are withheld until that session has served `snapshot`. Two `writes: true` sessions serialize mutations by session-order then JSON-RPC id.
 
 ## License
 

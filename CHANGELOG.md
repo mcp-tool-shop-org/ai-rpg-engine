@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Sidecar `capabilities.audio`.** A negotiated, additive felt payload on
+  submit/advance/`sim/tick`: `AudioCommand[]` (cue ids, overlay stings that do
+  not replace the zone stem), optional `speaker` (the spoken line once), and
+  `uiEffects` for a client's lie budget. Omitted when the capability is off.
+  Never hashed.
+
+### Docs
+- **Handbook ch.66 Visual Clients.** Sidecar hosts, the felt payload, and the
+  Godot 4 dimetric client (`ai-rpg-stage`): occupancy is zone-id, presentation
+  may lie, no second physics world. README (English) and sidecar README point
+  at it. Translations later.
+
 ## [3.11.0] - 2026-09-01
 
 **Tuning and depth.** v3.10 put the strategic layer on the player's senses and
