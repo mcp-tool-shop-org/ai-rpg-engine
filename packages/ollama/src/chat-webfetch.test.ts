@@ -815,4 +815,15 @@ describe('webfetch — DNS shares the request deadline (F-c4a128fc)', () => {
       globalThis.fetch = realFetch;
     }
   });
+
+  it('NXDOMAIN is not a named timeout', async () => {
+    vi.mocked(lookup).mockRejectedValue(
+      Object.assign(new Error('queryA ENOTFOUND'), { code: 'ENOTFOUND' }),
+    );
+    const { webfetch } = await import('./chat-webfetch.js');
+    const result = await webfetch('https://nonexistent.example/', { timeoutMs: 40 });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not allowed/i);
+    expect(result.error).not.toMatch(/timed out/i);
+  });
 });
