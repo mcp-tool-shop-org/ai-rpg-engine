@@ -7,7 +7,7 @@ sidebar:
 
 # Create Your Own Starter
 
-The fastest path to a new game: scaffold from the CLI.
+The fastest path to a new **code** game: scaffold from the CLI. A world the Godot stage can walk — rooms, a gate, a wet floor, people standing on diamonds — is a World Forge project, not a starter package. Salt Road is that worked example. This chapter is the simulation module. Chapter 66 is the host.
 
 ## Quick Start
 

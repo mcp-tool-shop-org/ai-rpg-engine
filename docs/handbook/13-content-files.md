@@ -4,6 +4,8 @@
 
 The schema system that defines your world.
 
+A content pack is the **simulation**: zones, who is in them, gates, items given to an entity. Dimetric cells, floor plates, and which way a sprite faces are `WorldProject.presentation` in World Forge. They are not keys on this pack. The stage draws them. See [Chapter 66](./66-visual-clients.md).
+
 ## Content Types
 
 | Type | Purpose |
