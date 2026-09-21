@@ -26,7 +26,7 @@ Handshake capabilities are additive:
 | `presentation` | `presentAll` events, FOW applied |
 | `audio` | `felt` payload on submit / advance / matching `sim/tick` |
 
-`felt` is `AudioCommand[]` (cue ids; overlay stings do not replace the zone stem), optional `speaker` (the spoken line once), and `uiEffects`. It is omitted when `audio` is off so exact-match clients stay stable. It is **never** in the state hash.
+`felt` is `AudioCommand[]` (cue ids; overlay stings do not replace the zone stem), optional `speaker` (the spoken line once), and `uiEffects`. It is omitted when `audio` is off so exact-match clients stay stable. It is **never** in the state hash. Writers play it from the submit/advance result and ignore `sim/tick.felt` so overlay stings do not double. Observers never get those RPC results; they play the tick.
 
 A `--content` sidecar boot still needs `--manifest` (`SIDECAR_MANIFEST_REQUIRED`).
 

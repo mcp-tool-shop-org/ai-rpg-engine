@@ -47,6 +47,7 @@ import {
 } from './protocol.js';
 import { canonicalStateHash, diffState, projectState, snapshotDelta, stateHash, toWireEvent } from './serializer.js';
 import { MessageTooLargeError, type RpcMessage } from './framing.js';
+import { FeltPresenter } from './felt.js';
 
 export type SidecarServerOptions = {
   /** The booted sim. Built by pack CODE — this server never constructs one. */
@@ -195,6 +196,8 @@ export class SidecarServer {
   /** Stable order among sessions sharing this Engine (1-based, connect order). */
   readonly sessionOrder: number;
   private readonly gate: SimGate;
+  /** One composer per session so audio cooldowns survive across turns. */
+  private readonly felt = new FeltPresenter();
 
   constructor(
     options: SidecarServerOptions,
@@ -229,6 +232,7 @@ export class SidecarServer {
     }
     if (this.clientCapabilities.listActions) caps.listActions = true;
     if (this.clientCapabilities.presentation) caps.presentation = true;
+    if (this.clientCapabilities.audio) caps.audio = true;
     return caps;
   }
 
@@ -714,7 +718,7 @@ export class SidecarServer {
       if (!isPlainObject(params.capabilities)) {
         return { ok: false, message: '"capabilities" must be an object when present.' };
       }
-      for (const key of ['notifications', 'hashes', 'canonicalHashes', 'writes', 'listActions', 'presentation'] as const) {
+      for (const key of ['notifications', 'hashes', 'canonicalHashes', 'writes', 'listActions', 'presentation', 'audio'] as const) {
         if (Object.hasOwn(params.capabilities, key) && typeof params.capabilities[key] !== 'boolean') {
           return { ok: false, message: `"capabilities.${key}" must be a boolean when present.` };
         }
@@ -755,6 +759,7 @@ export class SidecarServer {
         ...(typeof params.capabilities.presentation === 'boolean'
           ? { presentation: params.capabilities.presentation }
           : {}),
+        ...(typeof params.capabilities.audio === 'boolean' ? { audio: params.capabilities.audio } : {}),
       };
     }
     return {
@@ -826,6 +831,9 @@ export class SidecarServer {
     };
     if (this.clientCapabilities.canonicalHashes) {
       result.canonicalHash = canonicalStateHash(projected);
+    }
+    if (this.clientCapabilities.audio) {
+      result.felt = this.felt.present(this.engine.world, freshRaw);
     }
     return result;
   }
@@ -987,6 +995,7 @@ export class SidecarServer {
       snapshotSeq: this.snapshotSeq,
     };
     if (result.canonicalHash !== undefined) notification.canonicalHash = result.canonicalHash;
+    if (result.felt !== undefined) notification.felt = result.felt;
     this.outbound({ jsonrpc: '2.0', method: NOTIFICATIONS.TICK, params: notification });
   }
 

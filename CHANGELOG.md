@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Godot 4 dimetric client (`ai-rpg-stage`): occupancy is zone-id, presentation
   may lie, no second physics world. README (English) and sidecar README point
   at it. Translations later.
+- **Study-swarm: felt-world.** Dispatch, five packets, and a citation receipt
+  grounding the Godot-first felt consumer (cue-id contract, overlay stings,
+  dialogue-only TTS, explicit lie budget).
 
 ## [3.11.0] - 2026-09-01
 

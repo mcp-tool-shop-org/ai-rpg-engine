@@ -87,7 +87,7 @@ func push_bytes(chunk: PackedByteArray) -> void:
 	framing.push(chunk)
 
 
-func initialize(capabilities: Dictionary = { "notifications": true, "hashes": true, "canonicalHashes": true }) -> int:
+func initialize(capabilities: Dictionary = { "notifications": true, "hashes": true, "canonicalHashes": true, "audio": true }) -> int:
 	canonical_hashes = bool(capabilities.get("canonicalHashes", false))
 	writes = capabilities.get("writes", true) != false
 	if str(capabilities.get("role", "")) == "observer":

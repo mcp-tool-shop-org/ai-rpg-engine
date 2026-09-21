@@ -160,6 +160,12 @@ export type ServerCapabilities = {
    * `engine.presentAll` output (channel + filtered); hidden events are dropped.
    */
   presentation?: boolean;
+  /**
+   * Echoed when the client requested `audio`. Submit/advance results (and the
+   * matching `sim/tick`) carry a `felt` payload — AudioCommand[] + optional
+   * SpeakerCue + UiEffects. Presentation-only; never hashed.
+   */
+  audio?: boolean;
 };
 
 export type ClientCapabilities = {
@@ -186,13 +192,18 @@ export type ClientCapabilities = {
    * existing exact-match ticks stay stable.
    */
   presentation?: boolean;
+  /**
+   * Request the felt payload on submit/advance/tick. Default omitted so
+   * existing exact-match results stay stable.
+   */
+  audio?: boolean;
 };
 
 /**
  * Why one field from an authored content pack did not make it into this
  * world. DUPLICATED from content-schema's `DropReason` (intake.ts:80-85),
- * not imported: `@ai-rpg-engine/sidecar` depends on `@ai-rpg-engine/core`
- * only (package.json), and pulling a content-schema type across that
+ * not imported: sidecar does not take a content-schema dependency
+ * (package.json), and pulling a content-schema type across that
  * boundary for a five-value closed union is not worth the layering leak.
  * Same structural-typing precedent as `IntentProfileRef` (intake.ts:114-121).
  */
@@ -339,6 +350,11 @@ export type TickNotification = {
   events: WireEvent[];
   /** State changes since the previous tick, same serializer as `snapshot`. */
   delta: StatePatch[];
+  /**
+   * Felt presentation for this tick. Present only when this session
+   * negotiated `capabilities.audio`. Never hashed.
+   */
+  felt?: FeltPayload;
 };
 
 /**
@@ -387,6 +403,47 @@ export type SubmitActionResult = {
   snapshotSeq?: number;
   events: WireEvent[];
   delta: StatePatch[];
+  /**
+   * Felt presentation for the committed turn. Present only when this session
+   * negotiated `capabilities.audio`. Omitted (not `{}`) when the capability
+   * is off, so existing exact-match clients stay byte-stable.
+   */
+  felt?: FeltPayload;
+};
+
+/** One scheduled cue for a renderer that owns speakers. */
+export type FeltAudioCommand = {
+  domain: 'voice' | 'sfx' | 'ambient' | 'music';
+  action: string;
+  resourceId: string;
+  priority: number;
+  timing: number;
+  params: Record<string, unknown>;
+};
+
+/** Dialogue-only spoken line. Asides stay visual. */
+export type FeltSpeaker = {
+  entityId: string;
+  voiceId: string;
+  emotion: string;
+  speed: number;
+  text: string;
+};
+
+export type FeltUiEffect = {
+  type: string;
+  durationMs: number;
+  color?: string;
+};
+
+/**
+ * One composed beat for a felt client. `audio` is the cue-id contract;
+ * `speaker` is the spoken line exactly once; `uiEffects` is the lie budget.
+ */
+export type FeltPayload = {
+  audio: FeltAudioCommand[];
+  speaker?: FeltSpeaker;
+  uiEffects?: FeltUiEffect[];
 };
 
 export type PreviewResult = {
