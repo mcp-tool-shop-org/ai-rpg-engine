@@ -56,7 +56,7 @@ How the engine processes actions, events, perception, and cognition.
 - [AI Cognition](./08-ai-cognition.md) — beliefs, intent, morale, memory
 - [Perception Layers](./09-perception-layers.md) — sensory channels, clarity, distortion
 - [Narrative Authority](./12-narrative-authority.md) — truth vs presentation, unreliable narration
-- [Visual Clients](./66-visual-clients.md) — sidecar hosts, felt audio, the Godot 4 dimetric client
+- [Visual Clients](./66-visual-clients.md) — sidecar hosts, felt audio, the Godot 4 dimetric client, and which lever each layer owns
 
 ### Living Systems
 
@@ -160,7 +160,7 @@ build → simulate → analyze → tune → experiment
 63. [Running the Instrument](./63-running-the-instrument.md)
 64. [Lighting a Dormant Layer](./64-lighting-a-dormant-layer.md)
 65. [Consequences That Leave Marks](./65-consequences-that-leave-marks.md)
-66. [Visual Clients](./66-visual-clients.md) — sidecar, felt, Godot dimetric harbour
+66. [Visual Clients](./66-visual-clients.md) — sidecar, felt, Godot dimetric harbour, lever ownership
 
 ### Part VII — Character Systems
 

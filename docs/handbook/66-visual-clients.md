@@ -55,6 +55,20 @@ Art for the town kit is authored outside the engine (Blender orthographic camera
 
 **Forbidden:** analog velocity as truth; hashing tween `t`; interpolating occupancy; a physics body that collides independently; juice that writes hashed entity/zone state.
 
+## Where the lever lives
+
+A host does not grow a new room by drawing one. Salt Road is the worked example: the harbour you can walk is three layers, and each lever has one owner.
+
+| Lever | Owner | Reaches this engine? |
+|---|---|---|
+| Zone graph, neighbours, gate reason | World Forge, then `ContentPack.zones` | Yes. The gate is enforced here. The host only prints the reason. |
+| Who is in which zone | `entityPlacements` → placements | Yes. Hashed. |
+| Give an item to an entity | `itemPlacements` of `{ itemId, entityId }` | Yes. A prop standing on a floor is not this record. |
+| Dimetric cell, facing, floor plate | `WorldProject.presentation` | No. Not a `ContentPack` key. The stage pack carries it. |
+| Cue playback, camera shake | host, from the `felt` payload | The cue id is composed here and never hashed. The wav and the shake stay in the host. |
+
+The authoring map is [World Forge's levers](https://mcp-tool-shop-org.github.io/world-forge/handbook/levers/) and the stage's [authoring levers](https://mcp-tool-shop-org.github.io/ai-rpg-stage/handbook/levers/).
+
 ## What this is not
 
 - Not a grid combat engine. If a pack needs cells in the sim, that is a future occupancy module, not a Godot feature.
