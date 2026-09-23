@@ -1,0 +1,158 @@
+summary: ""
+boundaries:
+  - name: .claude
+    globs:
+      - .claude/**
+    role: config
+  - name: .github
+    globs:
+      - .github/**
+    role: config
+  - name: asset-registry
+    globs:
+      - packages/asset-registry/**
+    role: code
+  - name: audio-director
+    globs:
+      - packages/audio-director/**
+    role: code
+  - name: campaign-memory
+    globs:
+      - packages/campaign-memory/**
+    role: code
+  - name: character-creation
+    globs:
+      - packages/character-creation/**
+    role: code
+  - name: character-profile
+    globs:
+      - packages/character-profile/**
+    role: code
+  - name: cli
+    globs:
+      - packages/cli/**
+    role: code
+  - name: content-schema
+    globs:
+      - packages/content-schema/**
+    role: code
+  - name: core
+    globs:
+      - packages/core/**
+    role: code
+  - name: docs
+    globs:
+      - docs/**
+    role: docs
+  - name: dogfood
+    globs:
+      - dogfood/**
+    role: config
+  - name: equipment
+    globs:
+      - packages/equipment/**
+    role: code
+  - name: image-gen
+    globs:
+      - packages/image-gen/**
+    role: code
+  - name: ledger-adapter
+    globs:
+      - packages/ledger-adapter/**
+    role: code
+  - name: modules
+    globs:
+      - packages/modules/**
+    role: code
+  - name: ollama
+    globs:
+      - packages/ollama/**
+    role: code
+  - name: pack-registry
+    globs:
+      - packages/pack-registry/**
+    role: code
+  - name: presentation
+    globs:
+      - packages/presentation/**
+    role: code
+  - name: root
+    globs:
+      - "*"
+    role: docs
+  - name: rumor-system
+    globs:
+      - packages/rumor-system/**
+    role: code
+  - name: scripts
+    globs:
+      - scripts/**
+    role: code
+  - name: sidecar
+    globs:
+      - packages/sidecar/**
+    role: code
+  - name: site
+    globs:
+      - site/**
+    role: docs
+  - name: soundpack-core
+    globs:
+      - packages/soundpack-core/**
+    role: code
+  - name: starter
+    globs:
+      - templates/starter/**
+    role: code
+  - name: starter-bounty-hunter
+    globs:
+      - packages/starter-bounty-hunter/**
+    role: code
+  - name: starter-colony
+    globs:
+      - packages/starter-colony/**
+    role: code
+  - name: starter-cyberpunk
+    globs:
+      - packages/starter-cyberpunk/**
+    role: code
+  - name: starter-detective
+    globs:
+      - packages/starter-detective/**
+    role: code
+  - name: starter-fantasy
+    globs:
+      - packages/starter-fantasy/**
+    role: code
+  - name: starter-gladiator
+    globs:
+      - packages/starter-gladiator/**
+    role: code
+  - name: starter-merchant
+    globs:
+      - packages/starter-merchant/**
+    role: code
+  - name: starter-pirate
+    globs:
+      - packages/starter-pirate/**
+    role: code
+  - name: starter-ronin
+    globs:
+      - packages/starter-ronin/**
+    role: code
+  - name: starter-vampire
+    globs:
+      - packages/starter-vampire/**
+    role: code
+  - name: starter-weird-west
+    globs:
+      - packages/starter-weird-west/**
+    role: code
+  - name: starter-zombie
+    globs:
+      - packages/starter-zombie/**
+    role: code
+  - name: terminal-ui
+    globs:
+      - packages/terminal-ui/**
+    role: code
