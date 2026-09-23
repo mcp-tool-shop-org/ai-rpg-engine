@@ -31,6 +31,7 @@ on:
       - 'docs/check-docs-integrity.mjs'
       - 'docs/mixed-game-viability-proof.ts'
       - '.github/workflows/**'
+      - 'atlas/**'
   pull_request:
     paths:
       - 'packages/**'
@@ -47,6 +48,7 @@ on:
       - 'docs/check-docs-integrity.mjs'
       - 'docs/mixed-game-viability-proof.ts'
       - '.github/workflows/**'
+      - 'atlas/**'
   workflow_dispatch:
 
 concurrency:
@@ -72,6 +74,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Atlas check
+        if: matrix.node-version == 22
+        run: npx --yes @dogfood-lab/atlas@1.14.0 check
       # Audit GATES on high/critical advisories in production deps (--omit=dev):
       # a real advisory in a shipped dependency now fails CI. Dev-only tooling is
       # excluded because the sole current high advisory (vitest /

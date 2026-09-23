@@ -1,0 +1,939 @@
+{
+  "authored": [
+    ".claude/",
+    ".github/",
+    "docs/",
+    "dogfood/",
+    "root",
+    "site/"
+  ],
+  "breaks": [
+    {
+      "doors": 2,
+      "importedBy": [
+        "campaign-memory",
+        "character-creation",
+        "character-profile",
+        "cli",
+        "content-schema",
+        "docs",
+        "equipment",
+        "ledger-adapter",
+        "modules",
+        "ollama",
+        "pack-registry",
+        "sidecar",
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie",
+        "terminal-ui"
+      ],
+      "importedByTests": [],
+      "kind": "part",
+      "name": "core"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "cli",
+        "docs",
+        "modules",
+        "ollama",
+        "pack-registry",
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ],
+      "importedByTests": [],
+      "kind": "part",
+      "name": "content-schema"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "character-profile",
+        "cli",
+        "ledger-adapter",
+        "modules",
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ],
+      "importedByTests": [
+        "terminal-ui"
+      ],
+      "kind": "part",
+      "name": "equipment"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "cli",
+        "docs",
+        "ollama",
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ],
+      "importedByTests": [
+        "character-profile",
+        "equipment",
+        "ledger-adapter",
+        "terminal-ui"
+      ],
+      "kind": "part",
+      "name": "modules"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "character-profile",
+        "cli",
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ],
+      "importedByTests": [],
+      "kind": "part",
+      "name": "character-creation"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "cli",
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ],
+      "importedByTests": [],
+      "kind": "part",
+      "name": "pack-registry"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "audio-director",
+        "sidecar",
+        "terminal-ui"
+      ],
+      "importedByTests": [
+        "starter-fantasy"
+      ],
+      "kind": "part",
+      "name": "presentation"
+    },
+    {
+      "doors": 2,
+      "importedBy": [
+        "cli",
+        "ledger-adapter"
+      ],
+      "importedByTests": [
+        "character-creation",
+        "content-schema",
+        "modules",
+        "pack-registry"
+      ],
+      "kind": "part",
+      "name": "starter-gladiator"
+    }
+  ],
+  "changes": {
+    "first": true
+  },
+  "changesTogether": [
+    {
+      "a": "packages/cli/src/packs-fallout-sink-consequence.test.ts",
+      "b": "packages/cli/src/packs-fallout-sink.test.ts",
+      "either": 14,
+      "partLabels": [
+        "cli",
+        "cli"
+      ],
+      "parts": [
+        "cli",
+        "cli"
+      ],
+      "relation": "inside",
+      "shared": 10
+    },
+    {
+      "a": "packages/ledger-adapter/src/contracts.ts",
+      "b": "packages/ledger-adapter/src/settle/adapter.ts",
+      "either": 16,
+      "partLabels": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "parts": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "relation": "inside",
+      "shared": 11
+    },
+    {
+      "a": "packages/ollama/src/cli-run.test.ts",
+      "b": "packages/ollama/src/cli.ts",
+      "either": 16,
+      "partLabels": [
+        "ollama",
+        "ollama"
+      ],
+      "parts": [
+        "ollama",
+        "ollama"
+      ],
+      "relation": "inside",
+      "shared": 11
+    },
+    {
+      "a": "packages/ledger-adapter/src/contracts.ts",
+      "b": "packages/ledger-adapter/src/settle/adapter.test.ts",
+      "either": 16,
+      "partLabels": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "parts": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "relation": "inside",
+      "shared": 10
+    },
+    {
+      "a": "packages/ollama/src/cli-run.test.ts",
+      "b": "packages/ollama/src/index.ts",
+      "either": 17,
+      "partLabels": [
+        "ollama",
+        "ollama"
+      ],
+      "parts": [
+        "ollama",
+        "ollama"
+      ],
+      "relation": "inside",
+      "shared": 10
+    }
+  ],
+  "changesTogetherNote": [
+    "11 files changed together with their own tests, as expected.",
+    "Window: 180 days; a pair counts from 10 shared commits."
+  ],
+  "changesTogetherWithTests": 11,
+  "commit": "7ff40cdfd9f2bdfe52e3bb6c95966177355048a9",
+  "doors": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "landings": [
+        "packages/ledger-adapter/scripts/"
+      ],
+      "name": "CI",
+      "pushes": false,
+      "reach": [
+        {
+          "boundary": "asset-registry",
+          "depth": 0,
+          "files": 10
+        },
+        {
+          "boundary": "audio-director",
+          "depth": 0,
+          "files": 5
+        },
+        {
+          "boundary": "campaign-memory",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "character-creation",
+          "depth": 0,
+          "files": 16
+        },
+        {
+          "boundary": "character-profile",
+          "depth": 0,
+          "files": 15
+        },
+        {
+          "boundary": "cli",
+          "depth": 0,
+          "files": 72
+        },
+        {
+          "boundary": "content-schema",
+          "depth": 0,
+          "files": 21
+        },
+        {
+          "boundary": "core",
+          "depth": 0,
+          "files": 31
+        },
+        {
+          "boundary": "docs",
+          "depth": 0,
+          "files": 9
+        },
+        {
+          "boundary": "equipment",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "image-gen",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "ledger-adapter",
+          "depth": 0,
+          "files": 40
+        },
+        {
+          "boundary": "modules",
+          "depth": 0,
+          "files": 174
+        },
+        {
+          "boundary": "ollama",
+          "depth": 0,
+          "files": 151
+        },
+        {
+          "boundary": "pack-registry",
+          "depth": 0,
+          "files": 11
+        },
+        {
+          "boundary": "presentation",
+          "depth": 0,
+          "files": 6
+        },
+        {
+          "boundary": "root",
+          "depth": 0,
+          "files": 2
+        },
+        {
+          "boundary": "rumor-system",
+          "depth": 0,
+          "files": 9
+        },
+        {
+          "boundary": "scripts",
+          "depth": 0,
+          "files": 4
+        },
+        {
+          "boundary": "sidecar",
+          "depth": 0,
+          "files": 17
+        },
+        {
+          "boundary": "soundpack-core",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "starter",
+          "depth": 0,
+          "files": 5
+        },
+        {
+          "boundary": "starter-bounty-hunter",
+          "depth": 0,
+          "files": 9
+        },
+        {
+          "boundary": "starter-colony",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "starter-cyberpunk",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "starter-detective",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "starter-fantasy",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "starter-gladiator",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "starter-merchant",
+          "depth": 0,
+          "files": 16
+        },
+        {
+          "boundary": "starter-pirate",
+          "depth": 0,
+          "files": 11
+        },
+        {
+          "boundary": "starter-ronin",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "starter-vampire",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "starter-weird-west",
+          "depth": 0,
+          "files": 10
+        },
+        {
+          "boundary": "starter-zombie",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "terminal-ui",
+          "depth": 0,
+          "files": 8
+        }
+      ],
+      "runs": [
+        "scripts/check-packaging.mjs",
+        "scripts/verify-isolated-consumer.mjs",
+        "scripts/verify-mixed-game-viability.mjs",
+        "docs/",
+        "eslint.config.js",
+        "packages/",
+        "scripts/",
+        "templates/",
+        "vitest.config.ts"
+      ],
+      "runsCount": 9,
+      "sends": [],
+      "stages": [],
+      "triggers": [
+        "on a pull request touching 15 paths",
+        "on a push touching 15 paths",
+        "or by hand"
+      ]
+    },
+    {
+      "file": ".github/workflows/release.yml",
+      "landings": [
+        "packages/ledger-adapter/scripts/"
+      ],
+      "name": "Release",
+      "pushes": false,
+      "reach": [
+        {
+          "boundary": "asset-registry",
+          "depth": 0,
+          "files": 10
+        },
+        {
+          "boundary": "audio-director",
+          "depth": 0,
+          "files": 5
+        },
+        {
+          "boundary": "campaign-memory",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "character-creation",
+          "depth": 0,
+          "files": 16
+        },
+        {
+          "boundary": "character-profile",
+          "depth": 0,
+          "files": 15
+        },
+        {
+          "boundary": "cli",
+          "depth": 0,
+          "files": 72
+        },
+        {
+          "boundary": "content-schema",
+          "depth": 0,
+          "files": 21
+        },
+        {
+          "boundary": "core",
+          "depth": 0,
+          "files": 31
+        },
+        {
+          "boundary": "docs",
+          "depth": 0,
+          "files": 9
+        },
+        {
+          "boundary": "equipment",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "image-gen",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "ledger-adapter",
+          "depth": 0,
+          "files": 40
+        },
+        {
+          "boundary": "modules",
+          "depth": 0,
+          "files": 174
+        },
+        {
+          "boundary": "ollama",
+          "depth": 0,
+          "files": 151
+        },
+        {
+          "boundary": "pack-registry",
+          "depth": 0,
+          "files": 11
+        },
+        {
+          "boundary": "presentation",
+          "depth": 0,
+          "files": 6
+        },
+        {
+          "boundary": "root",
+          "depth": 0,
+          "files": 2
+        },
+        {
+          "boundary": "rumor-system",
+          "depth": 0,
+          "files": 9
+        },
+        {
+          "boundary": "scripts",
+          "depth": 0,
+          "files": 4
+        },
+        {
+          "boundary": "sidecar",
+          "depth": 0,
+          "files": 17
+        },
+        {
+          "boundary": "soundpack-core",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "starter",
+          "depth": 0,
+          "files": 5
+        },
+        {
+          "boundary": "starter-bounty-hunter",
+          "depth": 0,
+          "files": 9
+        },
+        {
+          "boundary": "starter-colony",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "starter-cyberpunk",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "starter-detective",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "starter-fantasy",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "starter-gladiator",
+          "depth": 0,
+          "files": 14
+        },
+        {
+          "boundary": "starter-merchant",
+          "depth": 0,
+          "files": 16
+        },
+        {
+          "boundary": "starter-pirate",
+          "depth": 0,
+          "files": 11
+        },
+        {
+          "boundary": "starter-ronin",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "starter-vampire",
+          "depth": 0,
+          "files": 12
+        },
+        {
+          "boundary": "starter-weird-west",
+          "depth": 0,
+          "files": 10
+        },
+        {
+          "boundary": "starter-zombie",
+          "depth": 0,
+          "files": 13
+        },
+        {
+          "boundary": "terminal-ui",
+          "depth": 0,
+          "files": 8
+        }
+      ],
+      "runs": [
+        "scripts/check-packaging.mjs",
+        "scripts/verify-isolated-consumer.mjs",
+        "scripts/verify-mixed-game-viability.mjs",
+        "docs/",
+        "eslint.config.js",
+        "packages/",
+        "scripts/",
+        "templates/",
+        "vitest.config.ts"
+      ],
+      "runsCount": 9,
+      "sends": [
+        "publishes to npm and a container image"
+      ],
+      "stages": [],
+      "triggers": [
+        "when a release is published",
+        "or by hand"
+      ]
+    },
+    {
+      "file": ".github/workflows/docs-integrity.yml",
+      "landings": [],
+      "name": "Docs Integrity",
+      "pushes": false,
+      "reach": [
+        {
+          "boundary": "docs",
+          "depth": 0,
+          "files": 1
+        }
+      ],
+      "runs": [
+        "docs/check-docs-integrity.mjs"
+      ],
+      "runsCount": 1,
+      "sends": [],
+      "stages": [],
+      "triggers": [
+        "on a pull request touching 5 paths",
+        "on a push touching 5 paths",
+        "or by hand"
+      ]
+    },
+    {
+      "file": ".github/workflows/pages.yml",
+      "landings": [],
+      "name": "Deploy site to GitHub Pages",
+      "pushes": false,
+      "reach": [],
+      "runs": [],
+      "runsCount": 0,
+      "sends": [
+        "deploys the site"
+      ],
+      "stages": [],
+      "triggers": [
+        "on a pull request touching 2 paths",
+        "on a push to main touching 2 paths",
+        "or by hand"
+      ]
+    }
+  ],
+  "duplicates": [
+    {
+      "contract": true,
+      "files": [
+        "packages/starter-bounty-hunter/src/setup.ts",
+        "packages/starter-colony/src/setup.ts",
+        "packages/starter-cyberpunk/src/setup.ts",
+        "packages/starter-detective/src/setup.ts",
+        "packages/starter-fantasy/src/setup.ts",
+        "packages/starter-gladiator/src/setup.ts",
+        "packages/starter-merchant/src/setup.ts",
+        "packages/starter-pirate/src/setup.ts",
+        "packages/starter-ronin/src/setup.ts",
+        "packages/starter-vampire/src/setup.ts",
+        "packages/starter-weird-west/src/setup.ts",
+        "packages/starter-zombie/src/setup.ts",
+        "templates/starter/src/setup.ts"
+      ],
+      "name": "createGame",
+      "partLabels": [
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ],
+      "parts": [
+        "starter",
+        "starter-bounty-hunter",
+        "starter-colony",
+        "starter-cyberpunk",
+        "starter-detective",
+        "starter-fantasy",
+        "starter-gladiator",
+        "starter-merchant",
+        "starter-pirate",
+        "starter-ronin",
+        "starter-vampire",
+        "starter-weird-west",
+        "starter-zombie"
+      ]
+    },
+    {
+      "files": [
+        "packages/starter-fantasy/src/content.ts",
+        "templates/starter/src/content.ts"
+      ],
+      "name": "toContentPack",
+      "partLabels": [
+        "starter-fantasy",
+        "starter"
+      ],
+      "parts": [
+        "starter-fantasy",
+        "starter"
+      ]
+    }
+  ],
+  "duplicatesLead": "These are candidates from names and call order, not a judgement.",
+  "duplicatesNote": [],
+  "generated": [
+    {
+      "place": "packages/ledger-adapter/scripts/",
+      "writers": [
+        "packages/ledger-adapter/scripts/live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/gladiator-nft-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/gladiator-nft-live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/merchant-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/merchant-live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/nft-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/nft-live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/pirate-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/pirate-live-replay.mjs"
+      ]
+    }
+  ],
+  "generatedAt": "2026-09-23T15:01:45.829Z",
+  "limits": [
+    "3 import sites could not be resolved.",
+    "42 writes and 61 reads use paths built at run time and are not named here."
+  ],
+  "mainDoor": ".github/workflows/ci.yml",
+  "parts": 39,
+  "readers": [
+    {
+      "readers": [],
+      "target": "packages/ledger-adapter/"
+    }
+  ],
+  "repo": "mcp-tool-shop-org/ai-rpg-engine",
+  "sequences": [],
+  "startHere": [
+    ".github/workflows/ci.yml",
+    "docs/"
+  ],
+  "summary": null,
+  "summaryFrom": null,
+  "testFiles": 391,
+  "testedBy": {
+    "asset-registry": 6,
+    "audio-director": 3,
+    "campaign-memory": 7,
+    "character-creation": 115,
+    "character-profile": 12,
+    "cli": 42,
+    "content-schema": 189,
+    "core": 276,
+    "equipment": 157,
+    "image-gen": 6,
+    "ledger-adapter": 17,
+    "modules": 231,
+    "ollama": 38,
+    "pack-registry": 105,
+    "presentation": 6,
+    "rumor-system": 3,
+    "scripts": 0,
+    "sidecar": 14,
+    "soundpack-core": 8,
+    "starter": 3,
+    "starter-bounty-hunter": 34,
+    "starter-colony": 42,
+    "starter-cyberpunk": 46,
+    "starter-detective": 42,
+    "starter-fantasy": 56,
+    "starter-gladiator": 48,
+    "starter-merchant": 43,
+    "starter-pirate": 43,
+    "starter-ronin": 45,
+    "starter-vampire": 43,
+    "starter-weird-west": 42,
+    "starter-zombie": 42,
+    "terminal-ui": 24
+  },
+  "unread": [
+    {
+      "place": "packages/ledger-adapter/scripts/",
+      "writers": [
+        "packages/ledger-adapter/scripts/live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/gladiator-nft-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/gladiator-nft-live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/merchant-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/merchant-live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/nft-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/nft-live-replay.mjs"
+      ]
+    },
+    {
+      "place": "packages/ledger-adapter/scripts/pirate-live-replay-receipt.json",
+      "writers": [
+        "packages/ledger-adapter/scripts/pirate-live-replay.mjs"
+      ]
+    }
+  ],
+  "unreadNote": [],
+  "untested": [
+    {
+      "part": "scripts",
+      "partLabel": "scripts",
+      "testedBy": 0
+    }
+  ],
+  "untestedNote": [],
+  "written": 5
+}
