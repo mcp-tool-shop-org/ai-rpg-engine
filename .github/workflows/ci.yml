@@ -84,7 +84,7 @@ jobs:
       - run: npm ci
       - name: Atlas check
         if: matrix.node-version == 22
-        run: npx --yes @dogfood-lab/atlas@1.14.0 check
+        run: npx --yes @dogfood-lab/atlas@1.24.0 check
       # Audit GATES on high/critical advisories in production deps (--omit=dev):
       # a real advisory in a shipped dependency now fails CI. Dev-only tooling is
       # excluded because the sole current high advisory (vitest /
