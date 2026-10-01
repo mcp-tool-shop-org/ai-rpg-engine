@@ -32,7 +32,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "1c789e53fd04e7dcd180f72af03dcbbe715078cd72c0f1406699426a5ef96b91",
+          "hash": "624007329e45e3fb0e2a254eb650a64cc2b304d507e19de576e91edc2c5b4e00",
           "path": ".github/workflows/ci.yml"
         },
         {
@@ -18699,7 +18699,7 @@
           "path": "eslint.config.js"
         },
         {
-          "hash": "a635af3e61b9ca0eefc6d70b7b945943935642da4f8dd3311bd2540ced4a413a",
+          "hash": "1dc470b1bd5eadb4939e3a8a607dcc5c478a914fbe9b7725e5704ec70b13ee8d",
           "path": "package-lock.json"
         },
         {
@@ -25540,25 +25540,7 @@
       ],
       "triggers": [
         {
-          "event": "pull_request",
-          "paths": [
-            ".github/workflows/**",
-            "Dockerfile",
-            "atlas/**",
-            "codecov.yml",
-            "docs/check-docs-integrity.mjs",
-            "docs/examples/**",
-            "docs/mixed-game-viability-proof.ts",
-            "eslint.config.js",
-            "package-lock.json",
-            "package.json",
-            "packages/**",
-            "scripts/**",
-            "templates/**",
-            "tsconfig.json",
-            "tsconfig.tests.json",
-            "vitest.config.ts"
-          ]
+          "event": "pull_request"
         },
         {
           "event": "push",
@@ -29183,7 +29165,7 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "a54df8500543541a6fc2f1392501c1f2741b1014",
+    "commit": "8dceef76f2e7427c2fdceb7248b01fa20d4707b6",
     "tracked": 1386
   },
   "landings": [

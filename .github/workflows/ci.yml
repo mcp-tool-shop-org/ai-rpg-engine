@@ -34,25 +34,11 @@ on:
       - 'atlas/**'
       # Codecov reads its status and comment settings from this file.
       - 'codecov.yml'
+  # No paths filter on pull requests, deliberately: this workflow emits the
+  # required status check, and a PR that matched no path (a docs-only change)
+  # would never report it and could never merge. Pushes to main stay
+  # paths-gated.
   pull_request:
-    paths:
-      - 'packages/**'
-      - 'templates/**'
-      - 'scripts/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'tsconfig.tests.json'
-      - 'Dockerfile'
-      - 'vitest.config.ts'
-      - 'eslint.config.js'
-      - 'docs/examples/**'
-      - 'docs/check-docs-integrity.mjs'
-      - 'docs/mixed-game-viability-proof.ts'
-      - '.github/workflows/**'
-      - 'atlas/**'
-      # Codecov reads its status and comment settings from this file.
-      - 'codecov.yml'
   workflow_dispatch:
 
 concurrency:

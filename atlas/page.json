@@ -207,8 +207,8 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 1,
-      "changed": 1,
+      "added": 0,
+      "changed": 2,
       "moved": 0,
       "parts": 2,
       "removed": 0
@@ -216,149 +216,20 @@
     "items": [
       {
         "kind": "door",
-        "sentence": "CI's pull request trigger now also names `codecov.yml`.",
+        "sentence": "CI's pull request trigger no longer names `.github/workflows/**`, `Dockerfile`, `atlas/**`, `codecov.yml`, `docs/check-docs-integrity.mjs`, `docs/examples/**`, `docs/mixed-game-viability-proof.ts`, `eslint.config.js`, `package-lock.json`, `package.json`, `packages/**`, `scripts/**`, `templates/**`, `tsconfig.json`, `tsconfig.tests.json` and `vitest.config.ts`.",
         "subjects": [
           ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "CI's push trigger now also names `codecov.yml`.",
-        "subjects": [
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "CI now also runs files in docs/examples/, packages/asset-registry/, packages/asset-registry/src/ and 64 more.",
-        "subjects": [
-          ".github/workflows/ci.yml",
-          "docs/examples/",
-          "packages/asset-registry/",
-          "packages/asset-registry/src/",
-          "packages/audio-director/",
-          "packages/audio-director/src/",
-          "packages/campaign-memory/",
-          "packages/campaign-memory/src/",
-          "packages/character-creation/",
-          "packages/character-creation/src/",
-          "packages/character-profile/",
-          "packages/character-profile/src/",
-          "packages/cli/",
-          "packages/cli/src/",
-          "packages/content-schema/",
-          "packages/content-schema/src/",
-          "packages/core/",
-          "packages/core/src/",
-          "packages/equipment/",
-          "packages/equipment/src/",
-          "packages/image-gen/",
-          "packages/image-gen/src/",
-          "packages/ledger-adapter/",
-          "packages/ledger-adapter/src/engine/",
-          "packages/ledger-adapter/src/security/",
-          "packages/ledger-adapter/src/settle/",
-          "packages/ledger-adapter/src/state/",
-          "packages/ledger-adapter/src/transport/",
-          "packages/modules/",
-          "packages/modules/src/",
-          "packages/ollama/",
-          "packages/ollama/src/",
-          "packages/pack-registry/",
-          "packages/pack-registry/src/",
-          "packages/presentation/",
-          "packages/presentation/src/",
-          "packages/rumor-system/",
-          "packages/rumor-system/src/",
-          "packages/sidecar/src/",
-          "packages/soundpack-core/",
-          "packages/soundpack-core/src/",
-          "packages/starter-bounty-hunter/",
-          "packages/starter-bounty-hunter/src/",
-          "packages/starter-colony/",
-          "packages/starter-colony/src/",
-          "packages/starter-cyberpunk/",
-          "packages/starter-cyberpunk/src/",
-          "packages/starter-detective/",
-          "packages/starter-detective/src/",
-          "packages/starter-fantasy/",
-          "packages/starter-fantasy/src/",
-          "packages/starter-gladiator/",
-          "packages/starter-gladiator/src/",
-          "packages/starter-merchant/",
-          "packages/starter-merchant/src/",
-          "packages/starter-pirate/",
-          "packages/starter-pirate/src/",
-          "packages/starter-ronin/",
-          "packages/starter-ronin/src/",
-          "packages/starter-vampire/",
-          "packages/starter-vampire/src/",
-          "packages/starter-weird-west/",
-          "packages/starter-weird-west/src/",
-          "packages/starter-zombie/",
-          "packages/starter-zombie/src/",
-          "packages/terminal-ui/",
-          "packages/terminal-ui/src/",
-          "templates/starter/src/"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "And 6 more changes to doors.",
-        "subjects": []
-      },
-      {
-        "kind": "landing",
-        "sentence": "docs/c0-alignment/intake-table.json is now written by packages/cli/src/c0-intake-table.test.ts.",
-        "subjects": [
-          "docs/c0-alignment/intake-table.json",
-          "packages/cli/src/c0-intake-table.test.ts"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "docs/c0-alignment/reverse-table.json is now written by packages/cli/src/c0-reverse-table.test.ts.",
-        "subjects": [
-          "docs/c0-alignment/reverse-table.json",
-          "packages/cli/src/c0-reverse-table.test.ts"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "docs/c0-alignment/version-skew.json is now written by packages/cli/src/c0-version-skew.test.ts.",
-        "subjects": [
-          "docs/c0-alignment/version-skew.json",
-          "packages/cli/src/c0-version-skew.test.ts"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "And 87 more new writers and readers of places.",
-        "subjects": []
-      },
-      {
-        "kind": "origin",
-        "sentence": "docs was authored and is now mixed.",
-        "subjects": [
-          "docs"
-        ]
-      },
-      {
-        "kind": "sequence",
-        "sentence": "scripts/verify-isolated-consumer.mjs now starts at `run`; it started at `publishableWorkspaces`.",
-        "subjects": [
-          "scripts/verify-isolated-consumer.mjs"
         ]
       },
       {
         "kind": "counts",
-        "sentence": "1 file added and 1 changed content, across 2 parts.",
+        "sentence": "2 files changed content, across 2 parts.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "7ff40cdfd9f2bdfe52e3bb6c95966177355048a9",
-      "generatedAt": "2026-09-23T15:01:45.829Z"
+      "commit": "a54df8500543541a6fc2f1392501c1f2741b1014",
+      "generatedAt": "2026-09-30T20:07:28.663Z"
     },
     "unchanged": false
   },
@@ -444,7 +315,7 @@
     "Window: 180 days; a pair counts from 10 shared commits, since 56 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
   ],
   "changesTogetherWithTests": 11,
-  "commit": "a54df8500543541a6fc2f1392501c1f2741b1014",
+  "commit": "8dceef76f2e7427c2fdceb7248b01fa20d4707b6",
   "defaultBranch": "main",
   "derived": "39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
@@ -821,7 +692,7 @@
       ],
       "stages": [],
       "triggers": [
-        "on a pull request touching 16 paths",
+        "on a pull request",
         "on a push touching 16 paths",
         "or by hand"
       ]
@@ -1691,7 +1562,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-09-30T20:07:28.663Z",
+  "generatedAt": "2026-10-01T02:14:05.042Z",
   "limits": [
     "3 imports could not be resolved: `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; `packages/pack-registry/src/starter-readme-usage.test.ts` imports a path built at run time.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
