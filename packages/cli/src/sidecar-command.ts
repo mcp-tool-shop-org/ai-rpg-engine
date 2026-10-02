@@ -15,6 +15,7 @@ import * as fs from 'node:fs';
 import { startStdioServer, startSocketServer, type PackIntakeSummary } from '@ai-rpg-engine/sidecar';
 import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
 import { createStandardChannels, modifyDistrictMetric, emitZoneEnteredForPlacement } from '@ai-rpg-engine/modules';
+import type { WorldState } from '@ai-rpg-engine/core';
 import { allPacks } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
@@ -48,6 +49,9 @@ export interface SidecarDeps {
 }
 
 const defaultDeps: SidecarDeps = { error: (m) => process.stderr.write(`${m}\n`) };
+
+/** `world.modules` slice holding the `--shock` cue's round count (see the scenario cue below). */
+export const CUE_CLOCK_KEY = 'sidecar-cue-clock';
 
 /**
  * F-c6ff0f97 (cli-side half): a JSON-RPC client gets the same pack-intake
@@ -447,7 +451,28 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
     }
   }
 
-  let roundsRun = 0;
+  // ── The cue's clock lives in the WORLD, not in this process ────────────────
+  //
+  // The first version counted rounds in a closure variable (`let roundsRun = 0`).
+  // That counter was not part of the save, so a client that advanced past the cue
+  // round and then LOADed an earlier save got the earlier world back with the counter
+  // still past the cue — and the cue never fired again for the rest of the process.
+  // Measured 2026-10-02 by ai-playtest through ai-rpg-stage's engine bridge
+  // (mcp-tool-shop-org/ai-rpg-stage#15), which resets between seats by save + load:
+  // in a 4-seat panel only seat 1 ever saw the shock.
+  //
+  // The engine's tick cannot stand in for the count. It advances per ACTION, and a
+  // round in which no NPC acts advances it not at all, so a quiet zone can sit at
+  // the same tick for rounds 1, 2 and 3. So the count is written into the world's
+  // own state, in a slice no module owns: the save carries it, LOAD restores it, and
+  // the cue reads the clock of the world it is about to shock. Unregistered slices
+  // survive a round trip by design (migrateModuleStates preserves them).
+  //
+  // Written only when a cue is set, so a session without --shock stays byte-identical.
+  const readCueClock = (world: WorldState): number => {
+    const slice = world.modules[CUE_CLOCK_KEY] as { roundsRun?: unknown } | undefined;
+    return typeof slice?.roundsRun === 'number' ? slice.roundsRun : 0;
+  };
 
   // Identical on both transports. That is the whole claim `stdio.ts` made about
   // attach: the server, the protocol and the serializer do not know which one they
@@ -464,14 +489,18 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
     // The round driver, injected. `advance` reports the capability unavailable
     // rather than pretending when a host does not supply one.
     advanceRound: (e: unknown) => {
-      roundsRun += 1;
+      // Read through `e` every round: LOAD swaps the engine's store, so a world
+      // captured at boot would be the wrong one after the first load.
+      const world = (e as { world: WorldState }).world;
+      const roundsRun = cue !== undefined ? readCueClock(world) + 1 : 0;
+      if (cue !== undefined) world.modules[CUE_CLOCK_KEY] = { roundsRun };
       // The cue fires BEFORE the round it names, so the world tick inside that round is
       // what observes the changed metric and derives the consequence. Firing after would
       // leave the shock unobserved until the following round — a one-round lag that reads
       // as a bug in the sim rather than as an ordering choice here.
       if (cue !== undefined && roundsRun === cue.round) {
         modifyDistrictMetric(
-          (e as { world: unknown }).world as never,
+          world as never,
           cue.districtId,
           cue.metric as never,
           cue.delta,
