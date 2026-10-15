@@ -208,114 +208,30 @@
   "changes": {
     "fileCounts": {
       "added": 0,
-      "changed": 2,
+      "changed": 4,
       "moved": 0,
-      "parts": 2,
+      "parts": 3,
       "removed": 0
     },
     "items": [
       {
-        "kind": "door",
-        "sentence": "CI's pull request trigger no longer names `.github/workflows/**`, `Dockerfile`, `atlas/**`, `codecov.yml`, `docs/check-docs-integrity.mjs`, `docs/examples/**`, `docs/mixed-game-viability-proof.ts`, `eslint.config.js`, `package-lock.json`, `package.json`, `packages/**`, `scripts/**`, `templates/**`, `tsconfig.json`, `tsconfig.tests.json` and `vitest.config.ts`.",
-        "subjects": [
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
         "kind": "counts",
-        "sentence": "2 files changed content, across 2 parts.",
+        "sentence": "Nothing structural changed since 2026-10-01; 4 files changed content.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "a54df8500543541a6fc2f1392501c1f2741b1014",
-      "generatedAt": "2026-09-30T20:07:28.663Z"
+      "commit": "8dceef76f2e7427c2fdceb7248b01fa20d4707b6",
+      "generatedAt": "2026-10-01T02:14:05.042Z"
     },
-    "unchanged": false
+    "unchanged": true
   },
-  "changesTogether": [
-    {
-      "a": "packages/cli/src/packs-fallout-sink-consequence.test.ts",
-      "b": "packages/cli/src/packs-fallout-sink.test.ts",
-      "either": 14,
-      "partLabels": [
-        "cli",
-        "cli"
-      ],
-      "parts": [
-        "cli",
-        "cli"
-      ],
-      "relation": "inside",
-      "shared": 10
-    },
-    {
-      "a": "packages/ledger-adapter/src/contracts.ts",
-      "b": "packages/ledger-adapter/src/settle/adapter.ts",
-      "either": 16,
-      "partLabels": [
-        "ledger-adapter",
-        "ledger-adapter"
-      ],
-      "parts": [
-        "ledger-adapter",
-        "ledger-adapter"
-      ],
-      "relation": "inside",
-      "shared": 11
-    },
-    {
-      "a": "packages/ollama/src/cli-run.test.ts",
-      "b": "packages/ollama/src/cli.ts",
-      "either": 16,
-      "partLabels": [
-        "ollama",
-        "ollama"
-      ],
-      "parts": [
-        "ollama",
-        "ollama"
-      ],
-      "relation": "inside",
-      "shared": 11
-    },
-    {
-      "a": "packages/ledger-adapter/src/contracts.ts",
-      "b": "packages/ledger-adapter/src/settle/adapter.test.ts",
-      "either": 16,
-      "partLabels": [
-        "ledger-adapter",
-        "ledger-adapter"
-      ],
-      "parts": [
-        "ledger-adapter",
-        "ledger-adapter"
-      ],
-      "relation": "inside",
-      "shared": 10
-    },
-    {
-      "a": "packages/ollama/src/cli-run.test.ts",
-      "b": "packages/ollama/src/index.ts",
-      "either": 17,
-      "partLabels": [
-        "ollama",
-        "ollama"
-      ],
-      "parts": [
-        "ollama",
-        "ollama"
-      ],
-      "relation": "inside",
-      "shared": 10
-    }
-  ],
+  "changesTogether": [],
   "changesTogetherNote": [
-    "11 files changed together with their own tests, as expected.",
-    "Window: 180 days; a pair counts from 10 shared commits, since 56 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
+    "Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do."
   ],
-  "changesTogetherWithTests": 11,
-  "commit": "8dceef76f2e7427c2fdceb7248b01fa20d4707b6",
+  "changesTogetherWithTests": 0,
+  "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b",
   "defaultBranch": "main",
   "derived": "39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
@@ -1562,7 +1478,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-10-01T02:14:05.042Z",
+  "generatedAt": "2026-10-15T01:55:15.881Z",
   "limits": [
     "3 imports could not be resolved: `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; `packages/pack-registry/src/starter-readme-usage.test.ts` imports a path built at run time.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
@@ -1573,7 +1489,8 @@
     "6 writes and 3 reads go to a temporary directory, not to this repository.",
     "2 commands are built at run time and not followed, 1 of them in tests.",
     "CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.",
-    "Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those."
+    "Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.",
+    "Statistics confidence is low: fewer than 20 source files reach 10 revisions in the window."
   ],
   "mainDoor": ".github/workflows/ci.yml",
   "partLabels": {

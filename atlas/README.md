@@ -1,15 +1,14 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-10-01 from commit 8dceef7 by Atlas 1.24.0.
+Mapped at 2026-10-15 from commit d283fcc by Atlas 1.24.0.
 
 ## What this is
 
 39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-09-30 (a54df85)
+## What changed since 2026-10-01 (8dceef7)
 
-- CI's pull request trigger no longer names `.github/workflows/**`, `Dockerfile`, `atlas/**`, `codecov.yml`, `docs/check-docs-integrity.mjs`, `docs/examples/**`, `docs/mixed-game-viability-proof.ts`, `eslint.config.js`, `package-lock.json`, `package.json`, `packages/**`, `scripts/**`, `templates/**`, `tsconfig.json`, `tsconfig.tests.json` and `vitest.config.ts`.
-- 2 files changed content, across 2 parts.
+Nothing structural changed since 2026-10-01; 4 files changed content.
 
 ## What comes in
 
@@ -70,15 +69,9 @@ Mapped at 2026-10-01 from commit 8dceef7 by Atlas 1.24.0.
 
 ## What tends to change together
 
-- **packages/cli/src/packs-fallout-sink-consequence.test.ts** and **packages/cli/src/packs-fallout-sink.test.ts** changed together in 10 of 14 commits, inside the cli part.
-- **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.ts** changed together in 11 of 16 commits, inside the ledger-adapter part.
-- **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/cli.ts** changed together in 11 of 16 commits, inside the ollama part.
-- **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.test.ts** changed together in 10 of 16 commits, inside the ledger-adapter part.
-- **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/index.ts** changed together in 10 of 17 commits, inside the ollama part.
+No two source files changed together often enough to name.
 
-11 files changed together with their own tests, as expected.
-
-Window: 180 days; a pair counts from 10 shared commits, since 56 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
+Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do.
 
 ## What no test touches
 
@@ -137,5 +130,6 @@ Read those in order to follow one pull request end to end.
 - 2 commands are built at run time and not followed, 1 of them in tests.
 - CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.
 - Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.
+- Statistics confidence is low: fewer than 20 source files reach 10 revisions in the window.
 
 Regenerate with `npx --yes @dogfood-lab/atlas map`.

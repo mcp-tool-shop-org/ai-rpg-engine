@@ -18627,7 +18627,7 @@
           "path": ".gitignore"
         },
         {
-          "hash": "ba9945a4b369ba4d350036509580a44b6e50dc32d3f85277de238019766b5765",
+          "hash": "b8374db98c776b667f5302f25f93187409b52f2261aff0c51358fb94c3ad675a",
           "path": "CHANGELOG.md"
         },
         {
@@ -19250,7 +19250,7 @@
           "path": "packages/sidecar/src/protocol.ts"
         },
         {
-          "hash": "714204780c1653c3ef2ec3207f7530e5f77a022ec36f6b427937393d86e8884e",
+          "hash": "cee9de29993b8576a6654d3ed46ea95413962b6fd6d05afc03def361a28a0d14",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/serializer.ts"
@@ -19270,7 +19270,7 @@
             "stateHash",
             "toWireEvent"
           ],
-          "hash": "8bfb3e7dfb95e2bbabb5bf95cbb58bca3e7f5d2659a8b8ba01b251573138ee14",
+          "hash": "cb01e5617cd6d89d0e1bae10e6b5243f4c34fe122c6700c17db24b52709be748",
           "importOrder": [
             "packages/sidecar/src/protocol.ts",
             "packages/core/src/index.ts"
@@ -19460,7 +19460,7 @@
           "path": "site/astro.config.mjs"
         },
         {
-          "hash": "23d4de41c77485cec401c91d206be7d4dfc6a335b4b2b3768e68b0b1113c4312",
+          "hash": "3c14293bfdf29c00c346482ce8d58221007917212cca4d07eb95997ea57b2cf0",
           "path": "site/package-lock.json"
         },
         {
@@ -29165,7 +29165,7 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "8dceef76f2e7427c2fdceb7248b01fa20d4707b6",
+    "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b",
     "tracked": 1386
   },
   "landings": [

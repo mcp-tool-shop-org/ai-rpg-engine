@@ -163,6 +163,8 @@ export function applyPatches(target: unknown, patches: readonly StatePatch[]): u
     const parent = resolveParent(root, patch.path);
     if (parent === undefined) continue;
     const key = patch.path[patch.path.length - 1];
+    // `__proto__` is never a state key: writing it re-parents the object it is written on.
+    if (key === '__proto__') continue;
     if (patch.op === 'remove') {
       if (Array.isArray(parent)) parent.splice(Number(key), 1);
       else delete (parent as Record<string, unknown>)[String(key)];
@@ -178,7 +180,11 @@ function resolveParent(root: unknown, path: readonly (string | number)[]): unkno
   for (let i = 0; i < path.length - 1; i++) {
     if (node === null || typeof node !== 'object') return undefined;
     const key = path[i];
-    let next = (node as Record<string | number, unknown>)[key];
+    // Patches arrive over the wire, so the path is not trusted. Walk own properties only:
+    // `constructor` and `prototype` are inherited by a plain object, and following them
+    // would reach Object.prototype. `__proto__` is never a state key.
+    if (key === '__proto__') return undefined;
+    let next = Object.hasOwn(node, key) ? (node as Record<string | number, unknown>)[key] : undefined;
     if (next === undefined) {
       // Create the missing container. The NEXT segment's type decides which:
       // a numeric key means an array. Without this, applying a snapshot delta to
