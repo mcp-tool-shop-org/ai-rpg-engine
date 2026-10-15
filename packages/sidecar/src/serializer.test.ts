@@ -84,3 +84,42 @@ describe('F-decfe897 — projectState omits eventLog / windows collections', () 
     expect(snap.every((p) => p.path[0] === 'entities' || p.path[0] === 'zones')).toBe(true);
   });
 });
+
+describe('applyPatches treats the patch path as untrusted', () => {
+  const fresh = () => ({}) as Record<string, unknown>;
+
+  it('does not walk through __proto__ into Object.prototype', () => {
+    applyPatches({}, [{ op: 'set', path: ['__proto__', 'polluted'], value: 'yes' }]);
+    expect(fresh().polluted).toBeUndefined();
+    expect(Object.prototype).not.toHaveProperty('polluted');
+  });
+
+  it('does not walk through constructor.prototype into Object.prototype', () => {
+    const root = applyPatches({}, [{ op: 'set', path: ['constructor', 'prototype', 'polluted'], value: 'yes' }]);
+    expect(fresh().polluted).toBeUndefined();
+    expect(Object.prototype).not.toHaveProperty('polluted');
+    // the value lands on plain own objects of the target instead
+    expect((root as { constructor: { prototype: { polluted: string } } }).constructor.prototype.polluted).toBe('yes');
+  });
+
+  it('ignores a patch whose last key is __proto__, for set and for remove', () => {
+    const root = applyPatches({ a: { b: 1 } }, [
+      { op: 'set', path: ['a', '__proto__'], value: { injected: true } },
+      { op: 'remove', path: ['a', '__proto__'] },
+    ]) as { a: Record<string, unknown> };
+    expect(Object.getPrototypeOf(root.a)).toBe(Object.prototype);
+    expect(root.a.injected).toBeUndefined();
+    expect(root.a.b).toBe(1);
+  });
+
+  it('still creates, sets and removes ordinary nested paths', () => {
+    const root = applyPatches({}, [
+      { op: 'set', path: ['entities', 'hero', 'hp'], value: 10 },
+      { op: 'set', path: ['list', 0], value: 'a' },
+      { op: 'set', path: ['list', 1], value: 'b' },
+      { op: 'set', path: ['entities', 'hero', 'name'], value: 'Ada' },
+      { op: 'remove', path: ['entities', 'hero', 'hp'] },
+    ]);
+    expect(root).toEqual({ entities: { hero: { name: 'Ada' } }, list: ['a', 'b'] });
+  });
+});

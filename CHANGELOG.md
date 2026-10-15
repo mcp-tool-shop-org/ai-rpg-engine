@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- **`applyPatches` no longer follows a patch path into `Object.prototype`.** The sidecar's client half applies patches that arrive over the wire, and it walked each path with plain property reads, so `['__proto__', 'x']`, or `['constructor', 'prototype', 'x']` (a plain object inherits `constructor`), reached `Object.prototype` and wrote there. It now walks own properties only and ignores a patch whose path goes through, or ends at, `__proto__`. Ordinary nested set, create and remove patches behave as before. (CodeQL `js/prototype-polluting-assignment`, three alerts.)
+
 ## [3.12.0] - 2026-09-21
 
 **A host that draws can hear the world.** The sidecar learns one more
