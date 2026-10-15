@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.12.1] - 2026-10-15
+
+A security patch on 3.12.0. Nothing about the engine's behaviour, wire format or hashes changes.
 
 ### Security
 
+- **The CLI image runs on a patched base.** The `ai-rpg-engine` image moves to `node:24-bookworm-slim` at Node 24.22.0 (digest `sha256:a5f4366e…`) and upgrades `perl-base` in place to `5.36.0-7+deb12u4`, which the new base still ships one revision behind. The refreshed base on its own still failed the CI image scan on seven fixable HIGH and CRITICAL findings in `perl-base` (CVE-2026-13221, 8376, 42496, 42497, 48962, 57432 and 57433; 42496 and 42497 are perl's Archive::Tar). With the upgrade the rebuilt image scans clean at the CI gate (HIGH,CRITICAL, fixed only), and the `--help` and `create-starter` smoke steps pass on it.
 - **`applyPatches` no longer follows a patch path into `Object.prototype`.** The sidecar's client half applies patches that arrive over the wire, and it walked each path with plain property reads, so `['__proto__', 'x']`, or `['constructor', 'prototype', 'x']` (a plain object inherits `constructor`), reached `Object.prototype` and wrote there. It now walks own properties only and ignores a patch whose path goes through, or ends at, `__proto__`. Ordinary nested set, create and remove patches behave as before. (CodeQL `js/prototype-polluting-assignment`, three alerts.)
 
 ## [3.12.0] - 2026-09-21

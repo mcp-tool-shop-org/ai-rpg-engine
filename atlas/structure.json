@@ -105,7 +105,7 @@
           "path": "packages/asset-registry/README.zh.md"
         },
         {
-          "hash": "c2b07528474d4f0435d6f11d899666cb90a5bfe601dc1440fd7dd56fd145a912",
+          "hash": "1e32de3fe0bb293a876f69eb27301ae3d7daa6811412d85612470e4fdfb6ab39",
           "path": "packages/asset-registry/package.json"
         },
         {
@@ -374,7 +374,7 @@
           "path": "packages/audio-director/README.zh.md"
         },
         {
-          "hash": "e4e7a70ddf92d2107e5e3b4aabd19d6910a5253390508f45aad5dfd4fe645343",
+          "hash": "03a0cf053fd2c63e1ad4b5d4f762fe237215ece8b7c7c71559e3dab4163ca42e",
           "path": "packages/audio-director/package.json"
         },
         {
@@ -523,7 +523,7 @@
           "path": "packages/campaign-memory/README.zh.md"
         },
         {
-          "hash": "e994ae72d42ee41d4a2a9a5ad90ae38a566c7c47a03afb4c4970a0945b0fe377",
+          "hash": "52ba8eb3968d77af6eb43ea06f2698a03a8f4335e9039f6bef8dea5e8291051c",
           "path": "packages/campaign-memory/package.json"
         },
         {
@@ -876,7 +876,7 @@
           "path": "packages/character-creation/README.zh.md"
         },
         {
-          "hash": "05a97cdb82537c3aab20ce8bf6829a378c30f22c38bedd6fe30439a3fdf7ef19",
+          "hash": "80fe16f8f43c581c360f653a6cef268e908874ed2c00b08047f04eb20289bc20",
           "path": "packages/character-creation/package.json"
         },
         {
@@ -1219,7 +1219,7 @@
           "path": "packages/character-profile/README.zh.md"
         },
         {
-          "hash": "792797ec72ddf24b426122358293a1b5e7d2d040a85d1172f729e6ec92027a4e",
+          "hash": "750c0dddfaaf7f3a5ca4fd0d82dc79a1a091538bbc1b86ea93e3b1e416c76ced",
           "path": "packages/character-profile/package.json"
         },
         {
@@ -1593,7 +1593,7 @@
           "path": "packages/cli/README.zh.md"
         },
         {
-          "hash": "07cfa2352b1d46276e7809cd8a2ef674d882c382c69a58db884f0777887163dc",
+          "hash": "7931bd0a126b33f6b9aea4b7738441992564967d44fc35655fce31f163b901d0",
           "path": "packages/cli/package.json"
         },
         {
@@ -6501,7 +6501,7 @@
           "path": "packages/content-schema/README.zh.md"
         },
         {
-          "hash": "7707e734030d8a3009f0714f52d19cde115c0626a46f01af8c016bf4304fa067",
+          "hash": "83b30ceba02a80bd5c1bf214c7a017a61d7bbc18d5f3ee9d050967f17a38e9ab",
           "path": "packages/content-schema/package.json"
         },
         {
@@ -7053,7 +7053,7 @@
           "path": "packages/core/README.zh.md"
         },
         {
-          "hash": "caa30dca2553d93234083f3429f9238d26adcfda7ea2b6c6377087cbddfce194",
+          "hash": "2be510bbaacd36c28463ecb4c6c839051f9cdd377cdb1ca323b8db7cfa6f204d",
           "path": "packages/core/package.json"
         },
         {
@@ -8497,7 +8497,7 @@
           "path": "packages/equipment/README.zh.md"
         },
         {
-          "hash": "f257cc6993360f15156db1dc6e29662a9e2e7bbe35f1b8e1fa8cf942cf92302a",
+          "hash": "b7ac3893ca483ce00debb3d72acd3ec642550b48f28d336589fdb6178e513ae3",
           "path": "packages/equipment/package.json"
         },
         {
@@ -8807,7 +8807,7 @@
           "path": "packages/image-gen/README.zh.md"
         },
         {
-          "hash": "3e3b298f9e06415fbc4e9158551179f17f7a6c0a3211a4eb570993be62f59e1c",
+          "hash": "2bab22882f3293628c1f4b7878b6dfc65895f9f9378ac025949b4e6626a1ee9c",
           "path": "packages/image-gen/package.json"
         },
         {
@@ -9138,7 +9138,7 @@
           "path": "packages/ledger-adapter/README.md"
         },
         {
-          "hash": "6702b233223da1634e08c9d4e54da054b1a77e542a212656bf2f331ea2854b2d",
+          "hash": "7b72aafb4cb7767487a7062daf67a9aa66a6ac5dd35f1909261d5a59197c63b1",
           "path": "packages/ledger-adapter/package.json"
         },
         {
@@ -10420,7 +10420,7 @@
           "path": "packages/modules/README.zh.md"
         },
         {
-          "hash": "0ab2d372861630d64d2833a196b0c73d2bd0b72446b17338b716916781a5978a",
+          "hash": "c9c1f64ddf54fc66aa3ed99bf6209424944ca0cc1a48afbcb174e9edd94a9780",
           "path": "packages/modules/package.json"
         },
         {
@@ -14566,7 +14566,7 @@
           "path": "packages/ollama/README.zh.md"
         },
         {
-          "hash": "02b47ef28dbf1e626119a7b4d9800a53caa8269ee634c14a1387287c0c27445d",
+          "hash": "ad626e4443a81dd39eef910d83bd2fa40f08a96c31e1756d94afd438a5e71176",
           "path": "packages/ollama/package.json"
         },
         {
@@ -18200,7 +18200,7 @@
           "path": "packages/pack-registry/README.zh.md"
         },
         {
-          "hash": "e84bf332cf5d24a4cf4e9dfc26431f7b86ea844cff8b2242b591f41b8120c359",
+          "hash": "4897dd1828ab2563bee9563d04195ac5c80dc041d4ccb3e871c23bfceba58674",
           "path": "packages/pack-registry/package.json"
         },
         {
@@ -18524,7 +18524,7 @@
           "path": "packages/presentation/README.zh.md"
         },
         {
-          "hash": "5520f124a1aa21046c31b06dfbd7cd39d82b88dc8b549d0acdc8ab7fe1cc3040",
+          "hash": "1ef4c35ce292b6f5c15e1ab3a2c2a12f019a452db859945a940c19f3146b2371",
           "path": "packages/presentation/package.json"
         },
         {
@@ -18627,11 +18627,11 @@
           "path": ".gitignore"
         },
         {
-          "hash": "b8374db98c776b667f5302f25f93187409b52f2261aff0c51358fb94c3ad675a",
+          "hash": "ad523eac4a3627a5a9bb460994b0dd82b008827b3088f1c0d226cbb4353ffe28",
           "path": "CHANGELOG.md"
         },
         {
-          "hash": "e19d941713a12e2e3cbb913210e0dea02b86c7f53535cfbac2e1dd23153989bd",
+          "hash": "1d45d304f7dd355c44e5545c00294d5fbd823c5329b272138969ce82bd48dcec",
           "path": "Dockerfile"
         },
         {
@@ -18647,35 +18647,35 @@
           "path": "PHILOSOPHY.md"
         },
         {
-          "hash": "d4ccc49f43984ef8318b53079d97241ff50af7d6606afa1159b5ea467d38c1ac",
+          "hash": "81a09217a9bd1d82c3718f151a669e08c7d3b87fc016e3d66ad12ec65ef3ed43",
           "path": "README.es.md"
         },
         {
-          "hash": "8c20dd103427e86814446062016edd0ad94d8630fca820459d5fe265dd19fde6",
+          "hash": "918a4966d24a1a68289ea96a9868a82fe9b8870876c8abd11cee3d8236ae964f",
           "path": "README.fr.md"
         },
         {
-          "hash": "7e14923734a3955baed44a4b70629502c9e26d3c303d5e947829f6e276283d6d",
+          "hash": "f758edfbd84122576a8386574806411c0214da2413aa3192b6966cd4c747a666",
           "path": "README.hi.md"
         },
         {
-          "hash": "896e62d436a78cc7f4e253a5e789c6a0c8c5748075abc0f226267cba9222c48a",
+          "hash": "3e7420046b0aeaafb4a92ab4848f87c5d1079c1d7e76d52183d1646c91719ee6",
           "path": "README.it.md"
         },
         {
-          "hash": "23caf762069af59125cf400342b1d70e17710bab7f004603414329f85eb4c999",
+          "hash": "92e9ddf898be36191269ed509d169ce097ef704836ef89977d99d23008f0e81c",
           "path": "README.ja.md"
         },
         {
-          "hash": "614be8af7b7e4f7d27823cc62b811b7b8893caca8d7cb5bdb6e907418f4f628b",
+          "hash": "88c320a991ca23bb1e0e29f03a11eb96e98dec3aac37e808f7e01ed91196484a",
           "path": "README.md"
         },
         {
-          "hash": "f2d0d3c6b148cde359207ba9ae6345760cd67b7e9533bac55f718e7644739743",
+          "hash": "e38b4e66142b91bf94c408dbe76e53cf15b97d312d40c5eca15bd4a9ce57b20b",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "82db4879f9223d4deff6ad2418281b022fcbb5bf3ed16ee059b9df503ad61b3a",
+          "hash": "6c8cd75c565debfc784e10e3924ae0031c394a9614ac8461a87d4bf53f41171c",
           "path": "README.zh.md"
         },
         {
@@ -18687,7 +18687,7 @@
           "path": "SECURITY.md"
         },
         {
-          "hash": "68ede0a824df34b955ecd6c82276df6b1f231342ff849e059ec5478045227bf4",
+          "hash": "02f6baf89ee86aef45ff40847ba2cf9a5a6178485da9bfe3c782c03089af4438",
           "path": "SHIP_GATE.md"
         },
         {
@@ -18699,11 +18699,11 @@
           "path": "eslint.config.js"
         },
         {
-          "hash": "1dc470b1bd5eadb4939e3a8a607dcc5c478a914fbe9b7725e5704ec70b13ee8d",
+          "hash": "3f7548b854bc65df585d7af8691a5a693724b0b4dca333ece4bf1ab9af55f6fc",
           "path": "package-lock.json"
         },
         {
-          "hash": "6c687bbd1c73b81a8129bc0e25d605e985f549b59e10ae773fc5b2f0d548c899",
+          "hash": "a8a438a7f3a5b9d57005b573781ad3620e58d5523e6614c58ab7848a5ddf4379",
           "path": "package.json"
         },
         {
@@ -18779,7 +18779,7 @@
           "path": "packages/rumor-system/README.zh.md"
         },
         {
-          "hash": "abfedb676c6013d0fcce5af671a107bc432b6141aada9cf6d3a6fe70b55672b1",
+          "hash": "2802e26dcf27d5bc6b2118b9f1e034b6fe4f86f69eb2d374e278cb9f549fa55d",
           "path": "packages/rumor-system/package.json"
         },
         {
@@ -19100,7 +19100,7 @@
           "path": "packages/sidecar/gdscript/sidecar_client.gd"
         },
         {
-          "hash": "43fdf5f6afc2dcd76529d1fe53eec0e836b921c59161f9940144985cb85bd6ba",
+          "hash": "f13a220e74d07cf60ce858a43c249527f048b73faee440d2b3cf25eda2b1d89f",
           "path": "packages/sidecar/package.json"
         },
         {
@@ -19765,7 +19765,7 @@
           "path": "site/src/content/docs/handbook/beginners.md"
         },
         {
-          "hash": "826e3eccea5ca3c33c08da0ea52c52d09fe605c8a775d2316a7f018d467a25b0",
+          "hash": "75c6a5c13543a5fab7da7750c2448ce49134c8821842e810ab23d2c4a63013df",
           "path": "site/src/content/docs/handbook/index.md"
         },
         {
@@ -19782,7 +19782,7 @@
         },
         {
           "constantOnly": true,
-          "hash": "bee8667c4811e181d555277cd092b25239c770f7fce0508af87c66cec3ba1f4d",
+          "hash": "60b21ac5a9bf8ec005bf262abb6c58b7b26a52f0798c55cdf34fa6821c8f4ec1",
           "path": "site/src/site-config.ts"
         },
         {
@@ -19855,7 +19855,7 @@
           "path": "packages/soundpack-core/README.zh.md"
         },
         {
-          "hash": "0a27e4927ce9d1a8704ec605ca83c739a6f818ce1d57fbabeea18ddda0d906e1",
+          "hash": "6b459dc0e28fe3eb46b9b38116c3b54ae52cecfb1d560a60a76dc4358aac07c3",
           "path": "packages/soundpack-core/package.json"
         },
         {
@@ -20148,7 +20148,7 @@
           "path": "templates/starter/SCAFFOLD.md"
         },
         {
-          "hash": "7e1dcda4c9d2b5dd9f91b4d340626a6100421b30604d45d4012854e5d9539801",
+          "hash": "b3f1d9d3cb860da2060f8f177554066ee3a813e2b6c8db6f03f22d70bdf9f5fe",
           "path": "templates/starter/package.json"
         },
         {
@@ -20316,7 +20316,7 @@
           "path": "packages/starter-bounty-hunter/README.zh.md"
         },
         {
-          "hash": "ae0dd76d150c7be6bd5d4d61576f902ce59a26655896bec661e250c3fa23da23",
+          "hash": "95f9ccc6b3eef1b0c9001836d7a539677c8593720d7de84078bf4691c1a1ecaf",
           "path": "packages/starter-bounty-hunter/package.json"
         },
         {
@@ -20358,7 +20358,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "0110ce570601613f719e636bd1eb5874c875270cf1e8882d9dc802afe774e65d",
+          "hash": "3681943e686317a6debc40a2a69a34e55a4ab3ca34c643662f36f60639f98065",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -20525,7 +20525,7 @@
           "path": "packages/starter-colony/README.zh.md"
         },
         {
-          "hash": "5d2a046e2d4f347fa04a2b97d5aa18fbe1124cc0206338b01b4c0d76993e353e",
+          "hash": "0ece393e8795175fc98a769298b15c57b63c0c5cbd35e2802a219ef695525e7f",
           "path": "packages/starter-colony/package.json"
         },
         {
@@ -20579,7 +20579,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "364067fbcec2608b0e40ea6056e7800dbc39eb02ab08bce640e6be800e85cc11",
+          "hash": "29b3ee656f666be38e991a1fdcb3721ab2a8b00e1ad9cc9207327e94b24d4838",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -20789,7 +20789,7 @@
           "path": "packages/starter-cyberpunk/README.zh.md"
         },
         {
-          "hash": "eadb152e106b1000d35af50c3eb5347fd5f87c2fa21d8435477b4aa8660cec49",
+          "hash": "4059bfa3ddb242144e26112a39269654caf34a42250248eec606ea885f519812",
           "path": "packages/starter-cyberpunk/package.json"
         },
         {
@@ -20833,7 +20833,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "48f4faf18535dabe0784206f6122cfdbe21fd454db09ef906f093baa4212cd93",
+          "hash": "9d1b7f84479c4b94d977afa6438f80a812d8b969afe99cc3c7964f31c54faea1",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/modules/src/index.ts",
@@ -21093,7 +21093,7 @@
           "path": "packages/starter-detective/README.zh.md"
         },
         {
-          "hash": "91344ec35b9d44e19605019643882ae7979f381a9cedee4944b38280bf28f5bc",
+          "hash": "ec6a710159381f437182f17a30290f7a7fe3f1d09be9d550dc7ddb7867b31e5b",
           "path": "packages/starter-detective/package.json"
         },
         {
@@ -21156,7 +21156,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "977700efefe012f4deeb082c8c83274e62af29eaf53e8678bbb457892c72ab11",
+          "hash": "29efb1e7b7749d673aef2b9b825c46b61fb1b15a11f32a00a0a5013dde18b8ab",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -21352,7 +21352,7 @@
           "path": "packages/starter-fantasy/README.zh.md"
         },
         {
-          "hash": "c771055f0b77749fb1b7a9be0df384859933a1f5b855a3e076498f91e026e6b6",
+          "hash": "43eedcdb32a78c36e2589e0fff4616197c1e138484c01412d897a513c4634ff7",
           "path": "packages/starter-fantasy/package.json"
         },
         {
@@ -21377,7 +21377,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "0c3feea6376662ddeed52257e6cdf35b2d24b8d0b8b80a2347a605723906252d",
+          "hash": "170a1ed0a05e3d8187e568576e89f9f214002faa4229e930a8470f3183c30a56",
           "path": "packages/starter-fantasy/src/content.json"
         },
         {
@@ -21403,7 +21403,7 @@
           "exports": [
             "toContentPack"
           ],
-          "hash": "59efb1bc4eeda56a19f7daa0718e83d2c7a2f39d8e3ac6e9a7baed8d518b2886",
+          "hash": "1eea174b17f7d362b52a79e1cb0bf2243ff7461cfb9db46a8d276638713a090d",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -21640,7 +21640,7 @@
           "path": "packages/starter-gladiator/README.zh.md"
         },
         {
-          "hash": "4a5c8e296f9ddfb4d606076663fdbfbdceb16a2795406d238c3c0c85f89bacd5",
+          "hash": "5549db147f1c272b07ba55fd8ad244aa13b2051903be459b7f49c44482ad4ef4",
           "path": "packages/starter-gladiator/package.json"
         },
         {
@@ -21699,7 +21699,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "628255838c41db399eef714ddaa2266043e800dd24932d16d54d5fae22ae8ceb",
+          "hash": "0761e5d8a651806ff7d9312e114203ff46d2c548d5553542e044b6b7de41e77a",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -21934,7 +21934,7 @@
           "path": "packages/starter-merchant/README.zh.md"
         },
         {
-          "hash": "7d4c356f62698e0b394bfe13a78d266f660f444d1a635f3e078c1fc619042a67",
+          "hash": "877f9d628178a9448f420bf331c2c124e9493ecf14601eae6104306e2ec38825",
           "path": "packages/starter-merchant/package.json"
         },
         {
@@ -21988,7 +21988,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "c6e8a7226a6826c0df407277a771a2785e95db77d506f172fbe14fc288cdec5a",
+          "hash": "a3c84b89eafcf18155e97a25ac4ad98795caf4d700733abb373a40effd062a92",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -22248,7 +22248,7 @@
           "path": "packages/starter-pirate/README.zh.md"
         },
         {
-          "hash": "4fb04e486a170f2586a140987d1fcf276f31efc11df350a5a9bf8f75a39135d1",
+          "hash": "5facf3710fae8fbaa80b0e0162261f7f61c4b41872f585943db5d32b6b865427",
           "path": "packages/starter-pirate/package.json"
         },
         {
@@ -22309,7 +22309,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "7d7348a40d606cb63fe040d1f4f4c64b1c5fb30e46776c3c0d04840a1c7c7950",
+          "hash": "f539dc5132f73f990f9428ef53f63036c8dbad3cffd94c98063adefed0d9bd26",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -22494,7 +22494,7 @@
           "path": "packages/starter-ronin/README.zh.md"
         },
         {
-          "hash": "7f6b9f3c45a4e0068f3a08698e482fa37cc10aeaee8cdd407ed4141cb4ea32a2",
+          "hash": "0540bf4b775d4fed4b809cbbbe527f4f69fcfc3ddf3b17d37c2aa0bfa6a5eddb",
           "path": "packages/starter-ronin/package.json"
         },
         {
@@ -22550,7 +22550,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "ee2980a8f3f14f2c41561431684196224d40ee18cc6dbdf4da5b29ce3a42975d",
+          "hash": "087b6e203430f00331ccd72de54ec54b959507b7e3029ad592bb4afbf34807d1",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -22752,7 +22752,7 @@
           "path": "packages/starter-vampire/README.zh.md"
         },
         {
-          "hash": "d75bf5e3b835911aaa6e25289a39cbff83659435c3beb333e73a3ae38ea7ae0d",
+          "hash": "2dca0c0f8c69c5c9334d97751356ccbe3415e900c6b8ed832957cdd36a483e8b",
           "path": "packages/starter-vampire/package.json"
         },
         {
@@ -22806,7 +22806,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "04cf955423d2009e8d47e91f0b68cdfb041a9e3ec52b3062805920af8b63f5b4",
+          "hash": "12a4f54f436aebda8201f3f9de0c841754f719b283da80920ca76058f28f2fa4",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -23008,7 +23008,7 @@
           "path": "packages/starter-weird-west/README.zh.md"
         },
         {
-          "hash": "bbd26a925e30f5bd67dadb787fcad6d58087e632d56797d5418e7e52356abba7",
+          "hash": "7c59ccfc85a4d4d6842194c84403cde8039cde7f1f16b0eb11b49101a530f8cc",
           "path": "packages/starter-weird-west/package.json"
         },
         {
@@ -23052,7 +23052,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "13327360638dfba32c4b5d1e8b04df1d80ed0c9bd235f223adc01c4e526899d0",
+          "hash": "9e6dc63432ec73b9510ce0ae78cde157b1f5f0ad0f7be0a126bea926eee9ce58",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -23237,7 +23237,7 @@
           "path": "packages/starter-zombie/README.zh.md"
         },
         {
-          "hash": "55126ba357608bedeb38e6b2c2790170ee98f9802c0483f5b6025f94af9e530a",
+          "hash": "4177e14b211930a085cbbdd2153cecc5b25c03c87ef865f3bc7bbaca8cd30c88",
           "path": "packages/starter-zombie/package.json"
         },
         {
@@ -23298,7 +23298,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "212cfa3df154a7dfbf3f0778e14d3ea9206d340662bf7a717a0381292367ca39",
+          "hash": "80265eb68071578a3f95fcdf86b256cb7558fe4ae7a59087959028fc47962100",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -23504,7 +23504,7 @@
           "path": "packages/terminal-ui/README.zh.md"
         },
         {
-          "hash": "6c0673416cf42c849df5e36d2aef2e01959438bf6a1aaa50984f928befeb9596",
+          "hash": "a947937796f5d024d146ad33c20bc192e62fb33c94b61a4b3aac51d83c542bcc",
           "path": "packages/terminal-ui/package.json"
         },
         {
@@ -29165,7 +29165,7 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b",
+    "commit": "8fcd36e8093f046094c3fbf09ae4247ffae6e50b",
     "tracked": 1386
   },
   "landings": [

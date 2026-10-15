@@ -507,7 +507,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "sidecar",
-      "qualifyingSourceCommits": 1,
+      "qualifyingSourceCommits": 2,
       "rebaseline": null
     },
     {
@@ -897,8 +897,8 @@
         "path": ".gitignore"
       },
       {
-        "commits": 11,
-        "lines": 1882,
+        "commits": 12,
+        "lines": 1888,
         "path": "CHANGELOG.md"
       },
       {
@@ -977,8 +977,8 @@
         "path": "SHIP_GATE.md"
       },
       {
-        "commits": 6,
-        "lines": 458,
+        "commits": 7,
+        "lines": 476,
         "path": "atlas/README.md"
       },
       {
@@ -987,18 +987,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 6,
-        "lines": 4742,
+        "commits": 7,
+        "lines": 4851,
         "path": "atlas/page.json"
       },
       {
-        "commits": 6,
-        "lines": 24366,
+        "commits": 7,
+        "lines": 33400,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 6,
-        "lines": 105002,
+        "commits": 7,
+        "lines": 105012,
         "path": "atlas/structure.json"
       },
       {
@@ -5632,13 +5632,13 @@
         "path": "packages/sidecar/src/protocol.ts"
       },
       {
-        "commits": 1,
-        "lines": 86,
+        "commits": 2,
+        "lines": 125,
         "path": "packages/sidecar/src/serializer.test.ts"
       },
       {
-        "commits": 1,
-        "lines": 301,
+        "commits": 2,
+        "lines": 309,
         "path": "packages/sidecar/src/serializer.ts"
       },
       {
@@ -7815,11 +7815,11 @@
   },
   "confidence": {
     "level": "low",
-    "reason": "fewer than 20 source files reach 10 revisions in the window"
+    "reason": "fewer than 25 source files reach 10 revisions in the window"
   },
-  "generatedAt": "2026-10-15T01:55:15.881Z",
+  "generatedAt": "2026-10-15T02:11:05.849Z",
   "generatedFrom": {
-    "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b"
+    "commit": "8fcd36e8093f046094c3fbf09ae4247ffae6e50b"
   },
   "pairs": [],
   "parameters": {
@@ -7832,16 +7832,16 @@
     "floor": "fallen",
     "floorHeld": false,
     "floorTrigger": "revision-depth",
-    "headDate": "2026-10-01T13:42:47-07:00",
+    "headDate": "2026-10-14T19:04:39-07:00",
     "inScopeFiles": 1391,
     "pinnedStart": null,
-    "priorFloor": "strong",
-    "qualifyingCommits": 32,
+    "priorFloor": "fallen",
+    "qualifyingCommits": 33,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 3,
-    "since": "2026-04-04T20:42:47.000Z",
+    "since": "2026-04-18T02:04:39.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",

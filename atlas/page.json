@@ -208,21 +208,21 @@
   "changes": {
     "fileCounts": {
       "added": 0,
-      "changed": 4,
+      "changed": 60,
       "moved": 0,
-      "parts": 3,
+      "parts": 34,
       "removed": 0
     },
     "items": [
       {
         "kind": "counts",
-        "sentence": "Nothing structural changed since 2026-10-01; 4 files changed content.",
+        "sentence": "Nothing structural changed since 2026-10-15; 60 files changed content.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "8dceef76f2e7427c2fdceb7248b01fa20d4707b6",
-      "generatedAt": "2026-10-01T02:14:05.042Z"
+      "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b",
+      "generatedAt": "2026-10-15T01:55:15.881Z"
     },
     "unchanged": true
   },
@@ -231,7 +231,7 @@
     "Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do."
   ],
   "changesTogetherWithTests": 0,
-  "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b",
+  "commit": "8fcd36e8093f046094c3fbf09ae4247ffae6e50b",
   "defaultBranch": "main",
   "derived": "39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
@@ -1478,7 +1478,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-10-15T01:55:15.881Z",
+  "generatedAt": "2026-10-15T02:11:05.849Z",
   "limits": [
     "3 imports could not be resolved: `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; `packages/pack-registry/src/starter-readme-usage.test.ts` imports a path built at run time.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
@@ -1490,7 +1490,7 @@
     "2 commands are built at run time and not followed, 1 of them in tests.",
     "CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.",
     "Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.",
-    "Statistics confidence is low: fewer than 20 source files reach 10 revisions in the window."
+    "Statistics confidence is low: fewer than 25 source files reach 10 revisions in the window."
   ],
   "mainDoor": ".github/workflows/ci.yml",
   "partLabels": {
