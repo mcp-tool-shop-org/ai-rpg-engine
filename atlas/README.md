@@ -1,14 +1,14 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-10-15 from commit d283fcc by Atlas 1.24.0.
+Mapped at 2026-10-15 from commit 8fcd36e by Atlas 1.24.0.
 
 ## What this is
 
 39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-10-01 (8dceef7)
+## What changed since 2026-10-15 (d283fcc)
 
-Nothing structural changed since 2026-10-01; 4 files changed content.
+Nothing structural changed since 2026-10-15; 60 files changed content.
 
 ## What comes in
 
@@ -130,6 +130,6 @@ Read those in order to follow one pull request end to end.
 - 2 commands are built at run time and not followed, 1 of them in tests.
 - CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.
 - Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.
-- Statistics confidence is low: fewer than 20 source files reach 10 revisions in the window.
+- Statistics confidence is low: fewer than 25 source files reach 10 revisions in the window.
 
 Regenerate with `npx --yes @dogfood-lab/atlas map`.

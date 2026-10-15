@@ -37,7 +37,7 @@
 
 ---
 
-## 当前状态（v3.12.0）
+## 当前状态（v3.12.1）
 
 **What works and is tested:**
 - **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
@@ -88,7 +88,7 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8364 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8368 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **What is rough or incomplete:**
 - The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network

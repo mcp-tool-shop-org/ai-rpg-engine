@@ -37,7 +37,7 @@
 
 ---
 
-## वर्तमान स्थिति (v3.12.0)
+## वर्तमान स्थिति (v3.12.1)
 
 **What works and is tested:**
 - **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
@@ -88,7 +88,7 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8364 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8368 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **What is rough or incomplete:**
 - The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
@@ -351,7 +351,7 @@ const warCry: AbilityDefinition = {
 
 ### हम अभी कहाँ हैं
 
-दोनों संरचनात्मक आधार पूर्ण हैं — **388 फ़ाइलों में 8364 परीक्षण**, `buildCombatStack` और `buildWorldStack` पर सभी 12 शुरुआती बिंदु, मुद्रित बीज के तहत नियतात्मक बाइट-समान पुनरावृत्ति, पूर्ण एआई निर्णय स्कोरिंग, और एक CLI जो ढांचा तैयार करता है, चलाता है, मान्य करता है और निरीक्षण करता है। v3.x आर्क ने दुनिया को जीवंत बना दिया (नाम वाले NPC, 25-क्रिया सामाजिक सतह, शैली अर्थव्यवस्थाएं — v3.0–v3.1), खिलाड़ी के स्वामित्व वाली संपत्तियों को XRPL टेस्टनेट पर एक वैकल्पिक साइड चैनल के रूप में रखा (v3.2–v3.4), दो सिस्टम-आधारित शुरुआती बिंदुओं को बनाया और उन्हें इंजन-पॉलिशिंग उपकरणों में बदल दिया (v3.5–v3.6), रणनीतिक परत को प्रकाशित और मजबूत किया जब तक कि परिणाम वास्तविक निशान न छोड़ दें (v3.7–v3.8), होस्ट को इंजन सतह पर गॉडोट अटैच की आवश्यकता दी (v3.8.1), लेखकन चक्र को बंद कर दिया ताकि एक स्टूडियो सत्र या एक साधारण JSON पैक एक संपूर्ण, खेलने योग्य दुनिया का निर्माण करे (v3.9), पूरी रणनीतिक परत को खिलाड़ी की इंद्रियों पर रखा (v3.10), उन इंद्रियों की गहराई को समायोजित किया जो अब पहुंचती हैं (v3.11), और **एक ड्राइंग होस्ट को एक टिक की अनुभूति दी — पहला पिक्सेल क्लाइंट, एक गॉडोट 4 डाइमेट्रिक हार्बर, उस अनुबंध पर चलता है (v3.12)**।
+दोनों संरचनात्मक आधार पूर्ण हैं — **388 फ़ाइलों में 8368 परीक्षण**, `buildCombatStack` और `buildWorldStack` पर सभी 12 शुरुआती बिंदु, मुद्रित बीज के तहत नियतात्मक बाइट-समान पुनरावृत्ति, पूर्ण एआई निर्णय स्कोरिंग, और एक CLI जो ढांचा तैयार करता है, चलाता है, मान्य करता है और निरीक्षण करता है। v3.x आर्क ने दुनिया को जीवंत बना दिया (नाम वाले NPC, 25-क्रिया सामाजिक सतह, शैली अर्थव्यवस्थाएं — v3.0–v3.1), खिलाड़ी के स्वामित्व वाली संपत्तियों को XRPL टेस्टनेट पर एक वैकल्पिक साइड चैनल के रूप में रखा (v3.2–v3.4), दो सिस्टम-आधारित शुरुआती बिंदुओं को बनाया और उन्हें इंजन-पॉलिशिंग उपकरणों में बदल दिया (v3.5–v3.6), रणनीतिक परत को प्रकाशित और मजबूत किया जब तक कि परिणाम वास्तविक निशान न छोड़ दें (v3.7–v3.8), होस्ट को इंजन सतह पर गॉडोट अटैच की आवश्यकता दी (v3.8.1), लेखकन चक्र को बंद कर दिया ताकि एक स्टूडियो सत्र या एक साधारण JSON पैक एक संपूर्ण, खेलने योग्य दुनिया का निर्माण करे (v3.9), पूरी रणनीतिक परत को खिलाड़ी की इंद्रियों पर रखा (v3.10), उन इंद्रियों की गहराई को समायोजित किया जो अब पहुंचती हैं (v3.11), और **एक ड्राइंग होस्ट को एक टिक की अनुभूति दी — पहला पिक्सेल क्लाइंट, एक गॉडोट 4 डाइमेट्रिक हार्बर, उस अनुबंध पर चलता है (v3.12)**।
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI

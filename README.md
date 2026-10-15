@@ -37,7 +37,7 @@ This is a **composition engine**, not a finished game. The 12 starter worlds are
 
 ---
 
-## Current Status (v3.12.0)
+## Current Status (v3.12.1)
 
 **What works and is tested:**
 - **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
@@ -88,7 +88,7 @@ This is a **composition engine**, not a finished game. The 12 starter worlds are
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8364 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8368 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **What is rough or incomplete:**
 - The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
@@ -378,7 +378,7 @@ The 12 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-Both composition spines are complete — **8364 tests across 388 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), tuned the depth those senses now reach (v3.11), and **gave a drawing host the felt of a tick — the first pixel client, a Godot 4 dimetric harbour, runs on that contract (v3.12)**.
+Both composition spines are complete — **8368 tests across 388 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), tuned the depth those senses now reach (v3.11), and **gave a drawing host the felt of a tick — the first pixel client, a Godot 4 dimetric harbour, runs on that contract (v3.12)**.
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI

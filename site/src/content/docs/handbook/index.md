@@ -7,7 +7,7 @@ sidebar:
 
 A guide to building simulation-driven RPG worlds — from first room to experiment-driven balancing.
 
-Current release: **v3.12.0**. The first pixel host gets a contract: sidecar `capabilities.audio` negotiates a `felt` payload — cue ids, overlay stings that do not replace the zone stem, the spoken line once, and a client's lie budget — additive, omitted when the capability is off, and never hashed. Chapter 66 writes down what a visual host may lie about and what stays the sim's, and a hanging DNS lookup in `webfetch` now reports as a timeout instead of a blocked URL. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
+Current release: **v3.12.1**, a security patch on 3.12.0: the sidecar's `applyPatches` no longer follows a patch path into `Object.prototype`, and the CLI image moves to a base with patched `perl-base`. 3.12.0 is the release where the first pixel host gets a contract: sidecar `capabilities.audio` negotiates a `felt` payload — cue ids, overlay stings that do not replace the zone stem, the spoken line once, and a client's lie budget — additive, omitted when the capability is off, and never hashed. Chapter 66 writes down what a visual host may lie about and what stays the sim's, and a hanging DNS lookup in `webfetch` now reports as a timeout instead of a blocked URL. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
 
 ---
 
