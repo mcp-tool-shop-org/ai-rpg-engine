@@ -157,7 +157,7 @@
       "confidence": "full",
       "highWater": 0.796067,
       "name": "cli",
-      "qualifyingSourceCommits": 115,
+      "qualifyingSourceCommits": 113,
       "rebaseline": null
     },
     {
@@ -374,7 +374,7 @@
       "confidence": "full",
       "highWater": 0.8125,
       "name": "modules",
-      "qualifyingSourceCommits": 115,
+      "qualifyingSourceCommits": 111,
       "rebaseline": null
     },
     {
@@ -390,7 +390,7 @@
       "confidence": "full",
       "highWater": 1,
       "name": "ollama",
-      "qualifyingSourceCommits": 49,
+      "qualifyingSourceCommits": 48,
       "rebaseline": null
     },
     {
@@ -460,7 +460,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "root",
-      "qualifyingSourceCommits": 1,
+      "qualifyingSourceCommits": 0,
       "rebaseline": null
     },
     {
@@ -492,7 +492,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "scripts",
-      "qualifyingSourceCommits": 8,
+      "qualifyingSourceCommits": 7,
       "rebaseline": null
     },
     {
@@ -565,7 +565,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter",
-      "qualifyingSourceCommits": 14,
+      "qualifyingSourceCommits": 12,
       "rebaseline": null
     },
     {
@@ -609,7 +609,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-colony",
-      "qualifyingSourceCommits": 22,
+      "qualifyingSourceCommits": 20,
       "rebaseline": null
     },
     {
@@ -631,7 +631,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-cyberpunk",
-      "qualifyingSourceCommits": 18,
+      "qualifyingSourceCommits": 17,
       "rebaseline": null
     },
     {
@@ -653,7 +653,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-detective",
-      "qualifyingSourceCommits": 22,
+      "qualifyingSourceCommits": 20,
       "rebaseline": null
     },
     {
@@ -676,7 +676,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-fantasy",
-      "qualifyingSourceCommits": 27,
+      "qualifyingSourceCommits": 26,
       "rebaseline": null
     },
     {
@@ -699,7 +699,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-gladiator",
-      "qualifyingSourceCommits": 25,
+      "qualifyingSourceCommits": 23,
       "rebaseline": null
     },
     {
@@ -745,7 +745,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-pirate",
-      "qualifyingSourceCommits": 22,
+      "qualifyingSourceCommits": 21,
       "rebaseline": null
     },
     {
@@ -767,7 +767,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-ronin",
-      "qualifyingSourceCommits": 19,
+      "qualifyingSourceCommits": 18,
       "rebaseline": null
     },
     {
@@ -789,7 +789,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-vampire",
-      "qualifyingSourceCommits": 20,
+      "qualifyingSourceCommits": 18,
       "rebaseline": null
     },
     {
@@ -811,7 +811,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-weird-west",
-      "qualifyingSourceCommits": 19,
+      "qualifyingSourceCommits": 18,
       "rebaseline": null
     },
     {
@@ -833,7 +833,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-zombie",
-      "qualifyingSourceCommits": 22,
+      "qualifyingSourceCommits": 20,
       "rebaseline": null
     },
     {
@@ -870,8 +870,8 @@
         "path": ".gitattributes"
       },
       {
-        "commits": 29,
-        "lines": 572,
+        "commits": 30,
+        "lines": 574,
         "path": ".github/workflows/ci.yml"
       },
       {
@@ -900,8 +900,8 @@
         "path": ".signalfire/save.json"
       },
       {
-        "commits": 47,
-        "lines": 2323,
+        "commits": 46,
+        "lines": 2295,
         "path": "CHANGELOG.md"
       },
       {
@@ -940,8 +940,8 @@
         "path": "README.ja.md"
       },
       {
-        "commits": 44,
-        "lines": 868,
+        "commits": 42,
+        "lines": 814,
         "path": "README.md"
       },
       {
@@ -965,13 +965,13 @@
         "path": "SECURITY.md"
       },
       {
-        "commits": 44,
-        "lines": 119,
+        "commits": 42,
+        "lines": 110,
         "path": "SHIP_GATE.md"
       },
       {
-        "commits": 8,
-        "lines": 484,
+        "commits": 9,
+        "lines": 511,
         "path": "atlas/README.md"
       },
       {
@@ -980,18 +980,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 8,
-        "lines": 4867,
+        "commits": 9,
+        "lines": 4980,
         "path": "atlas/page.json"
       },
       {
-        "commits": 8,
-        "lines": 33444,
+        "commits": 9,
+        "lines": 42414,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 8,
-        "lines": 105134,
+        "commits": 9,
+        "lines": 105148,
         "path": "atlas/structure.json"
       },
       {
@@ -1078,11 +1078,6 @@
         "commits": 7,
         "lines": 306,
         "path": "docs/contract-v1/rng-audit.json"
-      },
-      {
-        "commits": 2,
-        "lines": 108,
-        "path": "docs/dogfood/consumer-artifact-dogfood.md"
       },
       {
         "commits": 2,
@@ -1355,19 +1350,14 @@
         "path": "dogfood/roadmap/swarm-1788226678-0c6b.json"
       },
       {
-        "commits": 55,
-        "lines": 2806,
+        "commits": 50,
+        "lines": 2643,
         "path": "package-lock.json"
       },
       {
-        "commits": 42,
-        "lines": 91,
+        "commits": 39,
+        "lines": 84,
         "path": "package.json"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/asset-registry/LICENSE"
       },
       {
         "commits": 35,
@@ -1416,11 +1406,6 @@
       },
       {
         "commits": 1,
-        "lines": 21,
-        "path": "packages/audio-director/LICENSE"
-      },
-      {
-        "commits": 1,
         "lines": 11,
         "path": "packages/audio-director/README.md"
       },
@@ -1453,11 +1438,6 @@
         "commits": 6,
         "lines": 69,
         "path": "packages/audio-director/src/types.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/campaign-memory/LICENSE"
       },
       {
         "commits": 2,
@@ -1528,11 +1508,6 @@
         "commits": 2,
         "lines": 12,
         "path": "packages/campaign-memory/tsconfig.json"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/character-creation/LICENSE"
       },
       {
         "commits": 2,
@@ -1643,11 +1618,6 @@
         "commits": 4,
         "lines": 114,
         "path": "packages/character-creation/src/validate.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/character-profile/LICENSE"
       },
       {
         "commits": 1,
@@ -1770,18 +1740,13 @@
         "path": "packages/character-profile/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/cli/LICENSE"
-      },
-      {
         "commits": 2,
         "lines": 62,
         "path": "packages/cli/README.md"
       },
       {
-        "commits": 41,
-        "lines": 98,
+        "commits": 40,
+        "lines": 94,
         "path": "packages/cli/package.json"
       },
       {
@@ -1810,8 +1775,8 @@
         "path": "packages/cli/src/bin.test.ts"
       },
       {
-        "commits": 54,
-        "lines": 5938,
+        "commits": 52,
+        "lines": 5932,
         "path": "packages/cli/src/bin.ts"
       },
       {
@@ -1915,13 +1880,13 @@
         "path": "packages/cli/src/consumer-surface-seen.test.ts"
       },
       {
-        "commits": 11,
-        "lines": 780,
+        "commits": 9,
+        "lines": 533,
         "path": "packages/cli/src/create-starter.test.ts"
       },
       {
-        "commits": 8,
-        "lines": 883,
+        "commits": 6,
+        "lines": 415,
         "path": "packages/cli/src/create-starter.ts"
       },
       {
@@ -2155,11 +2120,6 @@
         "path": "packages/cli/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/content-schema/LICENSE"
-      },
-      {
         "commits": 4,
         "lines": 30,
         "path": "packages/content-schema/README.es.md"
@@ -2313,11 +2273,6 @@
         "commits": 21,
         "lines": 908,
         "path": "packages/content-schema/src/validate.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/core/LICENSE"
       },
       {
         "commits": 35,
@@ -2480,11 +2435,6 @@
         "path": "packages/core/src/world.ts"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/equipment/LICENSE"
-      },
-      {
         "commits": 2,
         "lines": 112,
         "path": "packages/equipment/README.es.md"
@@ -2588,11 +2538,6 @@
         "commits": 2,
         "lines": 30,
         "path": "packages/equipment/tsconfig.test.json"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/image-gen/LICENSE"
       },
       {
         "commits": 6,
@@ -2925,13 +2870,8 @@
         "path": "packages/ledger-adapter/tsconfig.test.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/modules/LICENSE"
-      },
-      {
-        "commits": 37,
-        "lines": 74,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/modules/package.json"
       },
       {
@@ -3050,8 +2990,8 @@
         "path": "packages/modules/src/combat-builders.test.ts"
       },
       {
-        "commits": 8,
-        "lines": 169,
+        "commits": 7,
+        "lines": 146,
         "path": "packages/modules/src/combat-builders.ts"
       },
       {
@@ -3163,11 +3103,6 @@
         "commits": 8,
         "lines": 1036,
         "path": "packages/modules/src/condition-eval.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 158,
-        "path": "packages/modules/src/consumer-proof.test.ts"
       },
       {
         "commits": 4,
@@ -3310,11 +3245,6 @@
         "path": "packages/modules/src/faction-fallback.test.ts"
       },
       {
-        "commits": 1,
-        "lines": 72,
-        "path": "packages/modules/src/golden-scenarios.test.ts"
-      },
-      {
         "commits": 5,
         "lines": 345,
         "path": "packages/modules/src/hardening.test.ts"
@@ -3385,8 +3315,8 @@
         "path": "packages/modules/src/make-event.ts"
       },
       {
-        "commits": 4,
-        "lines": 134,
+        "commits": 2,
+        "lines": 12,
         "path": "packages/modules/src/minimal-install-proof.test.ts"
       },
       {
@@ -3555,11 +3485,6 @@
         "path": "packages/modules/src/quest-core.ts"
       },
       {
-        "commits": 2,
-        "lines": 56,
-        "path": "packages/modules/src/readme-quickstart.test.ts"
-      },
-      {
         "commits": 3,
         "lines": 67,
         "path": "packages/modules/src/rumor-propagation.test.ts"
@@ -3720,11 +3645,6 @@
         "path": "packages/ollama/AI_WORLDBUILDING.md"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/ollama/LICENSE"
-      },
-      {
         "commits": 2,
         "lines": 26,
         "path": "packages/ollama/README.es.md"
@@ -3765,8 +3685,8 @@
         "path": "packages/ollama/README.zh.md"
       },
       {
-        "commits": 37,
-        "lines": 86,
+        "commits": 36,
+        "lines": 84,
         "path": "packages/ollama/package.json"
       },
       {
@@ -4145,11 +4065,6 @@
         "path": "packages/ollama/src/macros.ts"
       },
       {
-        "commits": 1,
-        "lines": 155,
-        "path": "packages/ollama/src/ollama-integration-proof.test.ts"
-      },
-      {
         "commits": 6,
         "lines": 204,
         "path": "packages/ollama/src/packaging.test.ts"
@@ -4310,11 +4225,6 @@
         "path": "packages/ollama/src/validators.ts"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/pack-registry/LICENSE"
-      },
-      {
         "commits": 8,
         "lines": 42,
         "path": "packages/pack-registry/README.es.md"
@@ -4420,11 +4330,6 @@
         "path": "packages/pack-registry/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/presentation/LICENSE"
-      },
-      {
         "commits": 2,
         "lines": 36,
         "path": "packages/presentation/README.md"
@@ -4463,11 +4368,6 @@
         "commits": 6,
         "lines": 364,
         "path": "packages/presentation/src/validate.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/rumor-system/LICENSE"
       },
       {
         "commits": 2,
@@ -4645,11 +4545,6 @@
         "path": "packages/sidecar/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/soundpack-core/LICENSE"
-      },
-      {
         "commits": 5,
         "lines": 74,
         "path": "packages/soundpack-core/README.md"
@@ -4825,11 +4720,6 @@
         "path": "packages/starter-bounty-hunter/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-colony/LICENSE"
-      },
-      {
         "commits": 4,
         "lines": 24,
         "path": "packages/starter-colony/README.es.md"
@@ -4870,8 +4760,8 @@
         "path": "packages/starter-colony/README.zh.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-colony/package.json"
       },
       {
@@ -4935,14 +4825,9 @@
         "path": "packages/starter-colony/src/setup.test.ts"
       },
       {
-        "commits": 23,
-        "lines": 541,
+        "commits": 21,
+        "lines": 484,
         "path": "packages/starter-colony/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-cyberpunk/LICENSE"
       },
       {
         "commits": 1,
@@ -4955,8 +4840,8 @@
         "path": "packages/starter-cyberpunk/README.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-cyberpunk/package.json"
       },
       {
@@ -5010,14 +4895,9 @@
         "path": "packages/starter-cyberpunk/src/schema-conformance.test.ts"
       },
       {
-        "commits": 19,
-        "lines": 501,
+        "commits": 18,
+        "lines": 443,
         "path": "packages/starter-cyberpunk/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-detective/LICENSE"
       },
       {
         "commits": 2,
@@ -5060,8 +4940,8 @@
         "path": "packages/starter-detective/README.zh.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-detective/package.json"
       },
       {
@@ -5120,14 +5000,9 @@
         "path": "packages/starter-detective/src/schema-conformance.test.ts"
       },
       {
-        "commits": 23,
-        "lines": 499,
+        "commits": 21,
+        "lines": 444,
         "path": "packages/starter-detective/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-fantasy/LICENSE"
       },
       {
         "commits": 2,
@@ -5135,8 +5010,8 @@
         "path": "packages/starter-fantasy/README.md"
       },
       {
-        "commits": 39,
-        "lines": 88,
+        "commits": 38,
+        "lines": 86,
         "path": "packages/starter-fantasy/package.json"
       },
       {
@@ -5200,14 +5075,9 @@
         "path": "packages/starter-fantasy/src/setup.test.ts"
       },
       {
-        "commits": 33,
-        "lines": 667,
+        "commits": 32,
+        "lines": 639,
         "path": "packages/starter-fantasy/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-gladiator/LICENSE"
       },
       {
         "commits": 2,
@@ -5250,8 +5120,8 @@
         "path": "packages/starter-gladiator/README.zh.md"
       },
       {
-        "commits": 37,
-        "lines": 74,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-gladiator/package.json"
       },
       {
@@ -5320,8 +5190,8 @@
         "path": "packages/starter-gladiator/src/schema-conformance.test.ts"
       },
       {
-        "commits": 27,
-        "lines": 669,
+        "commits": 25,
+        "lines": 612,
         "path": "packages/starter-gladiator/src/setup.ts"
       },
       {
@@ -5460,18 +5330,13 @@
         "path": "packages/starter-merchant/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-pirate/LICENSE"
-      },
-      {
         "commits": 2,
         "lines": 4,
         "path": "packages/starter-pirate/README.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-pirate/package.json"
       },
       {
@@ -5525,14 +5390,9 @@
         "path": "packages/starter-pirate/src/schema-conformance.test.ts"
       },
       {
-        "commits": 24,
-        "lines": 901,
+        "commits": 23,
+        "lines": 843,
         "path": "packages/starter-pirate/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-ronin/LICENSE"
       },
       {
         "commits": 2,
@@ -5575,8 +5435,8 @@
         "path": "packages/starter-ronin/README.zh.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-ronin/package.json"
       },
       {
@@ -5635,14 +5495,9 @@
         "path": "packages/starter-ronin/src/schema-conformance.test.ts"
       },
       {
-        "commits": 22,
-        "lines": 641,
+        "commits": 21,
+        "lines": 582,
         "path": "packages/starter-ronin/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-vampire/LICENSE"
       },
       {
         "commits": 2,
@@ -5685,8 +5540,8 @@
         "path": "packages/starter-vampire/README.zh.md"
       },
       {
-        "commits": 37,
-        "lines": 74,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-vampire/package.json"
       },
       {
@@ -5745,14 +5600,9 @@
         "path": "packages/starter-vampire/src/schema-conformance.test.ts"
       },
       {
-        "commits": 23,
-        "lines": 647,
+        "commits": 21,
+        "lines": 588,
         "path": "packages/starter-vampire/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-weird-west/LICENSE"
       },
       {
         "commits": 4,
@@ -5795,8 +5645,8 @@
         "path": "packages/starter-weird-west/README.zh.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-weird-west/package.json"
       },
       {
@@ -5845,8 +5695,8 @@
         "path": "packages/starter-weird-west/src/schema-conformance.test.ts"
       },
       {
-        "commits": 22,
-        "lines": 557,
+        "commits": 21,
+        "lines": 554,
         "path": "packages/starter-weird-west/src/setup.ts"
       },
       {
@@ -5890,18 +5740,13 @@
         "path": "packages/starter-western/tsconfig.json"
       },
       {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/starter-zombie/LICENSE"
-      },
-      {
         "commits": 2,
         "lines": 4,
         "path": "packages/starter-zombie/README.md"
       },
       {
-        "commits": 36,
-        "lines": 72,
+        "commits": 35,
+        "lines": 70,
         "path": "packages/starter-zombie/package.json"
       },
       {
@@ -5965,14 +5810,9 @@
         "path": "packages/starter-zombie/src/schema-conformance.test.ts"
       },
       {
-        "commits": 24,
-        "lines": 514,
+        "commits": 22,
+        "lines": 458,
         "path": "packages/starter-zombie/src/setup.ts"
-      },
-      {
-        "commits": 1,
-        "lines": 21,
-        "path": "packages/terminal-ui/LICENSE"
       },
       {
         "commits": 3,
@@ -6045,8 +5885,8 @@
         "path": "scripts/mixed-game-viability-proof.tsconfig.json"
       },
       {
-        "commits": 5,
-        "lines": 630,
+        "commits": 4,
+        "lines": 446,
         "path": "scripts/verify-isolated-consumer.mjs"
       },
       {
@@ -6205,13 +6045,13 @@
         "path": "site/src/content/docs/handbook/56-tuning-philosophy.md"
       },
       {
-        "commits": 3,
-        "lines": 93,
+        "commits": 1,
+        "lines": 10,
         "path": "site/src/content/docs/handbook/57-composition-guide.md"
       },
       {
-        "commits": 4,
-        "lines": 224,
+        "commits": 1,
+        "lines": 2,
         "path": "site/src/content/docs/handbook/58-create-your-own-starter.md"
       },
       {
@@ -6275,8 +6115,8 @@
         "path": "templates/starter/LICENSE"
       },
       {
-        "commits": 8,
-        "lines": 145,
+        "commits": 7,
+        "lines": 130,
         "path": "templates/starter/README.md"
       },
       {
@@ -6285,8 +6125,8 @@
         "path": "templates/starter/SCAFFOLD.md"
       },
       {
-        "commits": 39,
-        "lines": 343,
+        "commits": 35,
+        "lines": 212,
         "path": "templates/starter/package.json"
       },
       {
@@ -6295,33 +6135,28 @@
         "path": "templates/starter/src/content.json"
       },
       {
-        "commits": 18,
-        "lines": 616,
+        "commits": 16,
+        "lines": 448,
         "path": "templates/starter/src/content.ts"
       },
       {
-        "commits": 7,
-        "lines": 37,
+        "commits": 6,
+        "lines": 32,
         "path": "templates/starter/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 171,
-        "path": "templates/starter/src/ruleset.ts"
-      },
-      {
-        "commits": 26,
-        "lines": 653,
+        "commits": 24,
+        "lines": 444,
         "path": "templates/starter/src/setup.ts"
       },
       {
-        "commits": 18,
-        "lines": 751,
+        "commits": 16,
+        "lines": 668,
         "path": "templates/starter/src/starter.test.ts"
       },
       {
-        "commits": 4,
-        "lines": 100,
+        "commits": 2,
+        "lines": 50,
         "path": "templates/starter/tsconfig.json"
       },
       {
@@ -6335,61 +6170,145 @@
         "path": "tsconfig.tests.json"
       },
       {
-        "commits": 3,
-        "lines": 76,
+        "commits": 2,
+        "lines": 74,
         "path": "vitest.config.ts"
       }
     ]
   },
   "confidence": {
     "level": "full",
-    "reason": "at least 30 qualifying commits, and at least 25 source files reach 10 revisions"
+    "reason": "at least 30 qualifying commits, and at least 20 source files reach 10 revisions"
   },
-  "generatedAt": "2026-11-11T22:04:24.594Z",
+  "generatedAt": "2026-11-12T00:55:52.300Z",
   "generatedFrom": {
-    "commit": "e21f146dc1e6523d59a4fb8e972d68d0ca146a1b"
+    "commit": "685bfb210ff51a584ce7a07e15120816f8e6a261"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
       "b": "README.md",
-      "either": 28,
+      "either": 25,
       "shared": 14,
-      "strength": 0.5
+      "strength": 0.56
     },
     {
       "a": "CHANGELOG.md",
       "b": "package.json",
-      "either": 26,
-      "shared": 15,
-      "strength": 0.576923
+      "either": 23,
+      "shared": 14,
+      "strength": 0.608696
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/asset-registry/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/core/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/modules/package.json",
-      "either": 26,
-      "shared": 13,
+      "either": 24,
+      "shared": 12,
       "strength": 0.5
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/ollama/package.json",
-      "either": 25,
-      "shared": 13,
-      "strength": 0.52
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/presentation/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/rumor-system/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/soundpack-core/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-colony/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-cyberpunk/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-detective/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/starter-gladiator/package.json",
-      "either": 26,
-      "shared": 13,
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-pirate/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-ronin/package.json",
+      "either": 24,
+      "shared": 12,
       "strength": 0.5
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/starter-vampire/package.json",
-      "either": 26,
-      "shared": 13,
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-weird-west/package.json",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "CHANGELOG.md",
+      "b": "packages/starter-zombie/package.json",
+      "either": 24,
+      "shared": 12,
       "strength": 0.5
     },
     {
@@ -6422,6 +6341,13 @@
     },
     {
       "a": "README.es.md",
+      "b": "README.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
+      "a": "README.es.md",
       "b": "README.pt-BR.md",
       "either": 12,
       "shared": 12,
@@ -6433,6 +6359,13 @@
       "either": 12,
       "shared": 12,
       "strength": 1
+    },
+    {
+      "a": "README.es.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
     },
     {
       "a": "README.fr.md",
@@ -6457,6 +6390,13 @@
     },
     {
       "a": "README.fr.md",
+      "b": "README.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
+      "a": "README.fr.md",
       "b": "README.pt-BR.md",
       "either": 12,
       "shared": 12,
@@ -6468,6 +6408,13 @@
       "either": 12,
       "shared": 12,
       "strength": 1
+    },
+    {
+      "a": "README.fr.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
     },
     {
       "a": "README.hi.md",
@@ -6485,6 +6432,13 @@
     },
     {
       "a": "README.hi.md",
+      "b": "README.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
+      "a": "README.hi.md",
       "b": "README.pt-BR.md",
       "either": 12,
       "shared": 12,
@@ -6498,6 +6452,13 @@
       "strength": 1
     },
     {
+      "a": "README.hi.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
+    },
+    {
       "a": "README.it.md",
       "b": "README.ja.md",
       "either": 12,
@@ -6506,6 +6467,13 @@
     },
     {
       "a": "README.it.md",
+      "b": "README.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
+      "a": "README.it.md",
       "b": "README.pt-BR.md",
       "either": 12,
       "shared": 12,
@@ -6519,6 +6487,20 @@
       "strength": 1
     },
     {
+      "a": "README.it.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.ja.md",
+      "b": "README.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
       "a": "README.ja.md",
       "b": "README.pt-BR.md",
       "either": 12,
@@ -6531,6 +6513,41 @@
       "either": 12,
       "shared": 12,
       "strength": 1
+    },
+    {
+      "a": "README.ja.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.md",
+      "b": "README.pt-BR.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
+      "a": "README.md",
+      "b": "README.zh.md",
+      "either": 20,
+      "shared": 10,
+      "strength": 0.5
+    },
+    {
+      "a": "README.md",
+      "b": "SHIP_GATE.md",
+      "either": 24,
+      "shared": 12,
+      "strength": 0.5
+    },
+    {
+      "a": "README.md",
+      "b": "package.json",
+      "either": 22,
+      "shared": 12,
+      "strength": 0.545455
     },
     {
       "a": "README.pt-BR.md",
@@ -6540,214 +6557,228 @@
       "strength": 1
     },
     {
+      "a": "README.pt-BR.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.zh.md",
+      "b": "package.json",
+      "either": 18,
+      "shared": 10,
+      "strength": 0.555556
+    },
+    {
       "a": "SCORECARD.md",
       "b": "SHIP_GATE.md",
-      "either": 20,
+      "either": 18,
       "shared": 10,
-      "strength": 0.5
+      "strength": 0.555556
     },
     {
       "a": "SHIP_GATE.md",
       "b": "package.json",
-      "either": 26,
-      "shared": 13,
-      "strength": 0.5
+      "either": 22,
+      "shared": 12,
+      "strength": 0.545455
     },
     {
       "a": "package.json",
       "b": "packages/asset-registry/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 13,
-      "strength": 0.619048
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/audio-director/package.json",
-      "either": 22,
+      "either": 19,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.684211
     },
     {
       "a": "package.json",
       "b": "packages/campaign-memory/package.json",
-      "either": 22,
+      "either": 19,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.684211
     },
     {
       "a": "package.json",
       "b": "packages/character-creation/package.json",
-      "either": 23,
+      "either": 20,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.65
     },
     {
       "a": "package.json",
       "b": "packages/character-profile/package.json",
-      "either": 23,
+      "either": 20,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.65
     },
     {
       "a": "package.json",
       "b": "packages/cli/package.json",
-      "either": 24,
-      "shared": 14,
-      "strength": 0.583333
+      "either": 21,
+      "shared": 13,
+      "strength": 0.619048
     },
     {
       "a": "package.json",
       "b": "packages/content-schema/package.json",
-      "either": 22,
+      "either": 19,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.684211
     },
     {
       "a": "package.json",
       "b": "packages/core/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 13,
-      "strength": 0.619048
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/equipment/package.json",
-      "either": 22,
+      "either": 19,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.684211
     },
     {
       "a": "package.json",
       "b": "packages/image-gen/package.json",
-      "either": 22,
+      "either": 19,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.684211
     },
     {
       "a": "package.json",
       "b": "packages/modules/package.json",
-      "either": 22,
-      "shared": 14,
-      "strength": 0.636364
+      "either": 18,
+      "shared": 13,
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/ollama/package.json",
-      "either": 21,
-      "shared": 14,
-      "strength": 0.666667
+      "either": 18,
+      "shared": 13,
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/pack-registry/package.json",
-      "either": 22,
+      "either": 19,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.684211
     },
     {
       "a": "package.json",
       "b": "packages/presentation/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 13,
-      "strength": 0.619048
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/rumor-system/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 13,
-      "strength": 0.619048
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/soundpack-core/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 13,
-      "strength": 0.619048
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 24,
+      "either": 20,
       "shared": 13,
-      "strength": 0.541667
+      "strength": 0.65
     },
     {
       "a": "package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 22,
-      "shared": 14,
-      "strength": 0.636364
+      "either": 18,
+      "shared": 13,
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 22,
-      "shared": 14,
-      "strength": 0.636364
+      "either": 18,
+      "shared": 13,
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 23,
+      "either": 20,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.65
     },
     {
       "a": "package.json",
       "b": "templates/starter/package.json",
-      "either": 26,
-      "shared": 13,
-      "strength": 0.5
+      "either": 21,
+      "shared": 11,
+      "strength": 0.52381
     },
     {
       "a": "packages/asset-registry/package.json",
@@ -6780,9 +6811,9 @@
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/cli/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/asset-registry/package.json",
@@ -6815,16 +6846,16 @@
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/modules/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/ollama/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
@@ -6857,72 +6888,72 @@
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/asset-registry/package.json",
@@ -6934,9 +6965,9 @@
     {
       "a": "packages/asset-registry/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "packages/audio-director/package.json",
@@ -6962,9 +6993,9 @@
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/cli/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/audio-director/package.json",
@@ -6997,16 +7028,16 @@
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/modules/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/ollama/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
@@ -7039,72 +7070,72 @@
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/audio-director/package.json",
@@ -7116,9 +7147,9 @@
     {
       "a": "packages/audio-director/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 14,
-      "strength": 0.636364
+      "strength": 0.777778
     },
     {
       "a": "packages/campaign-memory/package.json",
@@ -7137,9 +7168,9 @@
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/cli/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/campaign-memory/package.json",
@@ -7172,16 +7203,16 @@
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/modules/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/ollama/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
@@ -7214,72 +7245,72 @@
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/campaign-memory/package.json",
@@ -7291,9 +7322,9 @@
     {
       "a": "packages/campaign-memory/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 19,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.684211
     },
     {
       "a": "packages/character-creation/package.json",
@@ -7305,9 +7336,9 @@
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/cli/package.json",
-      "either": 21,
+      "either": 20,
       "shared": 15,
-      "strength": 0.714286
+      "strength": 0.75
     },
     {
       "a": "packages/character-creation/package.json",
@@ -7340,16 +7371,16 @@
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/modules/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/ollama/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
@@ -7382,72 +7413,72 @@
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-creation/package.json",
@@ -7459,16 +7490,16 @@
     {
       "a": "packages/character-creation/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 19,
       "shared": 14,
-      "strength": 0.608696
+      "strength": 0.736842
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/cli/package.json",
-      "either": 21,
+      "either": 20,
       "shared": 15,
-      "strength": 0.714286
+      "strength": 0.75
     },
     {
       "a": "packages/character-profile/package.json",
@@ -7501,16 +7532,16 @@
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/modules/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/ollama/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
@@ -7543,72 +7574,72 @@
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/character-profile/package.json",
@@ -7620,163 +7651,163 @@
     {
       "a": "packages/character-profile/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 19,
       "shared": 14,
-      "strength": 0.608696
+      "strength": 0.736842
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/content-schema/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/core/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/equipment/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/image-gen/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/modules/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 15,
-      "strength": 0.714286
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/ollama/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/pack-registry/package.json",
-      "either": 20,
+      "either": 19,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.789474
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/presentation/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/rumor-system/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/soundpack-core/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 22,
+      "either": 20,
       "shared": 15,
-      "strength": 0.681818
+      "strength": 0.75
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 15,
-      "strength": 0.714286
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 21,
+      "either": 18,
       "shared": 15,
-      "strength": 0.714286
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 20,
+      "either": 18,
       "shared": 15,
-      "strength": 0.75
+      "strength": 0.833333
     },
     {
       "a": "packages/cli/package.json",
       "b": "packages/starter-zombie/package.json",
+      "either": 18,
+      "shared": 15,
+      "strength": 0.833333
+    },
+    {
+      "a": "packages/cli/package.json",
+      "b": "packages/terminal-ui/package.json",
       "either": 20,
       "shared": 15,
       "strength": 0.75
     },
     {
       "a": "packages/cli/package.json",
-      "b": "packages/terminal-ui/package.json",
-      "either": 21,
-      "shared": 15,
-      "strength": 0.714286
-    },
-    {
-      "a": "packages/cli/package.json",
       "b": "templates/starter/package.json",
-      "either": 25,
-      "shared": 14,
-      "strength": 0.56
+      "either": 21,
+      "shared": 13,
+      "strength": 0.619048
     },
     {
       "a": "packages/cli/src/director.test.ts",
@@ -7830,16 +7861,16 @@
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/modules/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/ollama/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
@@ -7872,72 +7903,72 @@
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/content-schema/package.json",
@@ -7949,9 +7980,9 @@
     {
       "a": "packages/content-schema/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 14,
-      "strength": 0.636364
+      "strength": 0.777778
     },
     {
       "a": "packages/content-schema/src/gate.ts",
@@ -7998,16 +8029,16 @@
     {
       "a": "packages/core/package.json",
       "b": "packages/modules/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/ollama/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
@@ -8040,72 +8071,72 @@
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/core/package.json",
@@ -8117,9 +8148,9 @@
     {
       "a": "packages/core/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "packages/equipment/package.json",
@@ -8131,16 +8162,16 @@
     {
       "a": "packages/equipment/package.json",
       "b": "packages/modules/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/ollama/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
@@ -8173,72 +8204,72 @@
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/equipment/package.json",
@@ -8250,23 +8281,23 @@
     {
       "a": "packages/equipment/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 19,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.684211
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/modules/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/ollama/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
@@ -8299,72 +8330,72 @@
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 18,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.833333
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/image-gen/package.json",
@@ -8376,9 +8407,9 @@
     {
       "a": "packages/image-gen/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 19,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.684211
     },
     {
       "a": "packages/image-gen/src/pipeline.test.ts",
@@ -8411,121 +8442,121 @@
     {
       "a": "packages/modules/package.json",
       "b": "packages/ollama/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/pack-registry/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/presentation/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/rumor-system/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/soundpack-core/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/modules/package.json",
+      "b": "packages/starter-colony/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/modules/package.json",
+      "b": "packages/starter-cyberpunk/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/modules/package.json",
+      "b": "packages/starter-detective/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/modules/package.json",
+      "b": "packages/starter-fantasy/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
       "a": "packages/modules/package.json",
-      "b": "packages/starter-colony/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
-    },
-    {
-      "a": "packages/modules/package.json",
-      "b": "packages/starter-cyberpunk/package.json",
-      "either": 18,
-      "shared": 15,
-      "strength": 0.833333
-    },
-    {
-      "a": "packages/modules/package.json",
-      "b": "packages/starter-detective/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
-    },
-    {
-      "a": "packages/modules/package.json",
-      "b": "packages/starter-fantasy/package.json",
-      "either": 20,
-      "shared": 15,
-      "strength": 0.75
-    },
-    {
-      "a": "packages/modules/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
-      "shared": 17,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
-      "shared": 17,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/modules/package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/modules/package.json",
       "b": "templates/starter/package.json",
-      "either": 24,
+      "either": 18,
       "shared": 13,
-      "strength": 0.541667
+      "strength": 0.722222
     },
     {
       "a": "packages/modules/src/dialogue-core.test.ts",
@@ -8551,114 +8582,114 @@
     {
       "a": "packages/ollama/package.json",
       "b": "packages/pack-registry/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/presentation/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/rumor-system/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/soundpack-core/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/ollama/package.json",
       "b": "packages/starter-zombie/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/ollama/package.json",
+      "b": "packages/terminal-ui/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
       "a": "packages/ollama/package.json",
-      "b": "packages/terminal-ui/package.json",
-      "either": 18,
-      "shared": 15,
-      "strength": 0.833333
-    },
-    {
-      "a": "packages/ollama/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 18,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.722222
     },
     {
       "a": "packages/ollama/src/chat-engine.test.ts",
@@ -8705,72 +8736,72 @@
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 16,
-      "strength": 0.888889
+      "strength": 0.941176
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 16,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
+      "either": 16,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 0.9375
     },
     {
       "a": "packages/pack-registry/package.json",
@@ -8782,9 +8813,9 @@
     {
       "a": "packages/pack-registry/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 19,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.684211
     },
     {
       "a": "packages/presentation/package.json",
@@ -8803,72 +8834,72 @@
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/presentation/package.json",
@@ -8880,9 +8911,9 @@
     {
       "a": "packages/presentation/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "packages/rumor-system/package.json",
@@ -8894,72 +8925,72 @@
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/rumor-system/package.json",
@@ -8971,79 +9002,79 @@
     {
       "a": "packages/rumor-system/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-colony/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
+      "either": 15,
       "shared": 15,
-      "strength": 0.9375
+      "strength": 1
     },
     {
       "a": "packages/soundpack-core/package.json",
@@ -9055,9 +9086,9 @@
     {
       "a": "packages/soundpack-core/package.json",
       "b": "templates/starter/package.json",
-      "either": 22,
+      "either": 18,
       "shared": 13,
-      "strength": 0.590909
+      "strength": 0.722222
     },
     {
       "a": "packages/soundpack-core/src/cue-map.test.ts",
@@ -9069,464 +9100,464 @@
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-cyberpunk/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/starter-colony/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 18,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.722222
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-detective/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 18,
-      "shared": 16,
-      "strength": 0.888889
+      "either": 17,
+      "shared": 15,
+      "strength": 0.882353
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-gladiator/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
       "b": "packages/starter-zombie/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-cyberpunk/package.json",
+      "b": "packages/terminal-ui/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
       "a": "packages/starter-cyberpunk/package.json",
-      "b": "packages/terminal-ui/package.json",
-      "either": 18,
-      "shared": 15,
-      "strength": 0.833333
-    },
-    {
-      "a": "packages/starter-cyberpunk/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 18,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.722222
     },
     {
       "a": "packages/starter-detective/package.json",
       "b": "packages/starter-fantasy/package.json",
-      "either": 19,
-      "shared": 15,
-      "strength": 0.789474
-    },
-    {
-      "a": "packages/starter-detective/package.json",
-      "b": "packages/starter-gladiator/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
-    },
-    {
-      "a": "packages/starter-detective/package.json",
-      "b": "packages/starter-pirate/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
       "a": "packages/starter-detective/package.json",
+      "b": "packages/starter-gladiator/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "packages/starter-pirate/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "packages/starter-ronin/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "packages/starter-vampire/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "packages/starter-weird-west/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "packages/starter-zombie/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "packages/terminal-ui/package.json",
+      "either": 17,
+      "shared": 15,
+      "strength": 0.882353
+    },
+    {
+      "a": "packages/starter-detective/package.json",
+      "b": "templates/starter/package.json",
+      "either": 18,
+      "shared": 13,
+      "strength": 0.722222
+    },
+    {
+      "a": "packages/starter-fantasy/package.json",
+      "b": "packages/starter-gladiator/package.json",
+      "either": 17,
+      "shared": 15,
+      "strength": 0.882353
+    },
+    {
+      "a": "packages/starter-fantasy/package.json",
+      "b": "packages/starter-pirate/package.json",
+      "either": 17,
+      "shared": 15,
+      "strength": 0.882353
+    },
+    {
+      "a": "packages/starter-fantasy/package.json",
       "b": "packages/starter-ronin/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
-      "a": "packages/starter-detective/package.json",
+      "a": "packages/starter-fantasy/package.json",
       "b": "packages/starter-vampire/package.json",
       "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "shared": 15,
+      "strength": 0.882353
     },
     {
-      "a": "packages/starter-detective/package.json",
+      "a": "packages/starter-fantasy/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 16,
-      "shared": 16,
-      "strength": 1
+      "either": 17,
+      "shared": 15,
+      "strength": 0.882353
     },
     {
-      "a": "packages/starter-detective/package.json",
+      "a": "packages/starter-fantasy/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
-      "shared": 16,
-      "strength": 1
+      "either": 17,
+      "shared": 15,
+      "strength": 0.882353
     },
     {
-      "a": "packages/starter-detective/package.json",
+      "a": "packages/starter-fantasy/package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 18,
-      "shared": 15,
-      "strength": 0.833333
-    },
-    {
-      "a": "packages/starter-detective/package.json",
-      "b": "templates/starter/package.json",
-      "either": 23,
-      "shared": 13,
-      "strength": 0.565217
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
-      "b": "packages/starter-gladiator/package.json",
-      "either": 20,
-      "shared": 15,
-      "strength": 0.75
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
-      "b": "packages/starter-pirate/package.json",
       "either": 18,
       "shared": 16,
       "strength": 0.888889
     },
     {
       "a": "packages/starter-fantasy/package.json",
-      "b": "packages/starter-ronin/package.json",
-      "either": 18,
-      "shared": 16,
-      "strength": 0.888889
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
-      "b": "packages/starter-vampire/package.json",
-      "either": 20,
-      "shared": 15,
-      "strength": 0.75
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
-      "b": "packages/starter-weird-west/package.json",
-      "either": 19,
-      "shared": 15,
-      "strength": 0.789474
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
-      "b": "packages/starter-zombie/package.json",
-      "either": 19,
-      "shared": 15,
-      "strength": 0.789474
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
-      "b": "packages/terminal-ui/package.json",
-      "either": 19,
-      "shared": 16,
-      "strength": 0.842105
-    },
-    {
-      "a": "packages/starter-fantasy/package.json",
       "b": "templates/starter/package.json",
-      "either": 25,
+      "either": 20,
       "shared": 13,
-      "strength": 0.52
+      "strength": 0.65
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "packages/starter-pirate/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 17,
-      "shared": 17,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
+      "either": 15,
+      "shared": 15,
+      "strength": 1
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 19,
+      "either": 17,
       "shared": 15,
-      "strength": 0.789474
+      "strength": 0.882353
     },
     {
       "a": "packages/starter-gladiator/package.json",
       "b": "templates/starter/package.json",
-      "either": 24,
+      "either": 18,
       "shared": 13,
-      "strength": 0.541667
+      "strength": 0.722222
     },
     {
       "a": "packages/starter-pirate/package.json",
       "b": "packages/starter-ronin/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-pirate/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/starter-pirate/package.json",
       "b": "packages/starter-weird-west/package.json",
-      "either": 17,
+      "either": 15,
       "shared": 15,
-      "strength": 0.882353
+      "strength": 1
     },
     {
       "a": "packages/starter-pirate/package.json",
       "b": "packages/starter-zombie/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-pirate/package.json",
+      "b": "packages/terminal-ui/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
       "a": "packages/starter-pirate/package.json",
-      "b": "packages/terminal-ui/package.json",
-      "either": 18,
-      "shared": 15,
-      "strength": 0.833333
-    },
-    {
-      "a": "packages/starter-pirate/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 18,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.722222
     },
     {
       "a": "packages/starter-ronin/package.json",
       "b": "packages/starter-vampire/package.json",
-      "either": 18,
+      "either": 15,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 1
     },
     {
       "a": "packages/starter-ronin/package.json",
       "b": "packages/starter-weird-west/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-ronin/package.json",
+      "b": "packages/starter-zombie/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-ronin/package.json",
+      "b": "packages/terminal-ui/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
       "a": "packages/starter-ronin/package.json",
+      "b": "templates/starter/package.json",
+      "either": 18,
+      "shared": 13,
+      "strength": 0.722222
+    },
+    {
+      "a": "packages/starter-vampire/package.json",
+      "b": "packages/starter-weird-west/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-vampire/package.json",
       "b": "packages/starter-zombie/package.json",
+      "either": 15,
+      "shared": 15,
+      "strength": 1
+    },
+    {
+      "a": "packages/starter-vampire/package.json",
+      "b": "packages/terminal-ui/package.json",
       "either": 17,
       "shared": 15,
       "strength": 0.882353
     },
     {
-      "a": "packages/starter-ronin/package.json",
-      "b": "packages/terminal-ui/package.json",
+      "a": "packages/starter-vampire/package.json",
+      "b": "templates/starter/package.json",
       "either": 18,
-      "shared": 15,
-      "strength": 0.833333
-    },
-    {
-      "a": "packages/starter-ronin/package.json",
-      "b": "templates/starter/package.json",
-      "either": 23,
       "shared": 13,
-      "strength": 0.565217
-    },
-    {
-      "a": "packages/starter-vampire/package.json",
-      "b": "packages/starter-weird-west/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
-    },
-    {
-      "a": "packages/starter-vampire/package.json",
-      "b": "packages/starter-zombie/package.json",
-      "either": 17,
-      "shared": 16,
-      "strength": 0.941176
-    },
-    {
-      "a": "packages/starter-vampire/package.json",
-      "b": "packages/terminal-ui/package.json",
-      "either": 19,
-      "shared": 15,
-      "strength": 0.789474
-    },
-    {
-      "a": "packages/starter-vampire/package.json",
-      "b": "templates/starter/package.json",
-      "either": 24,
-      "shared": 13,
-      "strength": 0.541667
+      "strength": 0.722222
     },
     {
       "a": "packages/starter-weird-west/package.json",
       "b": "packages/starter-zombie/package.json",
-      "either": 16,
-      "shared": 16,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "packages/starter-weird-west/package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/starter-weird-west/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 18,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.722222
     },
     {
       "a": "packages/starter-zombie/package.json",
       "b": "packages/terminal-ui/package.json",
-      "either": 18,
+      "either": 17,
       "shared": 15,
-      "strength": 0.833333
+      "strength": 0.882353
     },
     {
       "a": "packages/starter-zombie/package.json",
       "b": "templates/starter/package.json",
-      "either": 23,
+      "either": 18,
       "shared": 13,
-      "strength": 0.565217
+      "strength": 0.722222
     },
     {
       "a": "packages/terminal-ui/package.json",
       "b": "templates/starter/package.json",
-      "either": 24,
+      "either": 20,
       "shared": 13,
-      "strength": 0.541667
+      "strength": 0.65
     },
     {
       "a": "packages/terminal-ui/src/renderer.test.ts",
@@ -9546,16 +9577,16 @@
     "floor": "strong",
     "floorHeld": false,
     "floorTrigger": null,
-    "headDate": "2026-10-14T19:16:52-07:00",
+    "headDate": "2026-11-11T17:04:42-05:00",
     "inScopeFiles": 1391,
     "pinnedStart": null,
-    "priorFloor": "fallen",
-    "qualifyingCommits": 445,
+    "priorFloor": "strong",
+    "qualifyingCommits": 428,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 10,
-    "since": "2026-04-18T02:16:52.000Z",
+    "since": "2026-05-15T22:04:42.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",
@@ -9571,7 +9602,7 @@
     ],
     "sourceFileReach": 20,
     "sourceFileRise": 25,
-    "sourceFilesReachingStrongFloor": 56,
+    "sourceFilesReachingStrongFloor": 51,
     "strength": 0.5,
     "windowDays": 180
   },

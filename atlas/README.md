@@ -1,14 +1,14 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-11 from commit e21f146 by Atlas 1.26.0.
+Mapped at 2026-11-12 from commit 685bfb2 by Atlas 1.26.0.
 
 ## What this is
 
 39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-10-15 (8fcd36e)
+## What changed since 2026-11-11 (e21f146)
 
-Nothing structural changed since 2026-10-15; 1 file changed content.
+Nothing structural changed since 2026-11-11; 1 file changed content.
 
 ## What comes in
 
@@ -77,7 +77,7 @@ Nothing structural changed since 2026-10-15; 1 file changed content.
 
 11 files changed together with their own tests, as expected.
 
-Window: 180 days; a pair counts from 10 shared commits, since 56 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
+Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
 
 ## What no test touches
 

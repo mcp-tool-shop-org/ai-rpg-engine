@@ -45,11 +45,12 @@ RUN npm ci --omit=dev --ignore-scripts
 # The 2026-10-15 digest still ships perl-base 5.36.0-7+deb12u3; deb12u4 closes
 # CVE-2026-13221 / 8376 / 42496 / 42497 / 48962 / 57432 / 57433 (Trivy HIGH and
 # CRITICAL, fixed; 42496 / 42497 are perl's Archive::Tar). docker-smoke fails the
-# job on fixable HIGH/CRITICAL OS packages. Drop a package from the list below
-# once the base digest carries its fix.
+# job on fixable HIGH/CRITICAL OS packages. apt / libapt-pkg6.0 2.6.1 (CVE-2026-109518,
+# HIGH, remote code execution via hard link reuse; fixed in 2.6.2) ship in the same
+# digest. Drop a package from the list below once the base digest carries its fix.
 USER root
 RUN apt-get update \
- && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 perl-base \
+ && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 perl-base apt libapt-pkg6.0 \
  && rm -rf /var/lib/apt/lists/*
 USER node
 ENTRYPOINT ["node", "/app/packages/cli/dist/bin.js"]
