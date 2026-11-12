@@ -208,30 +208,107 @@
   "changes": {
     "fileCounts": {
       "added": 0,
-      "changed": 60,
+      "changed": 1,
       "moved": 0,
-      "parts": 34,
+      "parts": 1,
       "removed": 0
     },
     "items": [
       {
         "kind": "counts",
-        "sentence": "Nothing structural changed since 2026-10-15; 60 files changed content.",
+        "sentence": "Nothing structural changed since 2026-11-11; 1 file changed content.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "d283fccdb38ffe1a6a1e09e3a3a6854578be590b",
-      "generatedAt": "2026-10-15T01:55:15.881Z"
+      "commit": "e21f146dc1e6523d59a4fb8e972d68d0ca146a1b",
+      "generatedAt": "2026-11-11T22:04:24.594Z"
     },
     "unchanged": true
   },
-  "changesTogether": [],
-  "changesTogetherNote": [
-    "Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do."
+  "changesTogether": [
+    {
+      "a": "packages/cli/src/packs-fallout-sink-consequence.test.ts",
+      "b": "packages/cli/src/packs-fallout-sink.test.ts",
+      "either": 14,
+      "partLabels": [
+        "cli",
+        "cli"
+      ],
+      "parts": [
+        "cli",
+        "cli"
+      ],
+      "relation": "inside",
+      "shared": 10
+    },
+    {
+      "a": "packages/ledger-adapter/src/contracts.ts",
+      "b": "packages/ledger-adapter/src/settle/adapter.ts",
+      "either": 16,
+      "partLabels": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "parts": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "relation": "inside",
+      "shared": 11
+    },
+    {
+      "a": "packages/ollama/src/cli-run.test.ts",
+      "b": "packages/ollama/src/cli.ts",
+      "either": 16,
+      "partLabels": [
+        "ollama",
+        "ollama"
+      ],
+      "parts": [
+        "ollama",
+        "ollama"
+      ],
+      "relation": "inside",
+      "shared": 11
+    },
+    {
+      "a": "packages/ledger-adapter/src/contracts.ts",
+      "b": "packages/ledger-adapter/src/settle/adapter.test.ts",
+      "either": 16,
+      "partLabels": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "parts": [
+        "ledger-adapter",
+        "ledger-adapter"
+      ],
+      "relation": "inside",
+      "shared": 10
+    },
+    {
+      "a": "packages/ollama/src/cli-run.test.ts",
+      "b": "packages/ollama/src/index.ts",
+      "either": 17,
+      "partLabels": [
+        "ollama",
+        "ollama"
+      ],
+      "parts": [
+        "ollama",
+        "ollama"
+      ],
+      "relation": "inside",
+      "shared": 10
+    }
   ],
-  "changesTogetherWithTests": 0,
-  "commit": "8fcd36e8093f046094c3fbf09ae4247ffae6e50b",
+  "changesTogetherNote": [
+    "11 files changed together with their own tests, as expected.",
+    "Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
+  ],
+  "changesTogetherWithTests": 11,
+  "commit": "685bfb210ff51a584ce7a07e15120816f8e6a261",
   "defaultBranch": "main",
   "derived": "39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
@@ -253,7 +330,8 @@
       "landings": [
         "docs/c0-alignment/intake-table.json",
         "docs/c0-alignment/reverse-table.json",
-        "docs/c0-alignment/version-skew.json"
+        "docs/c0-alignment/version-skew.json",
+        "docs/contract-v1/rng-audit.json"
       ],
       "name": "CI",
       "packs": [
@@ -631,7 +709,8 @@
       "landings": [
         "docs/c0-alignment/intake-table.json",
         "docs/c0-alignment/reverse-table.json",
-        "docs/c0-alignment/version-skew.json"
+        "docs/c0-alignment/version-skew.json",
+        "docs/contract-v1/rng-audit.json"
       ],
       "name": "Release",
       "packs": [
@@ -1427,7 +1506,7 @@
       "to": "pack-registry"
     }
   ],
-  "engine": "1.24.0",
+  "engine": "1.26.0",
   "generated": [
     {
       "place": "docs/c0-alignment/intake-table.json",
@@ -1478,7 +1557,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-10-15T02:11:05.849Z",
+  "generatedAt": "2026-11-12T00:55:52.300Z",
   "limits": [
     "3 imports could not be resolved: `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; `packages/pack-registry/src/starter-readme-usage.test.ts` imports a path built at run time.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
@@ -1488,9 +1567,8 @@
     "12 writes and 9 reads go to the directory the command is run in, not to this repository.",
     "6 writes and 3 reads go to a temporary directory, not to this repository.",
     "2 commands are built at run time and not followed, 1 of them in tests.",
-    "CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.",
-    "Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.",
-    "Statistics confidence is low: fewer than 25 source files reach 10 revisions in the window."
+    "CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434.",
+    "Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 433."
   ],
   "mainDoor": ".github/workflows/ci.yml",
   "partLabels": {
@@ -1538,7 +1616,7 @@
   "readers": [
     {
       "readers": [],
-      "target": "docs/c0-alignment/"
+      "target": "docs/"
     }
   ],
   "repo": "mcp-tool-shop-org/ai-rpg-engine",
@@ -1781,6 +1859,7 @@
     "starter-zombie": 42,
     "terminal-ui": 28
   },
+  "testedCodeParts": 33,
   "unnamedWrites": 21,
   "unread": [
     {

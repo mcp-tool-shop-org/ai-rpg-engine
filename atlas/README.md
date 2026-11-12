@@ -1,14 +1,14 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-10-15 from commit 8fcd36e by Atlas 1.24.0.
+Mapped at 2026-11-12 from commit 685bfb2 by Atlas 1.26.0.
 
 ## What this is
 
 39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-10-15 (d283fcc)
+## What changed since 2026-11-11 (e21f146)
 
-Nothing structural changed since 2026-10-15; 60 files changed content.
+Nothing structural changed since 2026-11-11; 1 file changed content.
 
 ## What comes in
 
@@ -37,16 +37,16 @@ Nothing structural changed since 2026-10-15; 60 files changed content.
    3. Or, when `wantsHelp && !COMMANDS_WITH_OWN_HELP.has(command)`, `main` does `closeReadline` instead.
    4. Or, when `raw === undefined || raw === '' || raw.startsWith('-')`, `main` does `map` instead.
    5. `main` returns early 5 more ways.
-2. It writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json and docs/c0-alignment/version-skew.json.
+2. It writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json, docs/c0-alignment/version-skew.json and docs/contract-v1/rng-audit.json.
 3. It uploads coverage to Codecov.
 
 ## Who reads the results
 
-- **docs/c0-alignment/** has no reader in this repository.
+- **docs/** has no reader in this repository.
 
 ## The other doors
 
-**Release** runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 389 more, builds docs/mixed-game-viability-proof.ts, checks templates/, docs/, eslint.config.js and 5 more, packs package-lock.json, package.json, packages/ and 1 more into an image, writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json and docs/c0-alignment/version-skew.json, and publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false).
+**Release** runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 389 more, builds docs/mixed-game-viability-proof.ts, checks templates/, docs/, eslint.config.js and 5 more, packs package-lock.json, package.json, packages/ and 1 more into an image, writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json, docs/c0-alignment/version-skew.json and docs/contract-v1/rng-audit.json, and publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false).
 
 **Deploy site to GitHub Pages** runs site/astro.config.mjs and site/src/, and deploys the site on main.
 
@@ -69,9 +69,15 @@ Nothing structural changed since 2026-10-15; 60 files changed content.
 
 ## What tends to change together
 
-No two source files changed together often enough to name.
+- **packages/cli/src/packs-fallout-sink-consequence.test.ts** and **packages/cli/src/packs-fallout-sink.test.ts** changed together in 10 of 14 commits, inside the cli part.
+- **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.ts** changed together in 11 of 16 commits, inside the ledger-adapter part.
+- **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/cli.ts** changed together in 11 of 16 commits, inside the ollama part.
+- **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.test.ts** changed together in 10 of 16 commits, inside the ledger-adapter part.
+- **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/index.ts** changed together in 10 of 17 commits, inside the ollama part.
 
-Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do.
+11 files changed together with their own tests, as expected.
+
+Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
 
 ## What no test touches
 
@@ -128,8 +134,7 @@ Read those in order to follow one pull request end to end.
 - 12 writes and 9 reads go to the directory the command is run in, not to this repository.
 - 6 writes and 3 reads go to a temporary directory, not to this repository.
 - 2 commands are built at run time and not followed, 1 of them in tests.
-- CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.
-- Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from those.
-- Statistics confidence is low: fewer than 25 source files reach 10 revisions in the window.
+- CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434.
+- Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 433.
 
 Regenerate with `npx --yes @dogfood-lab/atlas map`.
