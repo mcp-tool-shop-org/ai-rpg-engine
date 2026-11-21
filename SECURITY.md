@@ -41,7 +41,7 @@ memory. No package starts a child process, and none collects telemetry.
 | `asset-registry` | None | Its file store reads, writes and deletes asset data and metadata under the store directory you give it. |
 | `soundpack-core` | None | Reads the sound and authoring files you name. |
 | `image-gen` | HTTP to a ComfyUI server (default `http://localhost:8188`): it sends prompts, uploads images and downloads results. A server on another machine receives them, over plain HTTP unless its address is `https`. | None. |
-| `ollama` | HTTP to an Ollama endpoint (default `http://localhost:11434`); `webfetch` only when enabled (below) | Reads project files for chat context; writes transcripts, sessions, packs and scaffolds (below). |
+| `ollama` | HTTP to an Ollama endpoint (default `http://localhost:11434`); `webfetch` only when enabled (below) | Reads project files for chat context, and the files you name for its other commands (importing sessions, emitting packs, replays); writes transcripts, sessions, packs and scaffolds (below). |
 | `ledger-adapter` | WebSocket to XRPL Testnet or Devnet only, and the Testnet faucet (below) | Reads and writes XRPL wallet seeds, by convention at `<gameDir>/.secrets/ledger-secrets.json` (below). |
 
 **Code from a path.** `ai-rpg-engine run <path>` and the sidecar's module path both load and run the module at that
