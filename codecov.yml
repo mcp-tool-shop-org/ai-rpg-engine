@@ -1,16 +1,16 @@
-# Coverage is reported here, never enforced. Both statuses are informational,
-# so no coverage number can block a merge, and neither names a fixed target.
-# The signal read on a pull request is patch coverage: how much of the lines
-# it changed the tests actually ran. The comment carries that and the test
-# results; the repository-wide percentage stays out of it.
+# Coverage is enforced here at the 90% bar: project status targets 90% (with a
+# 1% threshold) and patch status targets 90% of changed lines, so regressions
+# fail their status checks. The pull-request comment carries patch coverage and
+# test results; the repository-wide percentage stays out of it.
 coverage:
   status:
     project:
       default:
-        informational: true
+        target: 90%
+        threshold: 1%
     patch:
       default:
-        informational: true
+        target: 90%
 
 comment:
   layout: "condensed_header, condensed_files, condensed_footer"

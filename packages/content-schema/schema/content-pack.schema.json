@@ -146,6 +146,45 @@
     },
     "pressureHotspots": {
       "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "connections": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "spawnPoints": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "playerTemplate": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "lootTables": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "landmarks": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "strata": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "stratumLinks": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "transitions": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "craftingStations": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "marketNodes": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "buildings": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "hubs": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "strongholds": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
     }
   },
   "$defs": {

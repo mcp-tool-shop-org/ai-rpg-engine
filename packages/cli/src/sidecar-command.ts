@@ -375,7 +375,8 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
   // the two graphs are not connected — measured on Salt Road: the player starts in
   // the host pack's opening zone with no path to any authored one, so a client would
   // render six harbour zones and a player who cannot reach them. The forge authors a
-  // default `spawnPoint`, but spawn points are not a pack key and never cross.
+  // default `spawnPoint`; `spawnPoints` is now a declared pack key (`evaluated-not-mapped`)
+  // that still never crosses into the world.
   //
   // `setPlayerLocation` is the engine's own primitive — it moves `locationId` AND the
   // player entity's `zoneId` together, which is the bookkeeping a caller writing

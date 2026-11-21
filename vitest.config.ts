@@ -23,18 +23,18 @@ export default defineConfig({
         'docs/**',
         'scripts/**',
       ],
-      // Coverage ratchet (PG-3): floors sit just below the measured baseline
-      // (2026-07-08, dogfood/v2.5: stmts 76.89 / branch 83.55 / funcs 68.40 /
-      // lines 76.89) so `vitest run --coverage` — the CI coverage step — goes
-      // red on a real regression without demanding a backfill today. RATCHET
-      // RULE: when coverage climbs, raise these floors to just below the new
-      // number; never lower them to admit a regression. Guarded by a meta-test
-      // in scripts/gates.test.ts so the ratchet cannot be silently deleted.
+      // Coverage ratchet (PG-3): floors sit at the 90% org bar / just below the
+      // measured baseline (2026-11-21, CI run 44891915264: stmts 90.23 /
+      // branch 84.84 / funcs 90.13 / lines 90.23) so `vitest run --coverage` —
+      // the CI coverage step — goes red on a regression. RATCHET RULE: when
+      // coverage climbs, raise these floors to just below the new number; never
+      // lower them to admit a regression. Guarded by a meta-test in
+      // scripts/gates.test.ts so the ratchet cannot be silently deleted.
       thresholds: {
-        statements: 75,
-        branches: 82,
-        functions: 66.5,
-        lines: 75,
+        statements: 90,
+        branches: 84,
+        functions: 90,
+        lines: 90,
       },
     },
   },

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Thirteen evaluated `ContentPack` keys are now declared:** `connections`, `spawnPoints`, `playerTemplate`, `lootTables`, `landmarks`, `strata`, `stratumLinks`, `transitions`, `craftingStations`, `marketNodes`, `buildings`, `hubs` and `strongholds` are added to `ALLOWED_PACK_KEYS`. A pack carrying any of them now passes the load gate's key check, where it was previously refused; each present key is reported in `dropped[]` as `evaluated-not-mapped`, with its reason, and nothing is carried into the world; `SIM_AFFECTING_KEYS` is unchanged, so every content hash is unchanged; and the JSON schema (`packages/content-schema/schema/content-pack.schema.json`) admits the 13 keys.
+
 ## [3.12.1] - 2026-10-15
 
 A security patch on 3.12.0. Nothing about the engine's behaviour, wire format or hashes changes.

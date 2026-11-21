@@ -93,9 +93,9 @@ describe('PG-3: coverage ratchet is declared and non-vacuous', () => {
     const t = coverage!.thresholds!;
     for (const metric of ['statements', 'branches', 'functions', 'lines'] as const) {
       expect(typeof t[metric], `thresholds.${metric} must be a number`).toBe('number');
-      // A floor of 0/near-0 would make the ratchet vacuous. Baseline at the
-      // time the ratchet was installed: stmts 76.89 / branch 83.55 /
-      // funcs 68.40 / lines 76.89. Floors only ratchet UP.
+      // A floor of 0/near-0 would make the ratchet vacuous. Measured baseline
+      // (2026-11-21, CI run 44891915264): stmts 90.23 / branch 84.84 /
+      // funcs 90.13 / lines 90.23. Floors only ratchet UP.
       expect(t[metric] as number, `thresholds.${metric} must stay a real floor`).toBeGreaterThanOrEqual(60);
     }
   });

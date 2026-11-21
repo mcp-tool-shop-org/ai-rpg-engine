@@ -347,61 +347,20 @@ describe('C1/P2 — the forge export, gated live', () => {
     expect(r.checks.find((c) => c.check === 'module-ids')!.ok).toBe(true);
   });
 
-  it('the exported pack STILL fails the key allowlist — FOUR keys remain undeclared', () => {
-    // ⚠ FLIPPED BY C3/P1. C1 asserted FIVE — `items`, `playerTemplate`, and the
-    // three raw pass-throughs with zero engine hits repo-wide. C3/P1 declares
-    // `encounterAnchors` and gives it a real intake channel, so the honest
-    // remainder is four. The pin shrinks by exactly the key that became real.
-    //
-    // ⚠ The list below is the PRE-C4 state, kept because it records why each key was
-    // examined. C4 closed three of them — see the flip note at the assertions.
-    //
-    // The keys that stayed, and why (recorded so a remainder is never mistaken
-    // for an oversight):
-    //   - `items`         — ANDON'd out of P1. The authoring side matches entity
-    //                       placement, but the runtime side needs a zone-container
-    //                       vocabulary `WorldState` has no shape for. See SPEC §3.
-    //   - `playerTemplate` — session-scoped by the same logic as `buildCatalog`:
-    //                       consumed before a world exists. Recorded, not routed.
-    //   - `factionPresences` / `pressureHotspots` — P4 evaluates mapping them onto
-    //                       the engine's faction/district state and v3.8's
-    //                       spawn-pressure producers, with the field-level reason
-    //                       either way.
+  it('the exported pack passes the key allowlist once C4 declares playerTemplate alongside the other evaluated keys', () => {
+    // ⚠ FLIPPED BY Step 1 Route E (world-forge ↔ ai-rpg-engine). C1 asserted FIVE undeclared
+    // keys; C3/P1 closed encounterAnchors; C4 declared items/factionPresences/pressureHotspots
+    // leaving only `playerTemplate` refused; Route E declares `playerTemplate` (and the
+    // remaining world-forge export keys) in C4 `ALLOWED_PACK_KEYS` + `EVALUATED_NOT_MAPPED_KEYS`.
+    // `applyContentPack` still names `pack.playerTemplate` as dropped (`evaluated-not-mapped`).
     const r = runLoadGate(fixturePack(), {
       engineVersion: ENGINE_VERSION,
       registeredModuleIds: registeredIds(),
       manifest: forgeManifest() as GateContext['manifest'],
     });
-    // ── FLIPPED BY C4 ────────────────────────────────────────────────────────
-    //
-    // Three of the four are now DECLARED, and the reason is a measurement rather than a
-    // change of mind: C4 wired the load gate into the sidecar for real, and the first
-    // ordinary `export-ai-rpg` output to meet it was REFUSED for carrying exactly these
-    // keys. An exporter whose normal product cannot boot is a worse failure than the typo
-    // the check exists to catch, and the gate had only two verdicts — carried, or fatal —
-    // with no way to say "examined, and deliberately not carried".
-    //
-    // `EVALUATED_NOT_MAPPED_KEYS` is that third verdict. Declaring them does NOT carry
-    // them: `applyContentPack` reports each as `evaluated-not-mapped` with its rationale on
-    // every load, so the honesty property the pin protected is intact — what changed is
-    // that a real export loads.
-    //
-    // ⚠ `playerTemplate` STAYS REFUSED, and that is now an inconsistency worth naming
-    // rather than a finding still standing. C3 ruled it session-scoped "by the same logic
-    // as `buildCatalog`" — and `buildCatalog` and `progressionTrees` are both DECLARED and
-    // reported as session-scoped drops. So the same class is handled two ways, and any
-    // world that authors a player template is unloadable. Salt Road authors none, so C4 is
-    // not blocked and did not widen itself to fix it. Recorded for the Director.
-    expect(r.ok).toBe(false);
+    expect(r.ok, r.report).toBe(true);
     const check = r.checks.find((c) => c.check === 'key-allowlist')!;
-    expect(check.actual).toContain('playerTemplate');
-    // The three that C4 declared are NO LONGER refused. This is what makes the flip a
-    // measurement rather than a relabelling.
-    expect(check.actual).not.toContain('items');
-    expect(check.actual).not.toContain('factionPresences');
-    expect(check.actual).not.toContain('pressureHotspots');
-    // …and C3's flip still holds.
-    expect(check.actual).not.toContain('encounterAnchors');
+    expect(check.ok).toBe(true);
   });
 
   it('C3/P1: the newly-declared keys are accepted by the allowlist', () => {
@@ -423,31 +382,18 @@ describe('C1/P2 — the forge export, gated live', () => {
   });
 
   it('CROSS-REPO: the forge\'s hash implementation agrees with the engine\'s', () => {
-    // ⚠ THE CHECK THAT DEFENDS A DELIBERATE DUPLICATE. world-forge cannot import
-    // `computeContentHash`, so it ships its own copy in `content-hash.ts`. Two
-    // implementations of one algorithm in two repos is exactly how
-    // DEFAULT_MODULES drifted into nine phantoms.
+    // ⚠ THE CHECK THAT DEFENDS A DELIBERATE DUPLICATE. `computeContentHash` in
+    // `content-schema/src/gate.ts` was published in 3.12.1 and imports
+    // `node:crypto`. world-forge keeps a browser-safe twin in `content-hash.ts`
+    // on purpose so browser consumers do not pull in Node builtins, pinned by its
+    // own Node equivalence test in `engine-deps-3x.test.ts`. Two implementations
+    // of one algorithm in two repos is how DEFAULT_MODULES drifted into nine
+    // phantoms, so both sides check the seam.
     //
-    // ⚠ THE REASON CHANGED 2026-07-29, AND THIS TEST NEARLY DIED OF IT. It used
-    // to read "its @ai-rpg-engine/* dependencies are installed at 2.x (C0
-    // checklist item 1, open), and 2.x has no such export", and the dep-bump
-    // errand was briefed to retire this test on the back of that sentence: bump
-    // the ranges, share one function, and an equivalence check becomes a
-    // tautology. The ranges are bumped. There is still no shared function.
-    // `computeContentHash` lives in `content-schema/src/gate.ts` — added to this
-    // repo's `main` by C1 and NEVER PUBLISHED. npm's `latest` is 3.8.0,
-    // published 2026-07-28T23:12Z (⚠ date corrected C3/P0: this said
-    // "2026-03-07", which was the package's CREATED timestamp — the v1.x-era
-    // first publish. Corrected it is sharper: the packages were cut HOURS
-    // BEFORE C1 merged), and no published 3.8.0 package exports it. The blocker
-    // was never the range; it is a release.
-    //
-    // So this stays, and stays checked rather than trusted: the value below was
-    // computed by the FORGE and committed into the manifest fixture; this
-    // recomputes it with the ENGINE's implementation over the committed pack. If
-    // the two ever diverge, this fails, and the divergence cannot hide. Retire
-    // it when a published engine carries the hasher and the forge imports it —
-    // world-forge's `engine-deps-3x.test.ts` fails on that day and says so.
+    // So this test stays as the engine-side check rather than retiring: the value
+    // below was computed by the forge and committed into the manifest fixture, and
+    // this recomputes it with the engine's implementation over the committed pack.
+    // If the two ever diverge, this fails, and the divergence cannot hide.
     //
     // ⚠ C3/P1 IS THE PROOF THIS TEST EARNS ITS KEEP. Adding `placements` and
     // `encounterAnchors` to the engine's SIM_AFFECTING_KEYS turned this RED
