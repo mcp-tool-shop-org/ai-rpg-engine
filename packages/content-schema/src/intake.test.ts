@@ -1463,5 +1463,25 @@ describe('Step 1 Route E — 13 world-forge C4 keys declared, dropped as evaluat
     expect(allowlist?.actual).toContain('connectionz');
     expect(gate.report).toContain('connectionz');
   });
+
+  it('connections reason agrees with zoneDefinitionToState: traversal reads only neighbors and exits is dropped with no-runtime-field', () => {
+    const reason = EVALUATED_NOT_MAPPED_KEYS.connections;
+    expect(reason).not.toMatch(/\breads\b[^;]*\bexits\b/i);
+    expect(reason.startsWith('EVALUATED, not mapped into runtime intake:')).toBe(true);
+    expect(reason).toContain('only `zones[].neighbors`');
+    expect(reason).toContain('`zones[].exits` is dropped with `no-runtime-field`');
+    expect(reason).toContain('typed edge records (`kind`, `bidirectional`, `condition`) have no WorldState channel yet');
+
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      zones: [],
+      entities: [],
+      connections: [{ fromZoneId: 'a', toZoneId: 'b', kind: 'door', bidirectional: true }],
+    } as unknown as ContentPack);
+    const droppedConn = r.dropped.find((d) => d.path === 'pack.connections');
+    expect(droppedConn).toBeDefined();
+    expect(droppedConn!.detail).not.toMatch(/\breads\b[^;]*\bexits\b/i);
+    expect(droppedConn!.detail).toContain('only `zones[].neighbors`');
+  });
 });
 

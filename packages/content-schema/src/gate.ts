@@ -90,7 +90,7 @@ export const ALLOWED_PACK_KEYS = [
   'factions',
   // ── C4: KNOWN, EVALUATED, DELIBERATELY NOT CARRIED ────────────────────────
   //
-  // ⚠ These three are here because the gate could not tell "a key nobody has ever
+  // ⚠ These 16 keys are here because the gate could not tell "a key nobody has ever
   // heard of" from "a key we examined and decided not to map", and treated both as
   // fatal. The first real forge export to meet a properly wired gate was REFUSED for
   // carrying them — so `export-ai-rpg`'s ordinary output could not boot at all, which

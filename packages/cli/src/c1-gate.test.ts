@@ -382,31 +382,18 @@ describe('C1/P2 — the forge export, gated live', () => {
   });
 
   it('CROSS-REPO: the forge\'s hash implementation agrees with the engine\'s', () => {
-    // ⚠ THE CHECK THAT DEFENDS A DELIBERATE DUPLICATE. world-forge cannot import
-    // `computeContentHash`, so it ships its own copy in `content-hash.ts`. Two
-    // implementations of one algorithm in two repos is exactly how
-    // DEFAULT_MODULES drifted into nine phantoms.
+    // ⚠ THE CHECK THAT DEFENDS A DELIBERATE DUPLICATE. `computeContentHash` in
+    // `content-schema/src/gate.ts` was published in 3.12.1 and imports
+    // `node:crypto`. world-forge keeps a browser-safe twin in `content-hash.ts`
+    // on purpose so browser consumers do not pull in Node builtins, pinned by its
+    // own Node equivalence test in `engine-deps-3x.test.ts`. Two implementations
+    // of one algorithm in two repos is how DEFAULT_MODULES drifted into nine
+    // phantoms, so both sides check the seam.
     //
-    // ⚠ THE REASON CHANGED 2026-07-29, AND THIS TEST NEARLY DIED OF IT. It used
-    // to read "its @ai-rpg-engine/* dependencies are installed at 2.x (C0
-    // checklist item 1, open), and 2.x has no such export", and the dep-bump
-    // errand was briefed to retire this test on the back of that sentence: bump
-    // the ranges, share one function, and an equivalence check becomes a
-    // tautology. The ranges are bumped. There is still no shared function.
-    // `computeContentHash` lives in `content-schema/src/gate.ts` — added to this
-    // repo's `main` by C1 and NEVER PUBLISHED. npm's `latest` is 3.8.0,
-    // published 2026-07-28T23:12Z (⚠ date corrected C3/P0: this said
-    // "2026-03-07", which was the package's CREATED timestamp — the v1.x-era
-    // first publish. Corrected it is sharper: the packages were cut HOURS
-    // BEFORE C1 merged), and no published 3.8.0 package exports it. The blocker
-    // was never the range; it is a release.
-    //
-    // So this stays, and stays checked rather than trusted: the value below was
-    // computed by the FORGE and committed into the manifest fixture; this
-    // recomputes it with the ENGINE's implementation over the committed pack. If
-    // the two ever diverge, this fails, and the divergence cannot hide. Retire
-    // it when a published engine carries the hasher and the forge imports it —
-    // world-forge's `engine-deps-3x.test.ts` fails on that day and says so.
+    // So this test stays as the engine-side check rather than retiring: the value
+    // below was computed by the forge and committed into the manifest fixture, and
+    // this recomputes it with the engine's implementation over the committed pack.
+    // If the two ever diverge, this fails, and the divergence cannot hide.
     //
     // ⚠ C3/P1 IS THE PROOF THIS TEST EARNS ITS KEEP. Adding `placements` and
     // `encounterAnchors` to the engine's SIM_AFFECTING_KEYS turned this RED

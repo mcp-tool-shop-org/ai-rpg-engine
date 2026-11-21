@@ -533,12 +533,13 @@ export const EVALUATED_NOT_MAPPED_KEYS: Record<string, string> = {
     + 'parallel spawn system beside encounter-spawn, the pressure system and typed hazards. '
     + '`evaluatePressures` is driven by live district state, not by authored hotspots.',
   connections:
-    'EVALUATED, not mapped into runtime intake: engine traversal reads `zones[].neighbors` and '
-    + '`zones[].exits`; rich typed edge records (`kind`, `bidirectional`, `condition`) have no '
-    + 'separate WorldState channel yet.',
+    'EVALUATED, not mapped into runtime intake: engine traversal reads only `zones[].neighbors`; '
+    + '`zones[].exits` is dropped with `no-runtime-field`; typed edge records (`kind`, '
+    + '`bidirectional`, `condition`) have no WorldState channel yet.',
   spawnPoints:
     'EVALUATED, not mapped into runtime intake: initial player/spawn setup is host-driven rather '
     + 'than ingested into a post-boot `WorldState.spawnPoints` collection.',
+  // Session-class content (see SESSION_SCOPED_KEYS at intake.ts:509), filed as evaluated-not-mapped pending a per-key decision.
   playerTemplate:
     'EVALUATED, not mapped into runtime intake: player template metadata is session/chargen-setup '
     + 'content consumed before a world boots, not a post-boot runtime channel.',
