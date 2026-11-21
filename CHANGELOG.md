@@ -15,6 +15,10 @@ A patch on 3.12.1. The load gate's key check no longer refuses a pack for the 13
 
 - **Thirteen evaluated `ContentPack` keys are now declared:** `connections`, `spawnPoints`, `playerTemplate`, `lootTables`, `landmarks`, `strata`, `stratumLinks`, `transitions`, `craftingStations`, `marketNodes`, `buildings`, `hubs` and `strongholds` are added to `ALLOWED_PACK_KEYS`. A pack carrying any of them now passes the load gate's key check, where it was previously refused; each present key is reported in `dropped[]` as `evaluated-not-mapped`, with its reason, and nothing is carried into the world; `SIM_AFFECTING_KEYS` is unchanged, so every content hash is unchanged; and the JSON schema (`packages/content-schema/schema/content-pack.schema.json`) admits the 13 keys.
 
+### Security
+
+- **SECURITY.md describes 3.x.** Its supported-versions table now lists 3.x as supported and everything before 3.0 as not; it still named 2.x and 1.x. Its scope section now lists every package that reaches the network, the filesystem or the environment: the sidecar's opt-in TCP listener (no authentication, loopback by default), the AI layer's chat context from project files and its file writes, the image generator's calls to a ComfyUI server, and the ledger adapter's XRPL Testnet connection and plaintext seed file.
+
 ## [3.12.1] - 2026-10-15
 
 A security patch on 3.12.0. Nothing about the engine's behaviour, wire format or hashes changes.
