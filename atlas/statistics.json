@@ -157,7 +157,7 @@
       "confidence": "full",
       "highWater": 0.796067,
       "name": "cli",
-      "qualifyingSourceCommits": 113,
+      "qualifyingSourceCommits": 114,
       "rebaseline": null
     },
     {
@@ -189,10 +189,10 @@
       },
       "cohesion": 1,
       "cohesionDropped": false,
-      "confidence": "low",
+      "confidence": "full",
       "highWater": 1,
       "name": "content-schema",
-      "qualifyingSourceCommits": 29,
+      "qualifyingSourceCommits": 30,
       "rebaseline": null
     },
     {
@@ -460,7 +460,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "root",
-      "qualifyingSourceCommits": 0,
+      "qualifyingSourceCommits": 1,
       "rebaseline": null
     },
     {
@@ -492,7 +492,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "scripts",
-      "qualifyingSourceCommits": 7,
+      "qualifyingSourceCommits": 8,
       "rebaseline": null
     },
     {
@@ -900,13 +900,13 @@
         "path": ".signalfire/save.json"
       },
       {
-        "commits": 46,
-        "lines": 2295,
+        "commits": 47,
+        "lines": 2301,
         "path": "CHANGELOG.md"
       },
       {
-        "commits": 10,
-        "lines": 137,
+        "commits": 11,
+        "lines": 144,
         "path": "Dockerfile"
       },
       {
@@ -986,17 +986,17 @@
       },
       {
         "commits": 9,
-        "lines": 42414,
+        "lines": 42871,
         "path": "atlas/statistics.json"
       },
       {
         "commits": 9,
-        "lines": 105148,
+        "lines": 105150,
         "path": "atlas/structure.json"
       },
       {
-        "commits": 2,
-        "lines": 36,
+        "commits": 3,
+        "lines": 50,
         "path": "codecov.yml"
       },
       {
@@ -1805,8 +1805,8 @@
         "path": "packages/cli/src/c1-conformance.test.ts"
       },
       {
-        "commits": 8,
-        "lines": 1162,
+        "commits": 9,
+        "lines": 1254,
         "path": "packages/cli/src/c1-gate.test.ts"
       },
       {
@@ -2070,8 +2070,8 @@
         "path": "packages/cli/src/session-narration.test.ts"
       },
       {
-        "commits": 16,
-        "lines": 1381,
+        "commits": 17,
+        "lines": 1384,
         "path": "packages/cli/src/sidecar-command.ts"
       },
       {
@@ -2165,8 +2165,8 @@
         "path": "packages/content-schema/package.json"
       },
       {
-        "commits": 12,
-        "lines": 1058,
+        "commits": 13,
+        "lines": 1097,
         "path": "packages/content-schema/schema/content-pack.schema.json"
       },
       {
@@ -2185,8 +2185,8 @@
         "path": "packages/content-schema/src/build-catalog.ts"
       },
       {
-        "commits": 20,
-        "lines": 1094,
+        "commits": 21,
+        "lines": 1116,
         "path": "packages/content-schema/src/gate.ts"
       },
       {
@@ -2195,13 +2195,13 @@
         "path": "packages/content-schema/src/index.ts"
       },
       {
-        "commits": 24,
-        "lines": 2876,
+        "commits": 25,
+        "lines": 2958,
         "path": "packages/content-schema/src/intake.test.ts"
       },
       {
-        "commits": 29,
-        "lines": 3544,
+        "commits": 30,
+        "lines": 3585,
         "path": "packages/content-schema/src/intake.ts"
       },
       {
@@ -5875,8 +5875,8 @@
         "path": "scripts/check-packaging.mjs"
       },
       {
-        "commits": 10,
-        "lines": 777,
+        "commits": 11,
+        "lines": 783,
         "path": "scripts/gates.test.ts"
       },
       {
@@ -6170,8 +6170,8 @@
         "path": "tsconfig.tests.json"
       },
       {
-        "commits": 2,
-        "lines": 74,
+        "commits": 3,
+        "lines": 96,
         "path": "vitest.config.ts"
       }
     ]
@@ -6180,136 +6180,24 @@
     "level": "full",
     "reason": "at least 30 qualifying commits, and at least 20 source files reach 10 revisions"
   },
-  "generatedAt": "2026-11-12T00:55:52.300Z",
+  "generatedAt": "2026-11-21T12:04:43.452Z",
   "generatedFrom": {
-    "commit": "685bfb210ff51a584ce7a07e15120816f8e6a261"
+    "commit": "ae7219349365109436077f8df2e2e94dceb65289"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
       "b": "README.md",
-      "either": 25,
+      "either": 26,
       "shared": 14,
-      "strength": 0.56
+      "strength": 0.538462
     },
     {
       "a": "CHANGELOG.md",
       "b": "package.json",
-      "either": 23,
+      "either": 24,
       "shared": 14,
-      "strength": 0.608696
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/asset-registry/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/core/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/modules/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/ollama/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/presentation/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/rumor-system/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/soundpack-core/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-colony/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-cyberpunk/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-detective/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-gladiator/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-pirate/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-ronin/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-vampire/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-weird-west/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "packages/starter-zombie/package.json",
-      "either": 24,
-      "shared": 12,
-      "strength": 0.5
+      "strength": 0.583333
     },
     {
       "a": "README.es.md",
@@ -7987,29 +7875,22 @@
     {
       "a": "packages/content-schema/src/gate.ts",
       "b": "packages/content-schema/src/intake.ts",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
+      "either": 20,
+      "shared": 11,
+      "strength": 0.55
     },
     {
       "a": "packages/content-schema/src/intake.test.ts",
       "b": "packages/content-schema/src/intake.ts",
-      "either": 20,
-      "shared": 12,
-      "strength": 0.6
+      "either": 21,
+      "shared": 13,
+      "strength": 0.619048
     },
     {
       "a": "packages/content-schema/src/intake.test.ts",
       "b": "packages/content-schema/src/refs.ts",
-      "either": 19,
+      "either": 20,
       "shared": 10,
-      "strength": 0.526316
-    },
-    {
-      "a": "packages/content-schema/src/intake.ts",
-      "b": "packages/content-schema/src/refs.ts",
-      "either": 22,
-      "shared": 11,
       "strength": 0.5
     },
     {
@@ -9577,16 +9458,16 @@
     "floor": "strong",
     "floorHeld": false,
     "floorTrigger": null,
-    "headDate": "2026-11-11T17:04:42-05:00",
+    "headDate": "2026-11-21T07:02:12-05:00",
     "inScopeFiles": 1391,
     "pinnedStart": null,
     "priorFloor": "strong",
-    "qualifyingCommits": 428,
+    "qualifyingCommits": 429,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 10,
-    "since": "2026-05-15T22:04:42.000Z",
+    "since": "2026-05-25T12:02:12.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",
