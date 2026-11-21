@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [3.12.2] - 2026-11-21
 
-A patch on 3.12.1. World Forge packs are no longer refused at the load gate; nothing about the engine's behaviour, wire format or hashes changes.
+A patch on 3.12.1. The load gate's key check no longer refuses a pack for the 13 top-level keys a World Forge export carries. Simulation behaviour, the wire format and hashes are unchanged.
 
 ### Changed
 
