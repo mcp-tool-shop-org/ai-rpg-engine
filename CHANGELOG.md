@@ -17,7 +17,7 @@ A patch on 3.12.1. The load gate's key check no longer refuses a pack for the 13
 
 ### Security
 
-- **SECURITY.md is current for 3.x.** Its supported-versions table now lists 3.x as supported and everything before 3.0 as not; it still named 2.x and 1.x. Its scope section now covers the simulation sidecar's opt-in `--listen` TCP mode, which binds `127.0.0.1` by default, has no authentication, and by default serves one client at a time.
+- **SECURITY.md describes 3.x.** Its supported-versions table now lists 3.x as supported and everything before 3.0 as not; it still named 2.x and 1.x. Its scope section now lists every package that reaches the network, the filesystem or the environment: the sidecar's opt-in TCP listener (no authentication, loopback by default), the AI layer's chat context from project files and its file writes, the image generator's calls to a ComfyUI server, and the ledger adapter's XRPL Testnet connection and plaintext seed file.
 
 ## [3.12.1] - 2026-10-15
 
