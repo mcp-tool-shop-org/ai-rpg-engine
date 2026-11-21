@@ -108,6 +108,13 @@ export const ALLOWED_PACK_KEYS = [
   //   pressureHotspots   DO NOT MAP, and the sharper refusal: `{zoneId, pressureType,
   //                      baseProbability}` would be a FOURTH parallel spawn system beside
   //                      encounter-spawn, the pressure system and typed hazards.
+  //   connections, spawnPoints, playerTemplate, lootTables, landmarks, strata,
+  //   stratumLinks, transitions, craftingStations, marketNodes, buildings, hubs,
+  //   strongholds        Evaluated world-forge pack keys deliberately not carried in
+  //                      runtime intake yet (route E): declaring them here lets a real
+  //                      world-forge pack pass the gate while `applyContentPack` names
+  //                      each present key in `dropped[]` as `evaluated-not-mapped` and
+  //                      keeps unknown typos refused.
   //
   // Declaring them does NOT carry them: they have no intake channel, so
   // `applyContentPack` reports each as dropped. The honesty property is preserved — a
@@ -116,6 +123,19 @@ export const ALLOWED_PACK_KEYS = [
   'items',
   'factionPresences',
   'pressureHotspots',
+  'connections',
+  'spawnPoints',
+  'playerTemplate',
+  'lootTables',
+  'landmarks',
+  'strata',
+  'stratumLinks',
+  'transitions',
+  'craftingStations',
+  'marketNodes',
+  'buildings',
+  'hubs',
+  'strongholds',
 ] as const;
 
 /**

@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { Engine, type GameManifest, type ZoneState, type EntityState } from '@ai-rpg-engine/core';
 import {
   applyContentPack,
+  runLoadGate,
   zoneDefinitionToState,
   entityBlueprintToState,
   extractSessionContent,
@@ -1400,6 +1401,67 @@ describe('F-749aba8e — seedWorldFactionsFromMembership', () => {
       { factionId: 'survivors' },
     ]);
     expect(Object.keys(engine.store.state.factions)).toEqual(['survivors']);
+  });
+});
+
+describe('Step 1 Route E — 13 world-forge C4 keys declared, dropped as evaluated-not-mapped, typos still refused', () => {
+  const THIRTEEN_FORGE_KEYS = [
+    'connections',
+    'spawnPoints',
+    'playerTemplate',
+    'lootTables',
+    'landmarks',
+    'strata',
+    'stratumLinks',
+    'transitions',
+    'craftingStations',
+    'marketNodes',
+    'buildings',
+    'hubs',
+    'strongholds',
+  ] as const;
+
+  it('allows all 13 keys through runLoadGate and leaves them out of SIM_AFFECTING_KEYS', () => {
+    const pack: Record<string, unknown> = { zones: [], entities: [] };
+    for (const k of THIRTEEN_FORGE_KEYS) {
+      pack[k] = k === 'playerTemplate' ? { name: 'Hero' } : [];
+      expect([...ALLOWED_PACK_KEYS]).toContain(k);
+      expect([...SIM_AFFECTING_KEYS]).not.toContain(k);
+      expect(typeof EVALUATED_NOT_MAPPED_KEYS[k]).toBe('string');
+      expect(EVALUATED_NOT_MAPPED_KEYS[k].length).toBeGreaterThan(0);
+    }
+
+    const gate = runLoadGate(pack as unknown as ContentPack, { engineVersion: '3.12.1' });
+    expect(gate.ok, gate.report).toBe(true);
+  });
+
+  it('applyContentPack reports each present key among the 13 in dropped[] as evaluated-not-mapped', () => {
+    const engine = bootEngine();
+    const pack: Record<string, unknown> = { zones: [], entities: [] };
+    for (const k of THIRTEEN_FORGE_KEYS) {
+      pack[k] = k === 'playerTemplate' ? { name: 'Hero' } : [{ id: `${k}-1` }];
+    }
+
+    const r = applyContentPack(engine, pack as unknown as ContentPack);
+    expect(r.ok).toBe(true);
+    for (const k of THIRTEEN_FORGE_KEYS) {
+      const entry = r.dropped.find((d) => d.path === `pack.${k}`);
+      expect(entry, `expected dropped entry for pack.${k}`).toBeDefined();
+      expect(entry!.reason).toBe('evaluated-not-mapped');
+      expect(entry!.detail.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('still refuses a typo key by name even with the 13 C4 keys allowed', () => {
+    const gate = runLoadGate(
+      { zones: [], connectionz: [] } as unknown as ContentPack,
+      { engineVersion: '3.12.1' },
+    );
+    expect(gate.ok).toBe(false);
+    const allowlist = gate.checks.find((c) => c.check === 'key-allowlist');
+    expect(allowlist?.ok).toBe(false);
+    expect(allowlist?.actual).toContain('connectionz');
+    expect(gate.report).toContain('connectionz');
   });
 });
 
