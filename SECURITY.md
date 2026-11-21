@@ -4,9 +4,10 @@
 
 | Version | Supported |
 |---------|-----------|
-| 2.x     | Yes       |
-| 1.x     | Maintenance |
-| < 1.0   | No        |
+| 3.x     | Yes       |
+| < 3.0   | No        |
+
+Security fixes ship only in the latest 3.x release. The last 2.x release was 2.9.0 (2026-07-22).
 
 ## Reporting a Vulnerability
 
@@ -28,17 +29,27 @@ Include:
 
 ## Scope
 
-The **core engine and simulation packages** are local-only. The optional
-`@ai-rpg-engine/ollama` package is the one exception and is scoped separately
-below.
+The **core engine and simulation packages** are local-only. Two parts are
+scoped separately below: the simulation sidecar's opt-in TCP listener, and the
+optional `@ai-rpg-engine/ollama` package.
 
 ### Core engine (`@ai-rpg-engine/core`, `modules`, `cli`, starters, content)
 
 - **Data touched:** in-memory game state (entities, zones, events, RNG state). Save files written to `.ai-rpg-engine/` when the CLI save command is used.
-- **Data NOT touched:** no filesystem access beyond save files, no network access, no environment variables, no system resources
+- **Data NOT touched:** no filesystem access beyond save files, no network access (except the sidecar's opt-in `--listen` mode, below), no environment variables, no system resources
 - **No network egress** — the core engine has zero network dependencies at runtime
 - **No secrets handling** — does not read, store, or transmit credentials
 - **No telemetry** is collected or sent
+
+### Simulation sidecar (`ai-rpg-engine sidecar`, `@ai-rpg-engine/sidecar`) — local TCP only when asked
+
+The sidecar runs the simulation for a client such as a Godot host.
+
+- **Default: stdio.** The host starts the process and talks to it over its pipes. Nothing listens on the network.
+- **`--listen <port>` opens a TCP listener** that a client attaches to. It binds `127.0.0.1` unless `--host` names another interface.
+- **There is no authentication.** Any process that can reach the port can send simulation commands. By default one client is served at a time, and a second connection is refused.
+- **A non-loopback `--host` accepts simulation commands from other machines.** Use one only on a network you trust.
+- **Files:** the sidecar reads only what its own command line names: a starter id or module path, and the `--content` pack with its `--manifest`. Nothing a client sends makes it read or write a file.
 
 ### Optional AI layer (`@ai-rpg-engine/ollama`) — network-capable
 
