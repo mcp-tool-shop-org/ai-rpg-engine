@@ -90,19 +90,6 @@ describe('validateRefs', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.message.includes('ghost-npc'))).toBe(true);
-
-    const emptySpeaker = validateRefs({
-      entities: [{ id: 'player', type: 'player', name: 'P' }],
-      dialogues: [
-        {
-          id: 'd2',
-          speakers: [''],
-          entryNodeId: 'start',
-          nodes: { start: { id: 'start', speaker: '', text: 'Silence.' } },
-        },
-      ],
-    });
-    expect(emptySpeaker.ok).toBe(true);
   });
 
   it('catches duplicate inventory items', () => {

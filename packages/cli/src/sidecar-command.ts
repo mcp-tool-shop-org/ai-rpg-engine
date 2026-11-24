@@ -164,7 +164,8 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
 
   const seedRaw = seed.raw;
   const listenRaw = listen.raw;
-  const hostRaw = host.present && host.raw !== '' ? host.raw : undefined;
+  const trimmedHost = host.present && host.raw !== undefined ? host.raw.trim() : '';
+  const hostRaw = trimmedHost !== '' ? trimmedHost : undefined;
   const contentRaw = content.present && content.raw !== '' ? content.raw : undefined;
   const packId = args.find((a, i) => !a.startsWith('-') && !valueIndices.has(i));
 

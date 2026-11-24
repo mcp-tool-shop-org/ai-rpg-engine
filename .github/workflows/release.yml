@@ -157,6 +157,7 @@ jobs:
       # Isolated-consumer.mjs stays the tarball-on-disk gate; do not fold this in.
       - name: Registry round-trip — npm install CLI from registry
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        timeout-minutes: 6
         run: |
           set -euo pipefail
           ver=$(node -p "require('./packages/cli/package.json').version")
@@ -166,18 +167,66 @@ jobs:
           max_attempts=$(( ${#delays[@]} + 1 ))
           attempt=1
           while true; do
-            if npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"; then
+            install_out=""
+            install_ec=0
+            install_out="$(npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver" 2>&1)" && install_ec=0 || install_ec=$?
+            echo "$install_out"
+            if [ "$install_ec" -eq 0 ]; then
               break
+            fi
+            if ! echo "$install_out" | grep -Eq '(^|[^A-Za-z0-9_])(E404|ETARGET)([^A-Za-z0-9_]|$)'; then
+              echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed with non-propagation error (exit $install_ec)"
+              exit 1
             fi
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed after $attempt attempts"
               exit 1
             fi
+            rm -rf "$prefix"
+            prefix=$(mktemp -d)
             delay=${delays[$((attempt - 1))]}
-            echo "npm install attempt $attempt failed; waiting ${delay}s for registry propagation"
+            echo "npm install attempt $attempt hit E404/ETARGET; waiting ${delay}s for registry propagation"
             sleep "$delay"
             attempt=$((attempt + 1))
           done
+          node - "$prefix" "$ver" <<'EOF'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { createRequire } = require('node:module');
+          const [prefixDir, expectedVer] = process.argv.slice(2);
+          const rel = ['@ai-rpg-engine', 'cli', 'package.json'];
+          const cliPkgPath = [
+            path.join(prefixDir, 'lib', 'node_modules', ...rel),
+            path.join(prefixDir, 'node_modules', ...rel),
+          ].find((p) => fs.existsSync(p));
+          if (!cliPkgPath) {
+            console.error(`::error::Installed @ai-rpg-engine/cli/package.json not found under ${prefixDir}`);
+            process.exit(1);
+          }
+          const cliPkg = JSON.parse(fs.readFileSync(cliPkgPath, 'utf8'));
+          const req = createRequire(cliPkgPath);
+          const scopeDir = path.dirname(path.dirname(cliPkgPath));
+          const installed = fs
+            .readdirSync(scopeDir)
+            .filter((name) => fs.existsSync(path.join(scopeDir, name, 'package.json')))
+            .map((name) => `@ai-rpg-engine/${name}`);
+          const deps = new Set([
+            '@ai-rpg-engine/cli',
+            ...Object.keys(cliPkg.dependencies || {}).filter((d) => d.startsWith('@ai-rpg-engine/')),
+            ...installed,
+          ]);
+          const mismatches = [];
+          for (const dep of deps) {
+            const pkgPath = dep === '@ai-rpg-engine/cli' ? cliPkgPath : req.resolve(`${dep}/package.json`);
+            const actualVer = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version;
+            if (actualVer !== expectedVer) mismatches.push(`${dep}@${actualVer}`);
+          }
+          if (mismatches.length > 0) {
+            console.error(`::error::Installed @ai-rpg-engine/* versions do not match ${expectedVer}: ${mismatches.join(', ')}`);
+            process.exit(1);
+          }
+          console.log(`verified ${deps.size} @ai-rpg-engine/* packages at ${expectedVer}`);
+          EOF
           PATH="$prefix/bin:$PATH" ai-rpg-engine --help
 
   docker:

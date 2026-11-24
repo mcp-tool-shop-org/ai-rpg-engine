@@ -373,9 +373,29 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(consumerAt).toBeGreaterThan(-1);
     expect(publishAt).toBeGreaterThan(consumerAt);
     expect(installAt).toBeGreaterThan(publishAt);
-    expect(npmJob).toContain('delays=(');
-    expect(npmJob).toContain('max_attempts=');
-    expect(npmJob).toContain('sleep "$delay"');
+
+    const roundTripStep = npmJob.slice(npmJob.indexOf('- name: Registry round-trip'));
+    expect(roundTripStep).toMatch(/^\s*timeout-minutes:\s*\d+/m);
+    expect(roundTripStep).toContain('delays=(5 10 20 30 45 45)');
+    expect(roundTripStep).toContain('max_attempts=$(( ${#delays[@]} + 1 ))');
+
+    const loopMatch = roundTripStep.match(/while true; do([\s\S]+?)done/);
+    expect(loopMatch, 'Registry round-trip step must wrap npm install in a while true; do ... done retry loop').toBeTruthy();
+    const retryLoop = loopMatch![1];
+    expect(retryLoop).toContain('npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"');
+    expect(retryLoop).toContain('E404|ETARGET');
+    expect(retryLoop).toMatch(/if ! echo "\$install_out"[\s\S]{0,260}exit 1\s+fi/);
+    expect(retryLoop).toMatch(/if \[ "\$attempt" -ge "\$max_attempts" \]; then[\s\S]{0,160}exit 1/);
+    expect(retryLoop).toContain('sleep "$delay"');
+
+    const afterLoop = roundTripStep.slice(roundTripStep.indexOf(loopMatch![0]) + loopMatch![0].length);
+    const versionCheckAt = afterLoop.indexOf('actualVer !== expectedVer');
+    const helpAt = afterLoop.indexOf('ai-rpg-engine --help');
+    expect(versionCheckAt).toBeGreaterThan(-1);
+    expect(helpAt).toBeGreaterThan(versionCheckAt);
+    expect(afterLoop).toContain("startsWith('@ai-rpg-engine/')");
+    expect(afterLoop).toContain('process.exit(1)');
+
     const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
     expect(dockerJob).toContain('docker pull');
     expect(dockerJob).toContain('docker rmi');

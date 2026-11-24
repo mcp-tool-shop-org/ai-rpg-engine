@@ -57,12 +57,12 @@ path. Give either one only code you trust.
 The sidecar runs the simulation for a client such as a Godot host.
 
 - **Default: stdio.** The host starts the process and talks to it over its pipes. Nothing listens on the network.
-- **`--listen <port>` opens a TCP listener** that a client attaches to. It binds `127.0.0.1` unless `--host` names another interface; the CLI treats an empty `--host` as unset. A program that calls `startSocketServer` directly with an empty `host` binds every interface.
+- **`--listen <port>` opens a TCP listener** that a client attaches to. It binds `127.0.0.1` unless `--host` names another interface; both the CLI and `startSocketServer` treat an empty or whitespace-only `host` as unset and bind `127.0.0.1`.
 - **There is no authentication.** Any process that can reach the port can send simulation commands, `SHUTDOWN` included. On a shared machine, another local process can also take the only client slot.
 - **One client at a time by default.** A second connection is accepted and then closed with a message saying why. A program that raises `maxConnections` lets each client choose the observer or writer role for itself: the roles order writes, and they are not access control.
 - **A non-loopback `--host` accepts simulation commands from other machines.** Use one only on a network you trust.
 - **Code and files.** A module path on the command line is code the sidecar loads and runs, so give it only code you trust. `--content` and `--manifest` are data, read from the paths given. Nothing a client sends makes the sidecar read or write a file.
-- **Client helper.** `connectSocketClient` opens a TCP connection to the host and port its caller gives (default `127.0.0.1`).
+- **Client helper.** `connectSocketClient` opens a TCP connection to the host and port its caller gives (default `127.0.0.1`, including when `host` is empty or whitespace-only).
 
 ### Optional AI layer (`@ai-rpg-engine/ollama`) — network-capable
 

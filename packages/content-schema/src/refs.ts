@@ -610,7 +610,7 @@ export function validateRefs(pack: ContentPack): RefsResult {
   // Dialogue speakers should reference known entities
   for (const dialogue of dialogues) {
     for (const speaker of dialogue.speakers ?? []) {
-      if (speaker !== '' && !entityIds.has(speaker)) {
+      if (!entityIds.has(speaker)) {
         errors.push({
           path: `${path}.dialogue(${dialogue.id}).speakers`,
           message: `speaker "${speaker}" not found in entities`,

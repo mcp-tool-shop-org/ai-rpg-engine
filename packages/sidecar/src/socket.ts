@@ -100,11 +100,16 @@ function logStderr(line: string): void {
   process.stderr.write(`[sidecar] ${line}\n`);
 }
 
+function resolveLoopbackHost(host: string | undefined): string {
+  const trimmed = host?.trim();
+  return trimmed ? trimmed : '127.0.0.1';
+}
+
 export function startSocketServer(
   options: SidecarServerOptions & SocketServerOptions,
   hooks: SocketServerHooks = {},
 ): SocketServerHandles {
-  const host = options.host || '127.0.0.1';
+  const host = resolveLoopbackHost(options.host);
   const maxConnections = options.maxConnections ?? 1;
   const sessions: SidecarServer[] = [];
   const live = new Set<net.Socket>();
@@ -265,7 +270,7 @@ export function connectSocketClient(
   host = '127.0.0.1',
   options?: SidecarClientOptions,
 ): Promise<SocketClientHandles> {
-  const targetHost = host || '127.0.0.1';
+  const targetHost = resolveLoopbackHost(host);
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ port, host: targetHost }, () => {
       const client = new SidecarClient((msg) => {

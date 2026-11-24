@@ -339,6 +339,16 @@ describe('sidecar — equals-form value flags', () => {
     expect(await waitForListening(lines)).toContain('listening 0.0.0.0:');
   });
 
+  it('whitespace-only --host is trimmed to unset and falls back to 127.0.0.1 loopback', async () => {
+    const { code, lines } = await run([HOST_PACK, '--listen=0', '--host=   ']);
+    expect(code).toBeNull();
+    expect(await waitForListening(lines)).toContain('listening 127.0.0.1:');
+
+    const spaceForm = await run([HOST_PACK, '--listen', '0', '--host', '  \t ']);
+    expect(spaceForm.code).toBeNull();
+    expect(await waitForListening(spaceForm.lines)).toContain('listening 127.0.0.1:');
+  });
+
   it('--shock=malformed is refused rather than ignored', async () => {
     const { code, lines } = await run([HOST_PACK, '--shock=not-a-spec']);
     expect(code).toBe(1);
