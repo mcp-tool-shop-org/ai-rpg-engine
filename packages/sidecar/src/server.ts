@@ -651,13 +651,12 @@ export class SidecarServer {
         // candidate deserialization, requester digest rules, and canonical peer digests succeed.
         this.applyRestoredEngine(loaded);
         this.applyPreparedRebase(selfDigest);
-        const loadedWorld = this.engine.world as WorldState;
         for (const plan of peerPlans) {
           if (plan.kind === 'rebase') {
             plan.peer.applyPreparedRebase(plan.prepared);
           } else {
             process.stderr.write(`[sidecar] peer rebase skipped: ${sanitizeDiagnosticMessage(plan.err.message, 256)}\n`);
-            plan.peer.invalidateIncompatibleRebase(loadedWorld, 'rebase_skipped', plan.err);
+            plan.peer.invalidateIncompatibleRebase('rebase_skipped', plan.err);
           }
         }
         const result: LoadResult = {
@@ -928,7 +927,7 @@ export class SidecarServer {
     return true;
   }
 
-  /** Execute a world mutation atomically with projection-scoped digest validation and rollback. */
+  /** Execute a world mutation atomically with whole-world always-on JSON check, projection-scoped canonical validation, and rollback. */
   private runWorldMutation(mutate: () => readonly ResolvedEvent[]): SubmitActionResult {
     const includeCanonical = this.clientCapabilities.canonicalHashes === true;
     validateDigestState(projectState(this.engine.world as WorldState, this.snapshotView), '$', {
@@ -943,6 +942,7 @@ export class SidecarServer {
     const preActionLogLen = Array.isArray(engineWithLog.actionLog) ? engineWithLog.actionLog.length : -1;
     try {
       const direct = mutate();
+      validateDigestState(this.engine.world as WorldState, '$', { canonical: false });
       return this.commit(direct);
     } catch (err) {
       for (const key of Object.keys(state)) {
@@ -1124,12 +1124,10 @@ export class SidecarServer {
   }
 
   private invalidateIncompatibleRebase(
-    world: WorldState,
     reason?: ResyncRequiredReason,
     err?: unknown,
   ): void {
     this.emitted.clear();
-    for (const e of world.eventLog ?? []) this.emitted.add(e.id);
     this.snapshotSeq += 1;
     this.hasSnapshotted = false;
     this.rebaseInvalidated = true;
@@ -1143,28 +1141,29 @@ export class SidecarServer {
    * After LOAD: rebuild emitted, lastState, bump snapshotSeq, and push a
    * snapshot-shaped baseline so every live mirror rebases (including omitEventLog).
    * Validates and hashes projected state before updating session bookkeeping.
-   * Returns a result rather than throwing if this session's projection cannot
-   * satisfy its digest rules (e.g. a canonical session after a non-canonical
-   * load), invalidating its baseline and notifying the client to re-snapshot.
+   * Returns `{ ok: false, … }` only on `StateDigestError` (invalidating this
+   * session's baseline and notifying it to re-snapshot); rethrows any other error
+   * before mutating session state.
    */
   rebaseAfterLoad(): RebaseAfterLoadResult {
     const world = this.engine.world as WorldState;
+    let prepared: PreparedRebase;
     try {
-      const prepared = this.prepareRebase(world, this.engine.store.tick);
-      this.applyPreparedRebase(prepared);
-      return { ok: true, snapshotSeq: this.snapshotSeq };
+      prepared = this.prepareRebase(world, this.engine.store.tick);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      const message = sanitizeDiagnosticMessage(detail, 256);
+      if (!(err instanceof StateDigestError)) throw err;
+      const message = sanitizeDiagnosticMessage(err.message, 256);
       process.stderr.write(`[sidecar] peer rebase skipped: ${message}\n`);
-      this.invalidateIncompatibleRebase(world, 'rebase_skipped', err);
+      this.invalidateIncompatibleRebase('rebase_skipped', err);
       return {
         ok: false,
         snapshotSeq: this.snapshotSeq,
-        ...(err instanceof StateDigestError ? { code: err.code } : {}),
+        code: err.code,
         error: message,
       };
     }
+    this.applyPreparedRebase(prepared);
+    return { ok: true, snapshotSeq: this.snapshotSeq };
   }
 
   /**
