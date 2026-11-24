@@ -171,62 +171,186 @@ jobs:
             install_ec=0
             install_out="$(npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver" 2>&1)" && install_ec=0 || install_ec=$?
             echo "$install_out"
-            if [ "$install_ec" -eq 0 ]; then
-              break
-            fi
-            if ! echo "$install_out" | grep -Eq '(^|[^A-Za-z0-9_])(E404|ETARGET)([^A-Za-z0-9_]|$)'; then
-              echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed with non-propagation error (exit $install_ec)"
-              exit 1
+            retry_reason=""
+            if [ "$install_ec" -ne 0 ]; then
+              if ! echo "$install_out" | grep -Eq '(^|[^A-Za-z0-9_])(E404|ETARGET)([^A-Za-z0-9_]|$)'; then
+                echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed with non-propagation error (exit $install_ec)"
+                exit 1
+              fi
+              retry_reason="E404/ETARGET"
+            else
+              check_ec=0
+              node - "$prefix" "$ver" <<'EOF' || check_ec=$?
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          function failFatal(msg) {
+            console.error(`::error::${msg}`);
+            process.exit(1);
+          }
+
+          function readJsonSafe(filePath, label) {
+            try {
+              return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (err) {
+              const detail = err && typeof err.message === 'string' ? err.message : String(err);
+              return failFatal(`Cannot read ${label} (${filePath}): ${detail}`);
+            }
+          }
+
+          function resolveScopedDep(fromPkgDir, depName, nmParent) {
+            const parts = depName.split('/');
+            let cur = path.resolve(fromPkgDir);
+            const rootResolved = path.resolve(nmParent);
+            while (true) {
+              const candidate = path.join(cur, 'node_modules', ...parts);
+              if (fs.existsSync(candidate)) {
+                const pkgJson = path.join(candidate, 'package.json');
+                if (!fs.existsSync(pkgJson)) {
+                  failFatal(`Installed ${depName} at ${candidate} is missing its package.json`);
+                }
+                return { pkgDir: candidate, pkgJson };
+              }
+              if (cur === rootResolved) break;
+              const parent = path.dirname(cur);
+              if (parent === cur || !cur.startsWith(rootResolved + path.sep)) break;
+              cur = parent;
+            }
+            return failFatal(`Missing installed package ${depName}/package.json starting from ${fromPkgDir}`);
+          }
+
+          function collectTreeDirs(rootNmDir, outDirs) {
+            if (!fs.existsSync(rootNmDir)) return;
+            const stack = [rootNmDir];
+            while (stack.length > 0) {
+              const nmDir = stack.pop();
+              let entries;
+              try {
+                entries = fs.readdirSync(nmDir, { withFileTypes: true });
+              } catch (err) {
+                const detail = err && typeof err.message === 'string' ? err.message : String(err);
+                failFatal(`Cannot scan node_modules at ${nmDir}: ${detail}`);
+              }
+              for (const entry of entries) {
+                if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
+                if (entry.name === '@ai-rpg-engine') {
+                  const scopePath = path.join(nmDir, entry.name);
+                  const scoped = fs.readdirSync(scopePath, { withFileTypes: true });
+                  for (const pkgEntry of scoped) {
+                    if (pkgEntry.isSymbolicLink() || !pkgEntry.isDirectory()) continue;
+                    const pkgDir = path.join(scopePath, pkgEntry.name);
+                    const pkgJson = path.join(pkgDir, 'package.json');
+                    if (!fs.existsSync(pkgJson)) {
+                      failFatal(`Installed @ai-rpg-engine/${pkgEntry.name} at ${pkgDir} is missing its package.json`);
+                    }
+                    outDirs.add(path.resolve(pkgDir));
+                    const nestedNm = path.join(pkgDir, 'node_modules');
+                    if (fs.existsSync(nestedNm)) stack.push(nestedNm);
+                  }
+                } else if (entry.name.startsWith('@')) {
+                  const scopePath = path.join(nmDir, entry.name);
+                  const scoped = fs.readdirSync(scopePath, { withFileTypes: true });
+                  for (const pkgEntry of scoped) {
+                    if (pkgEntry.isSymbolicLink() || !pkgEntry.isDirectory()) continue;
+                    const nestedNm = path.join(scopePath, pkgEntry.name, 'node_modules');
+                    if (fs.existsSync(nestedNm)) stack.push(nestedNm);
+                  }
+                } else if (entry.name !== '.bin') {
+                  const nestedNm = path.join(nmDir, entry.name, 'node_modules');
+                  if (fs.existsSync(nestedNm)) stack.push(nestedNm);
+                }
+              }
+            }
+          }
+
+          try {
+            const [prefixDir, expectedVer] = process.argv.slice(2);
+            const cliRel = ['@ai-rpg-engine', 'cli', 'package.json'];
+            const nmRoot = [
+              path.join(prefixDir, 'lib', 'node_modules'),
+              path.join(prefixDir, 'node_modules'),
+            ].find((dir) => fs.existsSync(path.join(dir, ...cliRel)));
+            if (!nmRoot) {
+              failFatal(`Installed @ai-rpg-engine/cli/package.json not found under ${prefixDir}`);
+            }
+            const nmParent = path.dirname(nmRoot);
+            const cliDir = path.join(nmRoot, '@ai-rpg-engine', 'cli');
+            const cliPkgPath = path.join(cliDir, 'package.json');
+            const cliPkg = readJsonSafe(cliPkgPath, '@ai-rpg-engine/cli/package.json');
+            if (cliPkg.version !== expectedVer) {
+              console.error(`::error::Installed @ai-rpg-engine/* versions do not match ${expectedVer}: @ai-rpg-engine/cli@${cliPkg.version}`);
+              process.exit(2);
+            }
+
+            // CLI dependencies are "*", so `--tag next` prerelease installs resolve
+            // sibling packages to `latest` instead of prereleases. Verify the CLI
+            // itself for prereleases and skip sibling version parity.
+            const isPrerelease = expectedVer.split('+')[0].includes('-');
+            if (isPrerelease) {
+              console.log(`verified @ai-rpg-engine/cli@${expectedVer} (prerelease build; skipping sibling version check because "*" dependencies resolve to latest)`);
+              process.exit(0);
+            }
+
+            const visitedDirs = new Set();
+            const queue = [path.resolve(cliDir)];
+            const treeDirs = new Set();
+            collectTreeDirs(nmRoot, treeDirs);
+            for (const d of treeDirs) queue.push(d);
+
+            const mismatches = [];
+            while (queue.length > 0) {
+              const pkgDir = queue.pop();
+              const resolvedDir = path.resolve(pkgDir);
+              if (visitedDirs.has(resolvedDir)) continue;
+              visitedDirs.add(resolvedDir);
+
+              const pkgJsonPath = path.join(resolvedDir, 'package.json');
+              if (!fs.existsSync(pkgJsonPath)) {
+                failFatal(`Installed package at ${resolvedDir} is missing its package.json`);
+              }
+              const pkg = readJsonSafe(pkgJsonPath, pkgJsonPath);
+              const pkgName = pkg.name || `@ai-rpg-engine/${path.basename(resolvedDir)}`;
+              if (pkg.version !== expectedVer) {
+                const rel = path.relative(nmRoot, resolvedDir);
+                mismatches.push(`${pkgName}@${pkg.version} (${rel})`);
+              }
+              for (const depName of Object.keys(pkg.dependencies || {})) {
+                if (!depName.startsWith('@ai-rpg-engine/')) continue;
+                const resolved = resolveScopedDep(resolvedDir, depName, nmParent);
+                queue.push(resolved.pkgDir);
+              }
+            }
+
+            if (mismatches.length > 0) {
+              console.error(`::error::Installed @ai-rpg-engine/* versions do not match ${expectedVer}: ${mismatches.join(', ')}`);
+              process.exit(2);
+            }
+            console.log(`verified ${visitedDirs.size} @ai-rpg-engine/* packages at ${expectedVer}`);
+          } catch (err) {
+            const detail = err && typeof err.message === 'string' ? err.message : String(err);
+            failFatal(`Unexpected version verification error: ${detail}`);
+          }
+          EOF
+              if [ "$check_ec" -eq 0 ]; then
+                break
+              fi
+              if [ "$check_ec" -ne 2 ]; then
+                echo "::error::Installed @ai-rpg-engine/cli@$ver failed verification cleanly without retry (exit $check_ec)"
+                exit 1
+              fi
+              retry_reason="stale @ai-rpg-engine/* package version"
             fi
             if [ "$attempt" -ge "$max_attempts" ]; then
-              echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed after $attempt attempts"
+              echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed after $attempt attempts (${retry_reason})"
               exit 1
             fi
             rm -rf "$prefix"
             prefix=$(mktemp -d)
             delay=${delays[$((attempt - 1))]}
-            echo "npm install attempt $attempt hit E404/ETARGET; waiting ${delay}s for registry propagation"
+            echo "npm install attempt $attempt hit ${retry_reason}; waiting ${delay}s for registry propagation"
             sleep "$delay"
             attempt=$((attempt + 1))
           done
-          node - "$prefix" "$ver" <<'EOF'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const { createRequire } = require('node:module');
-          const [prefixDir, expectedVer] = process.argv.slice(2);
-          const rel = ['@ai-rpg-engine', 'cli', 'package.json'];
-          const cliPkgPath = [
-            path.join(prefixDir, 'lib', 'node_modules', ...rel),
-            path.join(prefixDir, 'node_modules', ...rel),
-          ].find((p) => fs.existsSync(p));
-          if (!cliPkgPath) {
-            console.error(`::error::Installed @ai-rpg-engine/cli/package.json not found under ${prefixDir}`);
-            process.exit(1);
-          }
-          const cliPkg = JSON.parse(fs.readFileSync(cliPkgPath, 'utf8'));
-          const req = createRequire(cliPkgPath);
-          const scopeDir = path.dirname(path.dirname(cliPkgPath));
-          const installed = fs
-            .readdirSync(scopeDir)
-            .filter((name) => fs.existsSync(path.join(scopeDir, name, 'package.json')))
-            .map((name) => `@ai-rpg-engine/${name}`);
-          const deps = new Set([
-            '@ai-rpg-engine/cli',
-            ...Object.keys(cliPkg.dependencies || {}).filter((d) => d.startsWith('@ai-rpg-engine/')),
-            ...installed,
-          ]);
-          const mismatches = [];
-          for (const dep of deps) {
-            const pkgPath = dep === '@ai-rpg-engine/cli' ? cliPkgPath : req.resolve(`${dep}/package.json`);
-            const actualVer = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version;
-            if (actualVer !== expectedVer) mismatches.push(`${dep}@${actualVer}`);
-          }
-          if (mismatches.length > 0) {
-            console.error(`::error::Installed @ai-rpg-engine/* versions do not match ${expectedVer}: ${mismatches.join(', ')}`);
-            process.exit(1);
-          }
-          console.log(`verified ${deps.size} @ai-rpg-engine/* packages at ${expectedVer}`);
-          EOF
           PATH="$prefix/bin:$PATH" ai-rpg-engine --help
 
   docker:
