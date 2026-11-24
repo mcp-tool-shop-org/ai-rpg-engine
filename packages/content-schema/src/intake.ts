@@ -130,6 +130,37 @@ export type IntentProfileRef = {
   id: string;
 };
 
+/** Default length cap when echoing untrusted ids into diagnostic paths and messages. */
+export const MAX_DIAGNOSTIC_ID_LENGTH = 64;
+
+/**
+ * Escape control, ANSI escape, and Unicode line/bidi characters and cap length
+ * so untrusted pack ids cannot inject raw terminal sequences or log lines.
+ */
+export function sanitizeDiagnosticText(raw: string, maxLength = MAX_DIAGNOSTIC_ID_LENGTH): string {
+  const capped = raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
+  let out = '';
+  for (let i = 0; i < capped.length; i++) {
+    const code = capped.charCodeAt(i);
+    if (code === 0x0a) out += '\\n';
+    else if (code === 0x0d) out += '\\r';
+    else if (code === 0x09) out += '\\t';
+    else if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) {
+      out += `\\x${code.toString(16).padStart(2, '0')}`;
+    } else if (
+      code === 0x2028 ||
+      code === 0x2029 ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      out += `\\u${code.toString(16).padStart(4, '0')}`;
+    } else {
+      out += capped[i];
+    }
+  }
+  return out;
+}
+
 /** Policy when an entity blueprint's `aiProfile` does not resolve against known profiles. */
 export type UnresolvedAiProfilePolicy = 'fail' | 'warn';
 
@@ -144,8 +175,9 @@ export type UnresolvedAiProfileWarning = {
 
 /** How applyContentPack turns an authored aiProfile name into EntityState.ai. */
 export type AiProfileLookup = {
-  profiles?: IntentProfileRef[] | Record<string, EntityAiState>;
+  profiles?: readonly IntentProfileRef[] | Record<string, EntityAiState>;
   entityAi?: Record<string, EntityAiState>;
+  registeredProfiles?: readonly IntentProfileRef[];
 };
 
 export type ApplyContentPackOptions = {
@@ -178,11 +210,17 @@ export type ApplyContentPackOptions = {
    * By default, unresolved names emit a structured warning; pass
    * `unresolvedAiProfile: 'fail'` to refuse the pack instead.
    */
-  profiles?: IntentProfileRef[] | Record<string, EntityAiState>;
+  profiles?: readonly IntentProfileRef[] | Record<string, EntityAiState>;
+  /**
+   * Registered intent profiles used to validate `pack.entityAi` and map-form
+   * `profiles` entries when `profiles` is a map or omitted. Defaults to the
+   * engine's registered cognition profiles when present.
+   */
+  registeredProfiles?: readonly IntentProfileRef[];
   /**
    * Policy when an entity's `aiProfile` does not resolve against `profiles` or
    * `pack.entityAi`. Defaults to `'warn'`, which drops the profile and emits a
-   * structured warning; `'fail'` rejects the load and rolls back mutations.
+   * structured warning; `'fail'` refuses the pack before any mutation.
    */
   unresolvedAiProfile?: UnresolvedAiProfilePolicy;
 };
@@ -352,18 +390,66 @@ function cloneAiState(ai: EntityAiState): AIState {
   };
 }
 
-function aiFromProfileList(profileId: string, profiles: IntentProfileRef[]): AIState | undefined {
-  const hit = profiles.find((p) => p && typeof p.id === 'string' && p.id === profileId);
+function registeredProfileIds(lookup: AiProfileLookup | undefined): Set<string> {
+  const source = Array.isArray(lookup?.registeredProfiles)
+    ? lookup.registeredProfiles
+    : Array.isArray(lookup?.profiles)
+      ? lookup.profiles
+      : [];
+  return new Set(
+    source
+      .filter((p): p is IntentProfileRef => Boolean(p) && typeof p.id === 'string' && p.id.length > 0)
+      .map((p) => p.id),
+  );
+}
+
+function aiFromProfileList(
+  profileId: string,
+  profiles: readonly IntentProfileRef[],
+  registeredIds: Set<string>,
+): AIState | undefined {
+  const hit = profiles.find((p) => p && typeof p.id === 'string' && p.id === profileId && registeredIds.has(p.id));
   return hit ? cloneAiState({ profileId: hit.id }) : undefined;
 }
 
 function aiFromProfileMap(
   profileId: string,
   profiles: Record<string, EntityAiState>,
-): AIState | undefined {
+  registeredIds: Set<string>,
+): { ok: true; ai: AIState } | { ok: false; profileId: string } {
   const hit = profiles[profileId];
-  if (!isRecord(hit) || typeof hit.profileId !== 'string') return undefined;
-  return cloneAiState(hit as EntityAiState);
+  if (!isRecord(hit) || typeof hit.profileId !== 'string' || hit.profileId.length === 0) {
+    return { ok: false, profileId };
+  }
+  if (!registeredIds.has(hit.profileId)) {
+    return { ok: false, profileId: hit.profileId };
+  }
+  return { ok: true, ai: cloneAiState(hit as EntityAiState) };
+}
+
+function formatUnresolvedAiProfileMessage(entityId: string, profileId: string): string {
+  const safeEntity = sanitizeDiagnosticText(entityId);
+  const safeProfile = sanitizeDiagnosticText(profileId);
+  return (
+    `entity "${safeEntity}" has unresolved aiProfile "${safeProfile}" — ` +
+    'every authored aiProfile, ContentPack.entityAi.profileId, and profiles-map profileId ' +
+    'must match a registered IntentProfile id (pass ApplyContentPackOptions.profiles / registeredProfiles). ' +
+    'An unresolved brain never selects an intent.'
+  );
+}
+
+function makeUnresolvedAiIssue(
+  path: string,
+  entityId: string,
+  profileId: string,
+): UnresolvedAiProfileWarning {
+  return {
+    code: 'UNRESOLVED_AI_PROFILE',
+    path,
+    entityId: sanitizeDiagnosticText(entityId),
+    profileId: sanitizeDiagnosticText(profileId),
+    message: formatUnresolvedAiProfileMessage(entityId, profileId),
+  };
 }
 
 /**
@@ -373,22 +459,83 @@ function aiFromProfileMap(
 export function resolveEntityAi(
   bp: EntityBlueprint,
   lookup: AiProfileLookup | undefined,
-): { ok: true; ai: AIState } | { ok: false; profileId: string } | undefined {
-  const fromEntity = lookup?.entityAi?.[bp.id];
+): { ok: true; ai: AIState } | { ok: false; profileId: string; source?: 'entityAi' | 'aiProfile' } | undefined {
+  const registeredIds = registeredProfileIds(lookup);
+  const fromEntity = typeof bp.id === 'string' ? lookup?.entityAi?.[bp.id] : undefined;
   if (fromEntity && isRecord(fromEntity) && typeof fromEntity.profileId === 'string') {
-    return { ok: true, ai: cloneAiState(fromEntity) };
+    if (fromEntity.profileId.length > 0 && registeredIds.has(fromEntity.profileId)) {
+      return { ok: true, ai: cloneAiState(fromEntity) };
+    }
+    return { ok: false, profileId: fromEntity.profileId || '(empty)', source: 'entityAi' };
   }
   if (bp.aiProfile === undefined) return undefined;
   const profiles = lookup?.profiles;
   if (Array.isArray(profiles)) {
-    const ai = aiFromProfileList(bp.aiProfile, profiles);
-    return ai ? { ok: true, ai } : { ok: false, profileId: bp.aiProfile };
+    const ai = aiFromProfileList(bp.aiProfile, profiles, registeredIds);
+    return ai ? { ok: true, ai } : { ok: false, profileId: bp.aiProfile, source: 'aiProfile' };
   }
   if (profiles && isRecord(profiles)) {
-    const ai = aiFromProfileMap(bp.aiProfile, profiles as Record<string, EntityAiState>);
-    return ai ? { ok: true, ai } : { ok: false, profileId: bp.aiProfile };
+    const mapped = aiFromProfileMap(bp.aiProfile, profiles as Record<string, EntityAiState>, registeredIds);
+    return mapped.ok ? mapped : { ok: false, profileId: mapped.profileId, source: 'aiProfile' };
   }
-  return { ok: false, profileId: bp.aiProfile };
+  return { ok: false, profileId: bp.aiProfile, source: 'aiProfile' };
+}
+
+/**
+ * Scan a content pack for unresolved `aiProfile` and `entityAi` profile ids
+ * without mutating any engine state. Checks every entity record even if
+ * validation or the load gate would refuse it.
+ */
+export function checkUnresolvedAiProfiles(
+  pack: ContentPack,
+  lookup?: AiProfileLookup,
+): UnresolvedAiProfileWarning[] {
+  if (pack === null || typeof pack !== 'object' || Array.isArray(pack)) return [];
+  const entityAiMap = isRecord(pack.entityAi) ? pack.entityAi : undefined;
+  const effectiveLookup: AiProfileLookup = {
+    profiles: lookup?.profiles,
+    entityAi: lookup?.entityAi ?? entityAiMap,
+    registeredProfiles: lookup?.registeredProfiles,
+  };
+  const registeredIds = registeredProfileIds(effectiveLookup);
+  const issues: UnresolvedAiProfileWarning[] = [];
+  const seenEntityIds = new Set<string>();
+
+  if (Array.isArray(pack.entities)) {
+    for (let i = 0; i < pack.entities.length; i++) {
+      const bp = pack.entities[i];
+      if (!isRecord(bp)) continue;
+      const rawId = typeof bp.id === 'string' && bp.id.length > 0 ? bp.id : '?';
+      if (typeof bp.id === 'string' && bp.id.length > 0) seenEntityIds.add(bp.id);
+      const label = `entities[${i}](${idOf(bp)})`;
+      const ai = resolveEntityAi(bp as unknown as EntityBlueprint, effectiveLookup);
+      if (ai?.ok === false) {
+        const issuePath =
+          ai.source === 'entityAi' && typeof bp.id === 'string' && bp.id.length > 0
+            ? `entityAi.${sanitizeDiagnosticText(bp.id)}.profileId`
+            : `${label}.aiProfile`;
+        issues.push(makeUnresolvedAiIssue(issuePath, rawId, ai.profileId));
+      }
+    }
+  }
+
+  if (effectiveLookup.entityAi) {
+    for (const [entityId, ai] of Object.entries(effectiveLookup.entityAi)) {
+      if (seenEntityIds.has(entityId)) continue;
+      if (!isRecord(ai) || typeof ai.profileId !== 'string') continue;
+      if (ai.profileId.length === 0 || !registeredIds.has(ai.profileId)) {
+        issues.push(
+          makeUnresolvedAiIssue(
+            `entityAi.${sanitizeDiagnosticText(entityId)}.profileId`,
+            entityId,
+            ai.profileId || '(empty)',
+          ),
+        );
+      }
+    }
+  }
+
+  return issues;
 }
 
 /**
@@ -413,7 +560,9 @@ export function entityBlueprintToState(
   warnings?: UnresolvedAiProfileWarning[],
   unresolvedAiProfile: UnresolvedAiProfilePolicy = 'warn',
 ): EntityState {
-  const p = path || `entities(${bp.id})`;
+  const safeId = typeof bp.id === 'string' && bp.id.length > 0 ? sanitizeDiagnosticText(bp.id) : '?';
+  const rawId = typeof bp.id === 'string' && bp.id.length > 0 ? bp.id : '?';
+  const p = path || `entities(${safeId})`;
 
   if (bp.startingStatuses !== undefined && bp.startingStatuses.length > 0) {
     dropped?.push({
@@ -477,28 +626,20 @@ export function entityBlueprintToState(
   if (ai?.ok === true) {
     state.ai = ai.ai;
   } else if (ai?.ok === false) {
-    const unresolvedMessage =
-      `entity "${bp.id}" has unresolved aiProfile "${ai.profileId}" — pass ApplyContentPackOptions.profiles ` +
-      '(IntentProfile[] or id→AIState) and/or ContentPack.entityAi so this name becomes EntityState.ai. ' +
-      'An unresolved brain never selects an intent.';
+    const issuePath =
+      ai.source === 'entityAi' && typeof bp.id === 'string' && bp.id.length > 0
+        ? `entityAi.${sanitizeDiagnosticText(bp.id)}.profileId`
+        : `${p}.aiProfile`;
+    const issue = makeUnresolvedAiIssue(issuePath, rawId, ai.profileId);
     dropped?.push({
-      path: `${p}.aiProfile`,
+      path: issue.path,
       reason: 'needs-module-vocabulary',
-      detail: unresolvedMessage,
+      detail: issue.message,
     });
     if (unresolvedAiProfile === 'fail') {
-      errors?.push({
-        path: `${p}.aiProfile`,
-        message: unresolvedMessage,
-      });
+      errors?.push(issue);
     } else {
-      warnings?.push({
-        code: 'UNRESOLVED_AI_PROFILE',
-        path: `${p}.aiProfile`,
-        entityId: bp.id,
-        profileId: ai.profileId,
-        message: unresolvedMessage,
-      });
+      warnings?.push(issue);
     }
   }
   return state;
@@ -623,6 +764,19 @@ export const EVALUATED_NOT_MAPPED_KEYS: Record<string, string> = {
     + 'channel yet.',
 };
 
+function readEngineRegisteredProfiles(engine: Engine): IntentProfileRef[] | undefined {
+  if (
+    engine?.formulas &&
+    typeof engine.formulas.has === 'function' &&
+    typeof engine.formulas.get === 'function' &&
+    engine.formulas.has('cognition-core:profiles')
+  ) {
+    const value = engine.formulas.get('cognition-core:profiles')();
+    if (Array.isArray(value)) return value as IntentProfileRef[];
+  }
+  return undefined;
+}
+
 /**
  * Route a validated {@link ContentPack} into a booted engine's world.
  *
@@ -660,6 +814,15 @@ export function applyContentPack(
     };
   }
 
+  const aiLookup: AiProfileLookup = {
+    profiles: options.profiles,
+    entityAi: isRecord(pack.entityAi) ? pack.entityAi : undefined,
+    registeredProfiles:
+      options.registeredProfiles ??
+      (!Array.isArray(options.profiles) ? readEngineRegisteredProfiles(engine) : undefined),
+  };
+  const profileIssues = checkUnresolvedAiProfiles(pack, aiLookup);
+
   // --- the load gate, before ANY mutation ---
   // A gate that refuses after half the pack has landed is not a gate: the world
   // would carry content from a pack the engine just said it would not accept.
@@ -668,8 +831,51 @@ export function applyContentPack(
     gateResult = runLoadGate(pack, options.gate);
     advisories.push(...gateResult.advisories);
     if (!gateResult.ok) {
-      return { ok: false, gate: gateResult, applied, dropped, errors: gateResult.errors, warnings, advisories };
+      if (unresolvedAiProfile === 'fail') {
+        errors.push(...gateResult.errors, ...profileIssues);
+      } else {
+        errors.push(...gateResult.errors);
+        warnings.push(...profileIssues);
+        for (const issue of profileIssues) {
+          dropped.push({ path: issue.path, reason: 'needs-module-vocabulary', detail: issue.message });
+        }
+      }
+      return { ok: false, gate: gateResult, applied, dropped, errors, warnings, advisories };
     }
+  }
+
+  // --- unresolved AI profiles (`fail`), before ANY mutation ---
+  // Must run before world writes or module channels so a refused pack leaves
+  // WorldState and external module registries completely untouched.
+  if (unresolvedAiProfile === 'fail' && profileIssues.length > 0) {
+    if (!options.prevalidated) {
+      if (pack.zones !== undefined && !Array.isArray(pack.zones)) {
+        errors.push({ path: 'pack.zones', message: 'must be an array if provided.' });
+      } else if (Array.isArray(pack.zones)) {
+        for (let i = 0; i < pack.zones.length; i++) {
+          const def = pack.zones[i];
+          errors.push(...validateZoneDefinition(def, `zones[${i}](${idOf(def)})`).errors);
+        }
+      }
+      if (pack.entities !== undefined && !Array.isArray(pack.entities)) {
+        errors.push({ path: 'pack.entities', message: 'must be an array if provided.' });
+      } else if (Array.isArray(pack.entities)) {
+        for (let i = 0; i < pack.entities.length; i++) {
+          const bp = pack.entities[i];
+          errors.push(...validateEntityBlueprint(bp, `entities[${i}](${idOf(bp)})`).errors);
+        }
+      }
+    }
+    errors.push(...profileIssues);
+    return {
+      ok: false,
+      ...(gateResult ? { gate: gateResult } : {}),
+      applied,
+      dropped,
+      errors,
+      warnings,
+      advisories,
+    };
   }
 
   // Snapshot before any mutation so a throwing channel or invalid post-apply
@@ -691,6 +897,7 @@ export function applyContentPack(
         applied,
         dropped,
         errors: [{ path: err.path, code: err.code, message: err.message }],
+        warnings,
         advisories,
       };
     }
@@ -707,6 +914,7 @@ export function applyContentPack(
           message: `engine.store.state could not be cloned before applying content pack (${sanitizeDiagnosticMessage(reason)}). The pack was not applied.`,
         },
       ],
+      warnings,
       advisories,
     };
   }
@@ -735,12 +943,8 @@ export function applyContentPack(
 
   // --- entities (core-only) ---
   const itemCatalogIds = itemIdsFromPack(pack);
-  const aiLookup: AiProfileLookup = {
-    profiles: options.profiles,
-    entityAi: isRecord(pack.entityAi) ? pack.entityAi : undefined,
-  };
   const entities = pack.entities ?? [];
-  let unresolvedProfileFailed = false;
+  const seenEntityIds = new Set<string>();
   if (!Array.isArray(entities)) {
     errors.push({ path: 'pack.entities', message: 'must be an array if provided.' });
   } else {
@@ -748,15 +952,28 @@ export function applyContentPack(
     let aiApplied = 0;
     for (let i = 0; i < entities.length; i++) {
       const bp = entities[i];
+      if (isRecord(bp) && typeof bp.id === 'string' && bp.id.length > 0) seenEntityIds.add(bp.id);
       const label = `entities[${i}](${idOf(bp)})`;
       if (!options.prevalidated) {
         const r = validateEntityBlueprint(bp, label);
         if (r.errors.length > 0) {
           errors.push(...r.errors);
+          if (isRecord(bp)) {
+            const ai = resolveEntityAi(bp as unknown as EntityBlueprint, aiLookup);
+            if (ai?.ok === false) {
+              const rawId = typeof bp.id === 'string' && bp.id.length > 0 ? bp.id : '?';
+              const issuePath =
+                ai.source === 'entityAi' && typeof bp.id === 'string' && bp.id.length > 0
+                  ? `entityAi.${sanitizeDiagnosticText(bp.id)}.profileId`
+                  : `${label}.aiProfile`;
+              const issue = makeUnresolvedAiIssue(issuePath, rawId, ai.profileId);
+              dropped.push({ path: issue.path, reason: 'needs-module-vocabulary', detail: issue.message });
+              warnings.push(issue);
+            }
+          }
           continue;
         }
       }
-      const errorsBefore = errors.length;
       const state = entityBlueprintToState(
         bp as EntityBlueprint,
         dropped,
@@ -766,7 +983,6 @@ export function applyContentPack(
         warnings,
         unresolvedAiProfile,
       );
-      if (errors.length > errorsBefore) unresolvedProfileFailed = true;
       retainResolvedItems(state, bp as EntityBlueprint, itemCatalogIds, errors, label);
       engine.store.addEntity(state);
       if (state.ai) aiApplied++;
@@ -783,6 +999,22 @@ export function applyContentPack(
       // and `intake.test.ts` now asserts the advisory is GONE rather than
       // present, in the same commit. A pack that carries entities and no
       // placements still gets told so, once, from the placements pass.
+    }
+  }
+  if (aiLookup.entityAi) {
+    const registeredIds = registeredProfileIds(aiLookup);
+    for (const [entityId, ai] of Object.entries(aiLookup.entityAi)) {
+      if (seenEntityIds.has(entityId)) continue;
+      if (!isRecord(ai) || typeof ai.profileId !== 'string') continue;
+      if (ai.profileId.length === 0 || !registeredIds.has(ai.profileId)) {
+        const issue = makeUnresolvedAiIssue(
+          `entityAi.${sanitizeDiagnosticText(entityId)}.profileId`,
+          entityId,
+          ai.profileId || '(empty)',
+        );
+        dropped.push({ path: issue.path, reason: 'needs-module-vocabulary', detail: issue.message });
+        warnings.push(issue);
+      }
     }
   }
 
@@ -1122,7 +1354,25 @@ export function applyContentPack(
     applied[key] = report.applied;
   }
 
-  if (channelThrew || digestRefused || unresolvedProfileFailed) {
+  let digestRefused = false;
+  if (!channelThrew) {
+    try {
+      validateJsonState(engine.store.state);
+    } catch (err) {
+      if (err instanceof StateDigestError) {
+        digestRefused = true;
+        errors.push({
+          path: err.path,
+          code: err.code,
+          message: err.message,
+        });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (channelThrew || digestRefused) {
     const state = engine.store.state as unknown as Record<string, unknown>;
     const restored = structuredClone(preApply) as Record<string, unknown>;
     for (const key of Object.keys(state)) {
@@ -1536,7 +1786,7 @@ export const UNROUTED_DECLARED_KEYS: ReadonlyArray<readonly [string, string]> = 
 function idOf(v: unknown): string {
   if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
     const id = (v as Record<string, unknown>).id;
-    if (typeof id === 'string') return id;
+    if (typeof id === 'string') return sanitizeDiagnosticText(id);
   }
   return '?';
 }

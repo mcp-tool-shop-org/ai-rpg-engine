@@ -30,7 +30,7 @@ import {
 import { formatEventLine } from '@ai-rpg-engine/terminal-ui';
 import type { Engine, ZoneState } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
-import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { FIXTURE_PACK_PATH, fixtureProfilesFor } from './c0/fixture-path.js';
 
 const SEED = 71;
 const HOST_PACK_ID = 'chapel-threshold';
@@ -62,6 +62,8 @@ function bootWithExport(): Engine {
   const r = applyContentPack(engine, fixturePack(), {
     channels: createStandardChannels(),
     prevalidated: true,
+    profiles: fixtureProfilesFor(engine),
+    unresolvedAiProfile: 'fail',
   });
   if (!r.ok) throw new Error(`intake failed: ${JSON.stringify(r.errors)}`);
   return engine;
@@ -316,7 +318,10 @@ describe('C3/P2 — a gate naming content the pack lacks is REPORTED', () => {
     const engine = hostPack().createGame(SEED);
     const r = applyContentPack(engine, fixed as unknown as ContentPack, {
       channels: createStandardChannels(),
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
     });
+    expect(r.ok).toBe(true);
     expect(r.advisories.filter((a) => a.message.includes('has-item'))).toEqual([]);
   });
 });

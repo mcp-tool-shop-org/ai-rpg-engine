@@ -8,6 +8,24 @@
 // not in a test.
 
 import * as path from 'node:path';
+import { cautiousProfile, getRegisteredIntentProfiles, type IntentProfile } from '@ai-rpg-engine/modules';
+
+/**
+ * Test-only intent profile for `c0-forge-pack.json`'s `npc-gantry-runner`
+ * (`aiProfile: "skirmisher"`). Kept in fixture helpers rather than the engine's
+ * built-in profiles so production intake still refuses unregistered names.
+ */
+export const FIXTURE_SKIRMISHER_PROFILE: IntentProfile = {
+  id: 'skirmisher',
+  evaluate: cautiousProfile.evaluate,
+};
+
+/** Registered engine profiles plus the test-only `skirmisher` fixture profile. */
+export function fixtureProfilesFor(
+  engine: Parameters<typeof getRegisteredIntentProfiles>[0],
+): IntentProfile[] {
+  return [...getRegisteredIntentProfiles(engine), FIXTURE_SKIRMISHER_PROFILE];
+}
 
 /**
  * The exported ContentPack, committed byte-for-byte as world-forge's

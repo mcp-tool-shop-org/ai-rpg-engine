@@ -16,7 +16,14 @@
 // without spawning a process; bin.ts converts the returned code into process.exit.
 
 import * as fs from 'node:fs';
-import { loadContentFromFile, runLoadGate, type GateContext } from '@ai-rpg-engine/content-schema';
+import {
+  checkUnresolvedAiProfiles,
+  loadContentFromFile,
+  runLoadGate,
+  sanitizeDiagnosticText,
+  type GateContext,
+} from '@ai-rpg-engine/content-schema';
+import { BUILTIN_INTENT_PROFILES } from '@ai-rpg-engine/modules';
 import { ENGINE_VERSION } from './engine-version.js';
 
 /** Injectable output sink (defaults to console) so tests can capture lines. */
@@ -55,9 +62,11 @@ function printValidateHelp(log: (msg: string) => void): void {
   log('Exit code: 0 when valid, 1 when there are errors.');
   log('');
   log('The load gate refuses a pack that carries unknown top-level keys, targets a');
-  log('different engine version, names modules this engine did not register, or does');
-  log('not match the content hash its manifest records. Checks it cannot run — module');
-  log('resolution needs a booted engine — are reported as unverified, never as passed.');
+  log('different engine version, names modules this engine did not register, does');
+  log('not match the content hash its manifest records, or names an aiProfile /');
+  log('entityAi profileId outside the built-in intent profiles (matching');
+  log('`sidecar --content`). Checks it cannot run — module resolution needs a');
+  log('booted engine — are reported as unverified, never as passed.');
   log('');
   log('Options:');
   log('  --manifest <path>  also check engineVersion and contentHash from a manifest.json');
@@ -78,8 +87,9 @@ function wantsJsonFlag(args: string[]): boolean {
  * usage problem). Pure with respect to its inputs aside from the injected logger.
  */
 export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): number {
-  const { log, error } = deps;
   const json = wantsJsonFlag(args);
+  const log = json ? deps.log : (msg: string) => deps.log(sanitizeDiagnosticText(msg, 1024));
+  const error = json ? deps.error : (msg: string) => deps.error(sanitizeDiagnosticText(msg, 1024));
 
   if (args.includes('--help') || args.includes('-h')) {
     printValidateHelp(log);
@@ -127,12 +137,18 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
   }
 
   const result = loadContentFromFile(file);
+  const skipGate = args.includes('--no-gate');
+  const fileFailed = result.errors.some((e) => e.path === 'file');
+  const profileErrors =
+    skipGate || fileFailed
+      ? []
+      : checkUnresolvedAiProfiles(result.pack, { profiles: BUILTIN_INTENT_PROFILES });
 
   if (json) {
-    const errors = [...result.errors];
+    const errors = [...result.errors, ...profileErrors];
     const advisories = [...result.advisories];
     let checks: ReturnType<typeof runLoadGate>['checks'] | undefined;
-    if (result.errors.length === 0 && !args.includes('--no-gate')) {
+    if (!fileFailed && !skipGate) {
       const ctx: GateContext = { engineVersion: ENGINE_VERSION };
       if (manifestPath !== undefined) {
         try {
@@ -174,10 +190,12 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
     return errors.length === 0 ? 0 : 1;
   }
 
+  const combinedErrors = [...result.errors, ...profileErrors];
+
   // --- Errors (block; nonzero exit) ---
-  if (result.errors.length > 0) {
-    error(`✗ Content invalid — ${result.errors.length} error${result.errors.length === 1 ? '' : 's'} in ${file}:`);
-    for (const e of result.errors) {
+  if (combinedErrors.length > 0) {
+    error(`✗ Content invalid — ${combinedErrors.length} error${combinedErrors.length === 1 ? '' : 's'} in ${file}:`);
+    for (const e of combinedErrors) {
       // The validators embed the actionable hint inside `message` (e.g. "… — fix the id"),
       // so `<path>: <message>` already carries path + message + hint.
       error(`  ✗ ${e.path}: ${e.message}`);
@@ -193,15 +211,11 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
     }
   }
 
-  if (result.errors.length > 0) {
-    return 1;
-  }
-
   // --- The load gate (C1/P2) ---
   // Structural validity is not loadability. C0's whole headline is that a pack
   // stamped for a two-major-old engine, carrying five keys nothing declares,
   // passed this command clean and exited 0.
-  if (!args.includes('--no-gate')) {
+  if (result.errors.length === 0 && !skipGate) {
     const ctx: GateContext = { engineVersion: ENGINE_VERSION };
     if (manifestPath !== undefined) {
       try {
@@ -225,6 +239,9 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
       for (const line of gate.report.split('\n')) error(line);
       return 1;
     }
+    if (combinedErrors.length > 0) {
+      return 1;
+    }
     // Unverified checks are stated, never implied to have passed.
     for (const c of gate.checks) {
       if (c.skipped) log(`  ⚠ gate.${c.check}: not verified — ${c.skipped}.`);
@@ -233,6 +250,10 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
       if (!a.path.startsWith('gate.')) continue;
       log(`  ⚠ ${a.path}: ${a.message}`);
     }
+  }
+
+  if (combinedErrors.length > 0) {
+    return 1;
   }
 
   // Clean (errors === 0). Report the positive summary from the loader.

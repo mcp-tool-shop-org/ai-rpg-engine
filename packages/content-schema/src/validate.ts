@@ -32,6 +32,8 @@ export type ValidationError = {
   path: string;
   message: string;
   code?: string;
+  entityId?: string;
+  profileId?: string;
 };
 
 export type ValidationResult = {

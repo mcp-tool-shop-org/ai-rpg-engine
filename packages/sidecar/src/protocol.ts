@@ -230,7 +230,11 @@ export type PackIntakeDrop = {
 /** One non-fatal note the content-pack gate raised while loading this world. */
 export type PackIntakeNote = { path: string; message: string };
 
-/** One structured intake warning surfaced alongside dropped/advisories (e.g. unresolved aiProfile in `'warn'` mode). */
+/**
+ * One structured intake warning surfaced alongside dropped/advisories (for programmatic hosts
+ * calling `applyContentPack` with `unresolvedAiProfile: 'warn'`; the CLI uses `'fail'` and refuses
+ * instead of relaying `warnings`).
+ */
 export type PackIntakeWarning = {
   code: string;
   path: string;

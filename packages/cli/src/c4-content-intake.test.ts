@@ -16,9 +16,15 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runSidecar } from './sidecar-command.js';
 import { ENGINE_VERSION } from './engine-version.js';
+import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+
+const FORGE_MANIFEST_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__fixtures__/c1-forge-manifest.json',
+);
 
 const HOST_PACK = 'chapel-threshold';
 
@@ -261,7 +267,114 @@ describe('sidecar --content', () => {
     const text = lines.join('\n');
     expect(readyLine(text)).toBe(true);
     expect(text).toContain('entities=1');
-    expect(text).not.toContain('UNRESOLVED_AI_PROFILE');
+    expect(text).toContain('entityAi=1');
+    expect(text).not.toContain('SIDECAR_CONTENT_REFUSED');
+    expect(text).not.toContain('dropped entities[0](lookout).aiProfile');
+  });
+
+  it('accepts a custom profile registered by an external host pack and refuses it on a stock host', async () => {
+    const packFile = writePack({
+      ...MINIMAL_PACK,
+      entities: [
+        { id: 'watchman', type: 'npc', name: 'Watchman', aiProfile: 'sentinel' },
+      ],
+    });
+    const manFile = writeManifest(packFile);
+
+    const stockRes = await run([
+      HOST_PACK, '--content', packFile, '--manifest', manFile, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(stockRes.code).toBe(1);
+    expect(stockRes.lines.join('\n')).toContain('SIDECAR_CONTENT_REFUSED');
+    expect(stockRes.lines.join('\n')).toContain('sentinel');
+
+    const hostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4-custom-host-'));
+    try {
+      const cliSrcDir = path.dirname(fileURLToPath(import.meta.url));
+      const coreEntry = pathToFileURL(path.resolve(cliSrcDir, '../../core/dist/index.js')).href;
+      const modulesEntry = pathToFileURL(path.resolve(cliSrcDir, '../../modules/dist/index.js')).href;
+      const hostFile = path.join(hostDir, 'host.mjs');
+      fs.writeFileSync(
+        hostFile,
+        [
+          `import { Engine } from ${JSON.stringify(coreEntry)};`,
+          `import { traversalCore, createCognitionCore } from ${JSON.stringify(modulesEntry)};`,
+          'export const manifest = {',
+          '  id: "custom-profile-host",',
+          '  title: "Custom Profile Host",',
+          '  version: "1.0.0",',
+          '  engineVersion: "1.0.0",',
+          '  ruleset: "standard-v1",',
+          '  modules: ["traversal-core", "cognition-core"],',
+          '  contentPacks: [],',
+          '};',
+          'export function createGame(seed = 1) {',
+          '  return new Engine({',
+          '    manifest,',
+          '    seed,',
+          '    modules: [traversalCore, createCognitionCore([{ id: "sentinel", evaluate: () => [] }])],',
+          '  });',
+          '}',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const customRes = await run([
+        hostFile, '--content', packFile, '--manifest', manFile, '--start', 'quay-probe', '--listen', '0',
+      ]);
+      expect(customRes.code).toBeNull();
+      const customText = customRes.lines.join('\n');
+      expect(readyLine(customText)).toBe(true);
+      expect(customText).toContain('entities=1');
+      expect(customText).toContain('entityAi=1');
+    } finally {
+      fs.rmSync(hostDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses the committed forge fixture when npc-gantry-runner names unregistered skirmisher', async () => {
+    const { code, lines } = await run([
+      HOST_PACK,
+      '--content',
+      FIXTURE_PACK_PATH,
+      '--manifest',
+      FORGE_MANIFEST_PATH,
+      '--start',
+      'zone-surface-yard',
+      '--listen',
+      '0',
+    ]);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_CONTENT_REFUSED');
+    expect(text).toContain('npc-gantry-runner');
+    expect(text).toContain('skirmisher');
+    expect(readyLine(text)).toBe(false);
+  });
+
+  it('escapes control/ANSI characters and caps echoed entity/profile ids on stderr', async () => {
+    const file = writePack({
+      ...MINIMAL_PACK,
+      entities: [
+        {
+          id: `\x1b[31mbad\nnpc_${'a'.repeat(100)}`,
+          type: 'npc',
+          name: 'Bad',
+          aiProfile: `\x1b[2Jbad\x07_${'b'.repeat(100)}`,
+        },
+      ],
+    });
+    const man = writeManifest(file);
+    const { code, lines } = await run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(code).toBe(1);
+    for (const line of lines) {
+      expect(line).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    }
+    const text = lines.join('\n');
+    expect(text).toContain('\\x1b[31m');
+    expect(text).toContain('...');
   });
 });
 

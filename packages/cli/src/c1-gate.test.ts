@@ -41,7 +41,14 @@ import {
   type ContentPack,
   type GateContext,
 } from '@ai-rpg-engine/content-schema';
-import { createStandardChannels } from '@ai-rpg-engine/modules';
+import {
+  createStandardChannels,
+  getRegisteredIntentProfiles,
+  getTypedHazardsForZone,
+  runTypedHazardStep,
+  unregisterEncounterSpawnContent,
+  unregisterTypedHazards,
+} from '@ai-rpg-engine/modules';
 import { allPacks } from './packs.js';
 import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
 import { ENGINE_VERSION } from './engine-version.js';
@@ -455,16 +462,112 @@ describe('C1/P2 — applyContentPack refuses BEFORE touching the world', () => {
   it('GREEN: a gated pack that passes DOES apply', () => {
     const engine = hostPack().createGame(SEED);
     const before = Object.keys(engine.world.zones).length;
-    const pack = goodPack();
+    const pack: ContentPack = {
+      ...goodPack(),
+      entities: [{ id: 'gate-guard', type: 'npc', name: 'Gate Guard', aiProfile: 'aggressive' }],
+    };
 
     const r = applyContentPack(engine, pack, {
       channels: createStandardChannels(),
       gate: goodCtx(pack),
+      profiles: getRegisteredIntentProfiles(engine),
       unresolvedAiProfile: 'fail',
     });
 
     expect(r.ok, JSON.stringify(r.errors)).toBe(true);
     expect(r.gate?.ok).toBe(true);
+    expect(r.warnings).toEqual([]);
     expect(Object.keys(engine.world.zones).length).toBe(before + 1);
+    expect(engine.world.entities['gate-guard']?.ai?.profileId).toBe('aggressive');
+  });
+
+  it('unresolvedAiProfile fail refuses before any state mutation, module channel, hazard registry, or encounter registry write', () => {
+    const engine = hostPack().createGame(SEED);
+    const gameId = engine.world.meta.gameId;
+    unregisterTypedHazards(gameId);
+    unregisterEncounterSpawnContent(gameId);
+
+    try {
+      const hpBefore = Object.fromEntries(
+        Object.entries(engine.world.entities).map(([id, ent]) => [id, ent.resources.hp]),
+      );
+      const zonesBefore = Object.keys(engine.world.zones).length;
+      const entitiesBefore = Object.keys(engine.world.entities).length;
+
+      const overlayPack = {
+        zones: [{ id: 'chapel-entrance', name: 'Chapel Entrance', hazardRefs: ['probe-fire'] }],
+        entities: [
+          {
+            id: 'template-rat',
+            type: 'enemy',
+            name: 'Template Rat',
+            tags: ['enemy'],
+            aiProfile: 'aggressive',
+            baseResources: { hp: 5 },
+          },
+          { id: 'bad-npc', type: 'npc', name: 'Bad NPC', aiProfile: 'ghost-brain' },
+        ],
+        hazardDefinitions: [
+          {
+            id: 'probe-fire',
+            name: 'Probe Fire',
+            trigger: 'per-turn',
+            tags: [],
+            effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end' }],
+          },
+        ],
+        encounterAnchors: [
+          {
+            id: 'probe-enc',
+            zoneId: 'chapel-entrance',
+            encounterType: 'ambush',
+            enemyIds: ['template-rat'],
+            probability: 1,
+            cooldownTurns: 0,
+          },
+        ],
+      } as unknown as ContentPack;
+
+      const refused = applyContentPack(engine, overlayPack, {
+        channels: createStandardChannels(),
+        profiles: getRegisteredIntentProfiles(engine),
+        unresolvedAiProfile: 'fail',
+      });
+
+      expect(refused.ok).toBe(false);
+      expect(refused.applied).toEqual({});
+      expect(refused.errors).toEqual([
+        expect.objectContaining({
+          code: 'UNRESOLVED_AI_PROFILE',
+          entityId: 'bad-npc',
+          profileId: 'ghost-brain',
+        }),
+      ]);
+      expect(Object.keys(engine.world.zones).length).toBe(zonesBefore);
+      expect(Object.keys(engine.world.entities).length).toBe(entitiesBefore);
+      expect(getTypedHazardsForZone(engine.world, 'chapel-entrance')).toEqual([]);
+
+      const applications = runTypedHazardStep(engine);
+      expect(applications).toEqual([]);
+      for (const [id, beforeHp] of Object.entries(hpBefore)) {
+        expect(engine.world.entities[id].resources.hp).toBe(beforeHp);
+      }
+
+      const fixedPack = structuredClone(overlayPack) as unknown as {
+        entities: Array<{ id: string; aiProfile?: string }>;
+      };
+      fixedPack.entities[1].aiProfile = 'aggressive';
+
+      const retry = applyContentPack(engine, fixedPack as unknown as ContentPack, {
+        channels: createStandardChannels(),
+        profiles: getRegisteredIntentProfiles(engine),
+        unresolvedAiProfile: 'fail',
+      });
+      expect(retry.ok, JSON.stringify(retry.errors)).toBe(true);
+      expect(retry.dropped.filter((d) => d.detail.includes('already registered'))).toEqual([]);
+    } finally {
+      unregisterTypedHazards(gameId);
+      unregisterEncounterSpawnContent(gameId);
+    }
   });
 });

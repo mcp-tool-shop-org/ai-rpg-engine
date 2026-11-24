@@ -31,7 +31,7 @@ import {
 import { toWireEvent } from '@ai-rpg-engine/sidecar';
 import type { Engine } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
-import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { FIXTURE_PACK_PATH, fixtureProfilesFor } from './c0/fixture-path.js';
 
 const SEED = 71;
 const HOST_PACK_ID = 'chapel-threshold';
@@ -55,6 +55,8 @@ function bootWithExport(): Engine {
   const r = applyContentPack(engine, fixturePack(), {
     channels: createStandardChannels(),
     prevalidated: true,
+    profiles: fixtureProfilesFor(engine),
+    unresolvedAiProfile: 'fail',
   });
   if (!r.ok) throw new Error(`intake failed: ${JSON.stringify(r.errors)}`);
   return engine;
