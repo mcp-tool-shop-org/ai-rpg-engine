@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "1.0.0",
+  "entities": [
+    {
+      "id": "villager-mira",
+      "type": "npc",
+      "name": "Mira",
+      "tags": [],
+      "aiProfile": "passive",
+      "baseStats": {
+        "vigor": 3,
+        "instinct": 3,
+        "will": 3
+      },
+      "baseResources": {
+        "hp": 12
+      }
+    },
+    {
+      "id": "trader-corin",
+      "type": "npc",
+      "name": "Corin the Factor",
+      "tags": [
+        "merchant",
+        "trader"
+      ],
+      "aiProfile": "passive",
+      "baseStats": {
+        "vigor": 3,
+        "instinct": 4,
+        "will": 4
+      },
+      "baseResources": {
+        "hp": 14
+      }
+    },
+    {
+      "id": "elder-sable",
+      "type": "npc",
+      "name": "Elder Sable",
+      "tags": [
+        "quest-giver"
+      ],
+      "aiProfile": "passive",
+      "baseStats": {
+        "vigor": 2,
+        "instinct": 4,
+        "will": 5
+      },
+      "baseResources": {
+        "hp": 10
+      }
+    },
+    {
+      "id": "dock-cutthroat",
+      "type": "enemy",
+      "name": "Dock Cutthroat",
+      "tags": [
+        "hostile"
+      ],
+      "aiProfile": "aggressive",
+      "baseStats": {
+        "vigor": 4,
+        "instinct": 4,
+        "will": 3
+      },
+      "baseResources": {
+        "hp": 16
+      }
+    },
+    {
+      "id": "harbor-warden",
+      "type": "enemy",
+      "name": "Harbor Warden",
+      "tags": [
+        "hostile",
+        "boss",
+        "elite"
+      ],
+      "aiProfile": "territorial",
+      "baseStats": {
+        "vigor": 6,
+        "instinct": 5,
+        "will": 5
+      },
+      "baseResources": {
+        "hp": 30
+      }
+    }
+  ],
+  "placements": [
+    {
+      "entityId": "villager-mira",
+      "zoneId": "market-square"
+    },
+    {
+      "entityId": "trader-corin",
+      "zoneId": "market-square"
+    },
+    {
+      "entityId": "elder-sable",
+      "zoneId": "market-square"
+    },
+    {
+      "entityId": "dock-cutthroat",
+      "zoneId": "harbor-road"
+    },
+    {
+      "entityId": "harbor-warden",
+      "zoneId": "harbor-road"
+    }
+  ],
+  "zones": [
+    {
+      "id": "market-square",
+      "name": "Market Square",
+      "tags": [
+        "safe",
+        "town"
+      ],
+      "neighbors": [
+        "harbor-road"
+      ],
+      "light": 8,
+      "noise": 5
+    },
+    {
+      "id": "harbor-road",
+      "name": "Harbor Road",
+      "tags": [
+        "exterior",
+        "docks"
+      ],
+      "neighbors": [
+        "market-square"
+      ],
+      "light": 6,
+      "noise": 4
+    }
+  ]
+}

@@ -35,7 +35,7 @@ Two wiring rules worth knowing from day one:
 - **Unresolved `aiProfile` / `entityAi` ids fail loudly.** Every profile id
   declared in `src/content.ts` (and `src/content.json`) must resolve against
   `cognition.profiles` in `src/setup.ts` (built-ins: `aggressive`, `cautious`,
-  `territorial`, `calculating`; custom profiles require booting `sidecar <path>`
+  `territorial`, `calculating`, `passive`; custom profiles require booting `sidecar <path>`
   against your built starter). `createGame()` runs with `unresolvedAiProfile: 'fail'`
   and throws on a mismatch, while `ai-rpg-engine validate` and `sidecar --content`
   exit `1`.

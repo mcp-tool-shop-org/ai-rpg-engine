@@ -15,7 +15,7 @@ import type { EntityState, WorldState } from '@ai-rpg-engine/core';
 import { createGame, merchantIntentProfiles } from './setup.js';
 
 /** The built-in intent profile ids shipped by @ai-rpg-engine/modules. */
-const BUILTIN_PROFILE_IDS = ['aggressive', 'cautious', 'territorial', 'calculating'];
+const BUILTIN_PROFILE_IDS = ['aggressive', 'cautious', 'territorial', 'calculating', 'passive'];
 
 function hostilesOf(world: WorldState): EntityState[] {
   return Object.values(world.entities).filter((e) => e.type === 'enemy');

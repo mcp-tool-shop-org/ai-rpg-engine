@@ -55,7 +55,7 @@ function readFlag(args: string[], flag: string): {
 }
 
 function printValidateHelp(log: (msg: string) => void): void {
-  log('Usage: ai-rpg-engine validate <file.json> [--manifest <manifest.json>] [--no-gate]');
+  log('Usage: ai-rpg-engine validate <file.json> [--manifest <manifest.json>] [--unresolved-ai-profile fail|warn] [--no-gate]');
   log('');
   log('Loads a content pack from a JSON file, validates it, and runs the load gate.');
   log('Prints structured errors (path + message + hint) and advisories separately.');
@@ -63,16 +63,19 @@ function printValidateHelp(log: (msg: string) => void): void {
   log('');
   log('The load gate refuses a pack that carries unknown top-level keys, targets a');
   log('different engine version, names modules this engine did not register, does');
-  log('not match the content hash its manifest records, or names an aiProfile /');
-  log('entityAi profileId outside the built-in intent profiles (matching');
-  log('`sidecar --content`). Checks it cannot run — module resolution needs a');
-  log('booted engine — are reported as unverified, never as passed.');
+  log('not match the content hash its manifest records, or (under default fail');
+  log('policy) names an aiProfile / entityAi profileId outside the built-in intent');
+  log('profiles (matching `sidecar --content`). Checks it cannot run — module');
+  log('resolution needs a booted engine — are reported as unverified, never as passed.');
   log('');
   log('Options:');
-  log('  --manifest <path>  also check engineVersion and contentHash from a manifest.json');
-  log('                     (--manifest=<path> is accepted too)');
-  log('  --no-gate          structural validation only (pre-C1 behaviour)');
-  log('  --json             print one JSON object {ok, errors, advisories, checks, ...}');
+  log('  --manifest <path>              also check engineVersion and contentHash from a manifest.json');
+  log('                                 (--manifest=<path> is accepted too)');
+  log('  --unresolved-ai-profile fail|warn');
+  log('                                 policy for unresolved aiProfile / entityAi profileIds');
+  log('                                 (default: fail; warn emits stderr lines and exits 0)');
+  log('  --no-gate                      structural validation only (pre-C1 behaviour)');
+  log('  --json                         print one JSON object {ok, errors, advisories, checks, ...}');
   log('');
   log('Example:');
   log('  ai-rpg-engine validate ./content/content-pack.json --manifest ./content/manifest.json');
@@ -89,7 +92,7 @@ function wantsJsonFlag(args: string[]): boolean {
 export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): number {
   const json = wantsJsonFlag(args);
   const log = json ? deps.log : (msg: string) => deps.log(sanitizeDiagnosticText(msg, 1024));
-  const error = json ? deps.error : (msg: string) => deps.error(sanitizeDiagnosticText(msg, 1024));
+  const error = (msg: string) => deps.error(sanitizeDiagnosticText(msg, 1024));
 
   if (args.includes('--help') || args.includes('-h')) {
     printValidateHelp(log);
@@ -115,11 +118,36 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
     error('  Hint: ai-rpg-engine validate ./content-pack.json --manifest ./manifest.json');
     return 1;
   }
-  // Skip the space-form value slot so the pack path is not eaten. Equals-form
-  // has valueSlot === -1 (the token itself starts with '-'), so nothing extra
-  // is filtered — a missing --manifest used to compute index 0 and drop the
-  // file path.
-  const positional = args.filter((a, i) => !a.startsWith('-') && i !== manifest.valueSlot);
+
+  const unresolvedAiProfileFlag = readFlag(args, '--unresolved-ai-profile');
+  let unresolvedAiProfilePolicy: 'fail' | 'warn' = 'fail';
+  if (unresolvedAiProfileFlag.present) {
+    const rawPolicy = unresolvedAiProfileFlag.raw;
+    if (rawPolicy !== 'fail' && rawPolicy !== 'warn') {
+      if (json) {
+        log(JSON.stringify({
+          ok: false,
+          errors: [{
+            path: 'args',
+            message: `[VALIDATE_INVALID_UNRESOLVED_AI_PROFILE] --unresolved-ai-profile must be "fail" or "warn", got "${rawPolicy ?? '(missing)'}".`,
+          }],
+          advisories: [],
+        }));
+        return 1;
+      }
+      error(
+        `✗ [VALIDATE_INVALID_UNRESOLVED_AI_PROFILE] --unresolved-ai-profile must be "fail" or "warn", got "${rawPolicy ?? '(missing)'}".`,
+      );
+      error('  Hint: pass --unresolved-ai-profile fail (default) or --unresolved-ai-profile warn.');
+      return 1;
+    }
+    unresolvedAiProfilePolicy = rawPolicy;
+  }
+
+  // Skip space-form value slots so flag values are not mistaken for the pack path.
+  const positional = args.filter(
+    (a, i) => !a.startsWith('-') && i !== manifest.valueSlot && i !== unresolvedAiProfileFlag.valueSlot,
+  );
   const file = positional[0];
   if (!file) {
     if (json) {
@@ -139,10 +167,16 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
   const result = loadContentFromFile(file);
   const skipGate = args.includes('--no-gate');
   const fileFailed = result.errors.some((e) => e.path === 'file');
-  const profileErrors =
+  const profileIssues =
     skipGate || fileFailed
       ? []
       : checkUnresolvedAiProfiles(result.pack, { profiles: BUILTIN_INTENT_PROFILES });
+  const profileErrors = unresolvedAiProfilePolicy === 'fail' ? profileIssues : [];
+  const profileWarnings = unresolvedAiProfilePolicy === 'warn' ? profileIssues : [];
+
+  for (const w of profileWarnings) {
+    error(`⚠ [${w.code}] ${w.path}: ${w.message}`);
+  }
 
   if (json) {
     const errors = [...result.errors, ...profileErrors];
@@ -183,6 +217,7 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
       ok: errors.length === 0,
       errors,
       advisories,
+      ...(profileWarnings.length > 0 ? { warnings: profileWarnings } : {}),
       ...(checks ? { checks } : {}),
       summary: result.summary,
       file,

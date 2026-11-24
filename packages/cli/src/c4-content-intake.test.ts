@@ -26,6 +26,18 @@ const FORGE_MANIFEST_PATH = path.resolve(
   '__fixtures__/c1-forge-manifest.json',
 );
 
+// Fixture shaped like mcp-tool-shop-org/world-forge commit eb2514c4
+// (packages/export-ai-rpg/src/convert-entities.ts:27-30, :144), where
+// npc, merchant, and quest-giver roles default to aiProfile: 'passive'.
+const FORGE_PASSIVE_PACK_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__fixtures__/forge-passive-roles-pack.json',
+);
+const FORGE_PASSIVE_MANIFEST_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__fixtures__/forge-passive-roles-manifest.json',
+);
+
 const HOST_PACK = 'chapel-threshold';
 
 /** Capture the command's diagnostics. Everything it says goes to stderr by contract. */
@@ -375,6 +387,100 @@ describe('sidecar --content', () => {
     const text = lines.join('\n');
     expect(text).toContain('\\x1b[31m');
     expect(text).toContain('...');
+  });
+
+  it('loads the World Forge default-roles fixture (npc/merchant/quest-giver passive) under default fail mode', async () => {
+    const { code, lines } = await run([
+      HOST_PACK,
+      '--content',
+      FORGE_PASSIVE_PACK_PATH,
+      '--manifest',
+      FORGE_PASSIVE_MANIFEST_PATH,
+      '--start',
+      'market-square',
+      '--listen',
+      '0',
+    ]);
+    expect(code).toBeNull();
+    const text = lines.join('\n');
+    expect(readyLine(text)).toBe(true);
+    expect(text).toContain('entities=5');
+    expect(text).toContain('entityAi=5');
+    expect(text).not.toContain('SIDECAR_CONTENT_REFUSED');
+  });
+
+  it('--unresolved-ai-profile warn loads an unknown-profile pack and writes sanitized per-entity warnings to stderr', async () => {
+    const rawId = `\x1b[31mevil-npc\n_${'x'.repeat(80)}`;
+    const rawProfile = `bad\x07mind_${'p'.repeat(80)}`;
+    const pack = {
+      ...MINIMAL_PACK,
+      entities: [
+        { id: 'lookout', type: 'npc', name: 'Lookout', aiProfile: 'skirmisher' },
+        { id: rawId, type: 'npc', name: 'Bad', aiProfile: rawProfile },
+      ],
+    };
+    const file = writePack(pack);
+    const man = writeManifest(file);
+
+    for (const flagArgs of [
+      ['--unresolved-ai-profile', 'warn'],
+      ['--unresolved-ai-profile=warn'],
+    ]) {
+      const { code, lines } = await run([
+        HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0', ...flagArgs,
+      ]);
+      expect(code).toBeNull();
+      const text = lines.join('\n');
+      expect(readyLine(text)).toBe(true);
+      expect(text).not.toContain('SIDECAR_CONTENT_REFUSED');
+      for (const line of lines) {
+        expect(line).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+      }
+      const warningLines = lines.filter((l) => l.includes('UNRESOLVED_AI_PROFILE'));
+      expect(warningLines).toHaveLength(2);
+      expect(warningLines[0]).toContain('lookout');
+      expect(warningLines[0]).toContain('skirmisher');
+      expect(warningLines[1]).toContain('\\x1b[31m');
+      expect(warningLines[1]).toContain('bad\\x07mind');
+    }
+
+    const explicitFail = await run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+      '--unresolved-ai-profile', 'fail',
+    ]);
+    expect(explicitFail.code).toBe(1);
+    expect(explicitFail.lines.join('\n')).toContain('SIDECAR_CONTENT_REFUSED');
+
+    const prePositionalWarn = await run([
+      '--unresolved-ai-profile', 'warn', HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(prePositionalWarn.code).toBeNull();
+    expect(prePositionalWarn.lines.join('\n')).not.toContain('SIDECAR_PACK_UNKNOWN');
+
+    const defaultFail = await run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(defaultFail.code).toBe(1);
+    expect(defaultFail.lines.join('\n')).toContain('SIDECAR_CONTENT_REFUSED');
+  });
+
+  it('refuses invalid --unresolved-ai-profile flag values with exit 1 and a usage error', async () => {
+    for (const badArgs of [
+      ['--unresolved-ai-profile', 'loud'],
+      ['--unresolved-ai-profile=ignore'],
+      ['--unresolved-ai-profile='],
+      ['--unresolved-ai-profile'],
+      ['--unresolved-ai-profile', '--listen', '0'],
+    ]) {
+      const { code, lines } = await run([HOST_PACK, ...badArgs]);
+      expect(code).toBe(1);
+      const text = lines.join('\n');
+      expect(text).toContain('SIDECAR_INVALID_UNRESOLVED_AI_PROFILE');
+      expect(text).toContain('--unresolved-ai-profile');
+      expect(text).toContain('fail');
+      expect(text).toContain('warn');
+      expect(readyLine(text)).toBe(false);
+    }
   });
 });
 

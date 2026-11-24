@@ -24,10 +24,13 @@ AI entities act on beliefs, not objective truth. A ghoul that *believes* it was 
 
 ## Intent Profiles
 
-Built-in profiles shape how entities choose actions:
+Five built-in profiles in `BUILTIN_INTENT_PROFILES` shape how entities choose actions:
 
-- **aggressive** — prioritizes attack, low retreat threshold
-- **cautious** — prioritizes investigation, high retreat threshold
+- **aggressive** — attacks visible hostiles on sight, guards while hurt, disengages at low morale
+- **cautious** — observes when suspicious, only attacks high-confidence hostiles, guards early under pressure
+- **territorial** — holds its zone against intruders, guards when unchallenged or holding ground, disengages only on FLEEING
+- **calculating** — waits and observes until holding a clear edge (weakened, outnumbering, or off-guard target), disengages when morale drops
+- **passive** — non-combatant idle behavior that never proposes hostile intents and disengages through FLEEING when morale collapses; `passive` is the profile id authored by default by World Forge for `npc`, `merchant`, and `quest-giver` roles
 
 Custom profiles can weight any combination of goals, fears, and morale thresholds.
 

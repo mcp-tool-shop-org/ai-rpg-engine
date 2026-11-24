@@ -124,8 +124,8 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
     : (configOrProfiles ?? {});
 
   // Built-ins first, so every profile id shipped in starter content
-  // ('aggressive', 'cautious', 'territorial', 'calculating') resolves out of
-  // the box; config-passed profiles override by id.
+  // ('aggressive', 'cautious', 'territorial', 'calculating', 'passive')
+  // resolves out of the box; config-passed profiles override by id.
   const profileMap = new Map<string, IntentProfile>();
   for (const p of BUILTIN_INTENT_PROFILES) {
     profileMap.set(p.id, p);
@@ -948,20 +948,56 @@ export const calculatingProfile: IntentProfile = {
   },
 };
 
+/**
+ * Built-in passive profile: non-combatant default (used by World Forge for
+ * npc, merchant, and quest-giver roles). Never proposes a hostile intent
+ * regardless of perceived threats, idles/inspects peacefully, and disengages
+ * through the FLEEING path when morale collapses.
+ */
+export const passiveProfile: IntentProfile = {
+  id: 'passive',
+  evaluate(entity, _cognition, world) {
+    const options: IntentOption[] = [];
+    const zone = entity.zoneId;
+
+    // Fleeing entities can only disengage — suppress all other intents
+    if (hasStatus(entity, COMBAT_STATES.FLEEING)) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 100,
+          reason: 'disengage: fleeing',
+        });
+      }
+      return options;
+    }
+
+    options.push({
+      verb: 'inspect',
+      priority: 10,
+      reason: 'idle: passive',
+    });
+
+    return options;
+  },
+};
+
 // --- Built-in Profile Registry ---
 
 /**
  * All built-in intent profiles, in id-resolution order. Content references
- * these by `entity.ai.profileId` — the four shipped ids are 'aggressive',
- * 'cautious', 'territorial', and 'calculating'. `createCognitionCore` seeds
- * its profile map from this list (config-passed profiles override by id), and
- * `resolveIntentProfile` / `selectActionForEntity` resolve against it.
+ * these by `entity.ai.profileId` — the five shipped ids are 'aggressive',
+ * 'cautious', 'territorial', 'calculating', and 'passive'. `createCognitionCore`
+ * seeds its profile map from this list (config-passed profiles override by id),
+ * and `resolveIntentProfile` / `selectActionForEntity` resolve against it.
  */
 export const BUILTIN_INTENT_PROFILES: readonly IntentProfile[] = [
   aggressiveProfile,
   cautiousProfile,
   territorialProfile,
   calculatingProfile,
+  passiveProfile,
 ];
 
 /**

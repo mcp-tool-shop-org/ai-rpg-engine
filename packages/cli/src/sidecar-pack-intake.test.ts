@@ -152,4 +152,37 @@ describe('sidecar-command: PackIntakeSummary capture (F-c6ff0f97 cli-side half)'
     const serverOptions = startStdioServer.mock.calls[0][0] as Record<string, unknown>;
     expect('packIntake' in serverOptions).toBe(false);
   });
+
+  it('under --unresolved-ai-profile warn, unresolved entities populate serverOptions.packIntake.warnings 1:1', async () => {
+    const file = writePack({
+      ...MINIMAL_PACK,
+      entities: [
+        { id: 'lookout', type: 'npc', name: 'Lookout', aiProfile: 'skirmisher' },
+      ],
+    });
+    const man = writeManifest(file);
+    const stderrLines: string[] = [];
+
+    const code = await runSidecar(
+      [HOST_PACK, '--content', file, '--manifest', man, '--start', 'test-drop-zone', '--unresolved-ai-profile', 'warn'],
+      { error: (m) => stderrLines.push(m) },
+    );
+
+    expect(code).toBeNull();
+    expect(startStdioServer).toHaveBeenCalledTimes(1);
+    const serverOptions = startStdioServer.mock.calls[0][0] as {
+      packIntake?: {
+        dropped: unknown[];
+        advisories: unknown[];
+        warnings?: Array<{ code: string; path: string; entityId?: string; profileId?: string; message: string }>;
+      };
+    };
+    expect(serverOptions.packIntake?.warnings).toHaveLength(1);
+    expect(serverOptions.packIntake!.warnings![0]).toMatchObject({
+      code: 'UNRESOLVED_AI_PROFILE',
+      entityId: 'lookout',
+      profileId: 'skirmisher',
+    });
+    expect(stderrLines.some((l) => l.includes('lookout') && l.includes('skirmisher'))).toBe(true);
+  });
 });

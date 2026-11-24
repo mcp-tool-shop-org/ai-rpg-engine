@@ -293,4 +293,86 @@ describe('runValidate', () => {
       );
     }
   });
+
+  it('supports --unresolved-ai-profile warn (exit 0 + sanitized stderr warnings) vs default fail (exit 1)', () => {
+    const rawId = `\x1b[31mbad\n_${'x'.repeat(80)}`;
+    const rawProfile = `bad\x07_${'p'.repeat(80)}`;
+    const file = writePack('warn-profile.json', {
+      entities: [
+        { id: 'lookout', type: 'npc', name: 'Lookout', aiProfile: 'skirmisher' },
+        { id: rawId, type: 'npc', name: 'Bad', aiProfile: rawProfile },
+      ],
+      zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
+    });
+
+    // Default (no flag) and explicit fail exit 1
+    expect(runValidate([file], { log: () => {}, error: () => {} })).toBe(1);
+    expect(runValidate([file, '--unresolved-ai-profile', 'fail'], { log: () => {}, error: () => {} })).toBe(1);
+
+    // Space and equals warn forms exit 0 and emit one sanitized stderr line per warning
+    for (const runArgs of [
+      [file, '--unresolved-ai-profile', 'warn'],
+      [file, '--unresolved-ai-profile=warn'],
+      ['--unresolved-ai-profile', 'warn', file],
+    ]) {
+      const out = capture();
+      const errOut = capture();
+      const code = runValidate(runArgs, { log: out.log, error: errOut.log });
+      expect(code).toBe(0);
+      expect(out.text()).toContain('Content valid');
+      for (const line of errOut.lines) {
+        expect(line).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+      }
+      expect(errOut.lines).toHaveLength(2);
+      expect(errOut.lines[0]).toContain('lookout');
+      expect(errOut.lines[0]).toContain('skirmisher');
+      expect(errOut.lines[1]).toContain('\\x1b[31m');
+      expect(errOut.lines[1]).toContain('bad\\x07_');
+    }
+
+    // --json --unresolved-ai-profile warn returns ok: true with warnings AND stderr warning lines
+    const jsonOut = capture();
+    const jsonErr = capture();
+    expect(runValidate([file, '--json', '--unresolved-ai-profile', 'warn'], {
+      log: jsonOut.log,
+      error: jsonErr.log,
+    })).toBe(0);
+    const parsed = JSON.parse(jsonOut.text()) as {
+      ok: boolean;
+      errors: unknown[];
+      warnings?: Array<{ code: string; entityId?: string; profileId?: string }>;
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toHaveLength(2);
+    expect(jsonErr.lines).toHaveLength(2);
+  });
+
+  it('exits 1 with usage error on invalid --unresolved-ai-profile values', () => {
+    const file = writePack('good-valid.json', {
+      zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
+    });
+    for (const badArgs of [
+      ['--unresolved-ai-profile', 'loud'],
+      ['--unresolved-ai-profile=ignore'],
+      ['--unresolved-ai-profile='],
+      ['--unresolved-ai-profile'],
+    ]) {
+      const errOut = capture();
+      const code = runValidate([file, ...badArgs], { log: () => {}, error: errOut.log });
+      expect(code).toBe(1);
+      expect(errOut.text()).toContain('VALIDATE_INVALID_UNRESOLVED_AI_PROFILE');
+
+      const jsonOut = capture();
+      const jsonCode = runValidate([file, '--json', ...badArgs], { log: jsonOut.log, error: () => {} });
+      expect(jsonCode).toBe(1);
+      const parsed = JSON.parse(jsonOut.text()) as { ok: boolean; errors: Array<{ message: string }> };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.errors[0].message).toContain('VALIDATE_INVALID_UNRESOLVED_AI_PROFILE');
+    }
+
+    const helpOut = capture();
+    expect(runValidate(['--help'], { log: helpOut.log, error: () => {} })).toBe(0);
+    expect(helpOut.text()).toContain('--unresolved-ai-profile fail|warn');
+  });
 });
