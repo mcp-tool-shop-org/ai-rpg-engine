@@ -832,7 +832,7 @@ export function validateDialogueDefinition(
       }
       const nc = checker(np);
       reqStr(nc, node, 'id');
-      reqStr(nc, node, 'speaker');
+      optStr(nc, node, 'speaker');
 
       // text can be string or TextBlock[]
       if (typeof node.text !== 'string' && !Array.isArray(node.text)) {

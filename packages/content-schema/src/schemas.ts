@@ -340,7 +340,7 @@ export type DialogueChoice = {
 
 export type DialogueNode = {
   id: string;
-  speaker: string;
+  speaker?: string;
   text: string | TextBlock[];
   choices?: DialogueChoice[];
   effects?: EffectDefinition[];
