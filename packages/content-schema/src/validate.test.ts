@@ -532,6 +532,30 @@ describe('validateDialogueDefinition', () => {
     expect(r.ok).toBe(true);
     expect(r.advisories ?? []).toHaveLength(0);
   });
+
+  it('accepts dialogue nodes with empty or missing speaker while still rejecting non-string speaker', () => {
+    const valid = validateDialogueDefinition({
+      id: 'd1',
+      speakers: ['keeper'],
+      entryNodeId: 'empty',
+      nodes: {
+        empty: { id: 'empty', speaker: '', text: 'Hello.', nextNodeId: 'omitted' },
+        omitted: { id: 'omitted', text: 'Welcome.' },
+      },
+    });
+    expect(valid.ok, JSON.stringify(valid.errors)).toBe(true);
+
+    const badType = validateDialogueDefinition({
+      id: 'd2',
+      speakers: ['keeper'],
+      entryNodeId: 'start',
+      nodes: {
+        start: { id: 'start', speaker: 42 as unknown as string, text: 'Oops.' },
+      },
+    });
+    expect(badType.ok).toBe(false);
+    expect(badType.errors.some((e) => e.path.endsWith('.nodes.start.speaker'))).toBe(true);
+  });
 });
 
 describe('validateProgressionTreeDefinition', () => {

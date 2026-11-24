@@ -8,7 +8,7 @@
 // The engine is a stub. That is deliberate: this file must fail for transport
 // reasons and only transport reasons, so it owns no game.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as net from 'node:net';
 import { createTestEngine, type Engine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
@@ -540,5 +540,50 @@ describe('F-bb72a8ab — two writers serialize by sessionOrder, not TCP arrival'
     expect(verbs).toHaveLength(2);
     expect(verbs).toEqual(expect.arrayContaining(['spawn-npc', 'despawn-npc']));
   }, 12000);
+});
+
+describe('empty or whitespace host falls back to 127.0.0.1 loopback', () => {
+  it('empty and whitespace hosts bind 127.0.0.1 and connectSocketClient targets 127.0.0.1 explicitly', async () => {
+    const emptyHosts: string[] = [];
+    const emptyServer = startSocketServer(
+      { engine: stubEngine() as never, engineVersion: '3.8.0-test', port: 0, host: '' },
+      { onListening: (_port, boundHost) => emptyHosts.push(boundHost) },
+    );
+    opened.push(emptyServer);
+    const emptyPort = await ready(emptyServer);
+    expect((emptyServer.net.address() as net.AddressInfo).address).toBe('127.0.0.1');
+    expect(emptyHosts).toEqual(['127.0.0.1']);
+
+    const wsHosts: string[] = [];
+    const wsServer = startSocketServer(
+      { engine: stubEngine() as never, engineVersion: '3.8.0-test', port: 0, host: '   \t ' },
+      { onListening: (_port, boundHost) => wsHosts.push(boundHost) },
+    );
+    opened.push(wsServer);
+    const wsPort = await ready(wsServer);
+    expect((wsServer.net.address() as net.AddressInfo).address).toBe('127.0.0.1');
+    expect(wsHosts).toEqual(['127.0.0.1']);
+
+    const connectSpy = vi.spyOn(net.Socket.prototype, 'connect');
+    try {
+      const emptyConn = await connectSocketClient(emptyPort, '');
+      sockets.push(emptyConn.socket);
+      const emptyInit = await emptyConn.client.initialize({ notifications: true, hashes: true });
+      expect(emptyInit.serverName).toBeTruthy();
+
+      const wsConn = await connectSocketClient(wsPort, '   ');
+      sockets.push(wsConn.socket);
+      const wsInit = await wsConn.client.initialize({ notifications: true, hashes: true });
+      expect(wsInit.serverName).toBeTruthy();
+
+      const connectOpts = (connectSpy.mock.calls as unknown[][])
+        .map((args) => (Array.isArray(args[0]) ? args[0][0] : args[0]))
+        .filter((arg): arg is net.TcpSocketConnectOpts => typeof arg === 'object' && arg !== null);
+      expect(connectOpts.some((o) => o.port === emptyPort && o.host === '127.0.0.1')).toBe(true);
+      expect(connectOpts.some((o) => o.port === wsPort && o.host === '127.0.0.1')).toBe(true);
+    } finally {
+      connectSpy.mockRestore();
+    }
+  });
 });
 
