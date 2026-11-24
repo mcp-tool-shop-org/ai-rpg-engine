@@ -22,6 +22,7 @@ export {
   wrapToWidth,
   paddedMenuIndex,
   type RenderOptions,
+  type FormatEventOptions,
   type FullScreenOptions,
   type ActionOption,
   type ExtraMenuEntry,

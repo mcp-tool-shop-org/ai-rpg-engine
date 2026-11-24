@@ -1169,12 +1169,21 @@ describe('Built-in intent profile resolution', () => {
   });
 
   it('resolveIntentProfile finds every built-in by id', () => {
-    expect(resolveIntentProfile('aggressive')).toBe(aggressiveProfile);
-    expect(resolveIntentProfile('cautious')).toBe(cautiousProfile);
-    expect(resolveIntentProfile('territorial')).toBe(territorialProfile);
-    expect(resolveIntentProfile('calculating')).toBe(calculatingProfile);
-    expect(resolveIntentProfile('passive')).toBe(passiveProfile);
-    expect(resolveIntentProfile('follower')).toBe(followerProfile);
+    const expected: readonly [string, IntentProfile][] = [
+      ['aggressive', aggressiveProfile],
+      ['cautious', cautiousProfile],
+      ['territorial', territorialProfile],
+      ['calculating', calculatingProfile],
+      ['passive', passiveProfile],
+      ['follower', followerProfile],
+    ];
+    for (const [id, profile] of expected) {
+      expect(profile).toBeDefined();
+      const resolved = resolveIntentProfile(id);
+      expect(resolved).toBeDefined();
+      expect(resolved).toBe(profile);
+      expect(resolved?.id).toBe(id);
+    }
     expect(resolveIntentProfile('no-such-profile')).toBeUndefined();
   });
 

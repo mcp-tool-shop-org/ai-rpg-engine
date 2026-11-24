@@ -7,6 +7,7 @@ function bearing(partial: Partial<ResolvedEvent> & Pick<ResolvedEvent, 'type'>):
     id: partial.id ?? `evt-${partial.type}`,
     tick: partial.tick ?? 1,
     type: partial.type,
+    ...(partial.actorId !== undefined ? { actorId: partial.actorId } : {}),
     payload: partial.payload ?? {},
     presentation: partial.presentation ?? { channels: ['objective'] },
   };
@@ -40,6 +41,7 @@ describe('FeltPresenter', () => {
     const payload = felt.present(worldOf(), [
       bearing({
         type: 'world.zone.entered',
+        actorId: 'hero',
         payload: { zoneId: 'crypt', tone: 'dread' },
       }),
     ]);
@@ -56,6 +58,7 @@ describe('FeltPresenter', () => {
     const payload = felt.present(worldOf(), [
       bearing({
         type: 'world.zone.entered',
+        actorId: 'hero',
         payload: { zoneId: 'crypt', tone: 'dread' },
       }),
       bearing({
@@ -69,6 +72,19 @@ describe('FeltPresenter', () => {
     expect(stings[0]?.resourceId).toMatch(/sting/);
     expect(stemPlays.length).toBeGreaterThan(0);
     expect(stemPlays.some((c) => c.resourceId === stings[0]?.resourceId)).toBe(false);
+  });
+
+  it('a non-player world.zone.entered schedules no zone-entry music or ambient commands', () => {
+    const felt = new FeltPresenter();
+    const payload = felt.present(worldOf(), [
+      bearing({
+        type: 'world.zone.entered',
+        actorId: 'aldric',
+        payload: { zoneId: 'crypt', tone: 'dread' },
+      }),
+    ]);
+    expect(payload.audio.filter((c) => c.domain === 'music')).toEqual([]);
+    expect(payload.audio.filter((c) => c.domain === 'ambient')).toEqual([]);
   });
 
   it('dialogue puts the spoken line on speaker and never on the felt payload as asides', () => {

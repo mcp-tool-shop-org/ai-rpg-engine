@@ -44,8 +44,10 @@ function ev(
   type: string,
   payload: Record<string, unknown>,
   presentation?: ResolvedEvent['presentation'],
+  actorId?: string,
 ): ResolvedEvent {
   const event: ResolvedEvent = { id: `evt_${nextId++}`, tick: 1, type, payload };
+  if (actorId !== undefined) event.actorId = actorId;
   if (presentation) event.presentation = presentation;
   return event;
 }
@@ -66,7 +68,7 @@ const cleared = () =>
 
 const enterZone = () =>
   ev('world.zone.entered', { zoneId: 'crypt', zoneName: 'Crypt Chamber' },
-    { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] });
+    { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] }, 'hero');
 
 const stinger = () =>
   ev('audio.cue.requested', { cueId: 'scene.crypt-reveal', channel: 'stinger', priority: 'high' });
@@ -232,6 +234,7 @@ describe('TurnPresenter: zone-entry music (F-901767f5, tone-aware resolver wired
       'world.zone.entered',
       { zoneId: 'gallows-row', zoneName: 'Gallows Row', tone: 'grim' },
       { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] },
+      'hero',
     );
     const result = new TurnPresenter().present(world, [grimZone], { color: false });
     expect(result.plan.musicCue).toEqual({ action: 'play', trackId: 'music_dread', fadeMs: 1000 });
@@ -247,6 +250,7 @@ describe('TurnPresenter: zone-entry music (F-901767f5, tone-aware resolver wired
       'world.zone.entered',
       { zoneId: 'somewhere', zoneName: 'Somewhere', tone: 'not-a-tone' },
       { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] },
+      'hero',
     );
     const result = new TurnPresenter().present(world, [oddZone], { color: false });
     expect(result.plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
@@ -260,6 +264,24 @@ describe('TurnPresenter: zone-entry music (F-901767f5, tone-aware resolver wired
     const result = new TurnPresenter().present(world, [hit()], { color: false });
     expect(result.plan.musicCue).toBeUndefined();
     expect(result.plan.ambientLayers).toEqual([]);
+  });
+
+  it('a follower-only zone-entry turn produces no zone-entry cue and no Entered narration', () => {
+    const world = makeWorld();
+    const followerZone = ev(
+      'world.zone.entered',
+      { zoneId: 'gallows-row', zoneName: 'Gallows Row', tone: 'grim' },
+      { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] },
+      'aldric',
+    );
+    const result = new TurnPresenter().present(world, [followerZone], { color: false });
+    expect(result.narrationText).toBe(QUIET_TURN_TEXT);
+    expect(result.narrationText).not.toContain('Entered');
+    expect(result.plan.musicCue).toBeUndefined();
+    expect(result.plan.ambientLayers).toEqual([]);
+    expect(narrationTextFromEvents([followerZone, enterZone()], { playerId: 'hero' })).toBe(
+      'Entered Crypt Chamber',
+    );
   });
 });
 

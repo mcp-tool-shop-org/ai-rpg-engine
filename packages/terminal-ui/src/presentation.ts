@@ -46,7 +46,7 @@ import {
   hashRoll,
   SoundRegistry,
 } from '@ai-rpg-engine/soundpack-core';
-import { formatEventLine, type RenderOptions } from './renderer.js';
+import { formatEventLine, type FormatEventOptions, type RenderOptions } from './renderer.js';
 import { detectColorEnabled, makePalette } from './styles.js';
 
 /**
@@ -129,10 +129,13 @@ const TERMINAL_PUNCTUATION = /[.!?]["')\]]*$/;
  * formatEventLine's verbatim text, already-punctuated fragments are untouched,
  * and the final fragment keeps its original ending (no join follows it).
  */
-export function narrationTextFromEvents(events: readonly ResolvedEvent[]): string {
+export function narrationTextFromEvents(
+  events: readonly ResolvedEvent[],
+  opts?: FormatEventOptions,
+): string {
   const sentences: string[] = [];
   for (const event of events) {
-    const line = formatEventLine(event);
+    const line = formatEventLine(event, opts);
     if (!line) continue;
     sentences.push(line.startsWith('> ') ? line.slice(2) : line);
   }
@@ -232,7 +235,7 @@ export class TurnPresenter {
     events: readonly ResolvedEvent[],
     opts?: PresentTurnOptions,
   ): PresentedTurn {
-    const narrationText = narrationTextFromEvents(events);
+    const narrationText = narrationTextFromEvents(events, { playerId: world.playerId });
     const plan = buildNarrationPlan({
       sceneText: narrationText,
       events: [...events],

@@ -112,6 +112,21 @@ export type RenderOptions = {
    * existed.
    */
   partyLine?: string;
+  /**
+   * Player entity id used to gate player-perspective log lines such as
+   * `world.zone.entered` (`> Entered <zone>`). When omitted (standalone callers
+   * with no WorldState), formatting stays unattributed.
+   */
+  playerId?: string;
+};
+
+/** Options accepted by {@link formatEventLine}. */
+export type FormatEventOptions = {
+  /**
+   * Player entity id. When provided, `world.zone.entered` renders only when
+   * `event.actorId === playerId`; omitted preserves unattributed rendering.
+   */
+  playerId?: string;
 };
 
 function paletteFor(opts?: RenderOptions): Palette {
@@ -535,10 +550,15 @@ function paintEventLine(type: string, line: string, pal: Palette): string {
 export function renderEventLog(events: ResolvedEvent[], limit = 8, opts?: RenderOptions): string {
   const pal = paletteFor(opts);
   const ascii = opts?.ascii ?? detectAsciiOnly();
-  return withGlyphs(ascii, () => renderEventLogInner(events, limit, pal));
+  return withGlyphs(ascii, () => renderEventLogInner(events, limit, pal, opts?.playerId));
 }
 
-function renderEventLogInner(events: ResolvedEvent[], limit: number, pal: Palette): string {
+function renderEventLogInner(
+  events: ResolvedEvent[],
+  limit: number,
+  pal: Palette,
+  playerId?: string,
+): string {
   // CS-C-004: filter to renderable events FIRST, then take the last `limit`.
   // The old order (slice(-limit), then format) let unrenderable bookkeeping —
   // defeat fallout, flag changes, audio cues — occupy window slots and push
@@ -546,8 +566,9 @@ function renderEventLogInner(events: ResolvedEvent[], limit: number, pal: Palett
   // empty divider. `limit` now counts LINES THE PLAYER SEES.
   const scanStart = Math.max(0, events.length - EVENT_LOG_LOOKBACK);
   const lines: string[] = [];
+  const formatOpts = playerId !== undefined ? { playerId } : undefined;
   for (let i = scanStart; i < events.length; i++) {
-    const formatted = formatEventLine(events[i]);
+    const formatted = formatEventLine(events[i], formatOpts);
     if (formatted) {
       for (const wrapped of wrapToWidth(`${BODY_INDENT}${formatted}`)) {
         lines.push(paintEventLine(events[i].type, wrapped, pal));
@@ -857,15 +878,22 @@ function describedOr(payload: Record<string, unknown>, fallback: string): string
  * exact lines as NarrationPlan scene text so the spoken/streamed narration
  * can never drift from the printed log.
  */
-export function formatEventLine(event: ResolvedEvent): string | null {
-  const line = formatEventLineRaw(event);
+export function formatEventLine(
+  event: ResolvedEvent,
+  opts?: FormatEventOptions,
+): string | null {
+  const line = formatEventLineRaw(event, opts?.playerId);
   return line === null ? null : applyGlyphPunctuation(line);
 }
 
-function formatEventLineRaw(event: ResolvedEvent): string | null {
+function formatEventLineRaw(event: ResolvedEvent, playerId?: string): string | null {
   const p = event.payload;
   switch (event.type) {
     case 'world.zone.entered': {
+      // Only narrate the player's own zone transitions; NPC/follower moves
+      // emit world.zone.entered with their actorId and never print '> Entered'.
+      // Callers omitting playerId keep unattributed formatting.
+      if (playerId !== undefined && event.actorId !== playerId) return null;
       // F-fdc1f590 (R4): moodHint is a district-mood aside appended verbatim
       // in parens — formatDistrictMoodForNarrator already emits its own
       // 'District: descriptor' shape, so a period separates the two clauses
@@ -1309,7 +1337,12 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
   // the same decision — no mid-frame flips if the environment changes under us.
   const pal = paletteFor(opts);
   const ascii = opts?.ascii ?? detectAsciiOnly();
-  const resolved: RenderOptions = { color: pal.enabled, ascii, partyLine: opts?.partyLine };
+  const resolved: RenderOptions = {
+    color: pal.enabled,
+    ascii,
+    partyLine: opts?.partyLine,
+    playerId: world.playerId,
+  };
 
   return withGlyphs(ascii, () => {
   const sections: string[] = [];

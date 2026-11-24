@@ -258,6 +258,17 @@ describe('renderSaveReport — event tail is the game\'s own log truth', () => {
     const report = renderSaveReport(stateFromSave(makeEngine().serialize()), { color: false });
     expect(report).toContain('  (no renderable events)');
   });
+
+  it('excludes non-player world.zone.entered lines from RECENT EVENTS while preserving player entries', () => {
+    const engine = makeEngine();
+    engine.store.state.eventLog.push(
+      ev('e1', 1, 'world.zone.entered', { zoneId: 'hall', zoneName: 'Hall' }),
+      { id: 'e2', tick: 2, type: 'world.zone.entered', actorId: 'aldric', payload: { zoneId: 'crypt', zoneName: 'Crypt' } } as ResolvedEvent,
+    );
+    const report = renderSaveReport(stateFromSave(engine.serialize()), { color: false });
+    expect(report).toContain('> Entered Hall');
+    expect(report).not.toContain('Entered Crypt');
+  });
 });
 
 // --- The command: authorities, exit codes, live file handling ------------------

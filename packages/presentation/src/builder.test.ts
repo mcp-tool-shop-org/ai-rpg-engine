@@ -37,6 +37,7 @@ const playerDefeatEvent: NarrationSourceEvent = {
 
 const sceneEnterEvent: NarrationSourceEvent = {
   type: 'world.zone.entered',
+  actorId: 'player',
   payload: { zoneId: 'chapel-nave', zoneName: 'Chapel Nave' },
   presentation: { priority: 'normal', soundCues: ['scene.enter'] },
 };
@@ -643,7 +644,11 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
   });
 
   it('a zone-entry turn with no resolveZoneMood injected falls through to the scene.enter fallback', () => {
-    const plan = buildNarrationPlan({ sceneText: 'Entered the nave.', events: [sceneEnterEvent] });
+    const plan = buildNarrationPlan({
+      sceneText: 'Entered the nave.',
+      events: [sceneEnterEvent],
+      playerId: 'player',
+    });
     expect(plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
     expect(plan.ambientLayers).toEqual([{ layerId: 'ambient_white_noise', action: 'start', volume: 0.3, fadeMs: 1000 }]);
     expect(validateNarrationPlan(plan)).toEqual([]);
@@ -652,6 +657,7 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
   it('a zone-entry turn threads payload.zoneId into resolveZoneMood as the second argument', () => {
     const zoneWithTone: NarrationSourceEvent = {
       type: 'world.zone.entered',
+      actorId: 'player',
       payload: { zoneId: 'crypt', zoneName: 'Crypt', tone: 'dread' },
       presentation: { priority: 'normal', soundCues: ['scene.enter'] },
     };
@@ -659,6 +665,7 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
     buildNarrationPlan({
       sceneText: 'Entered the crypt.',
       events: [zoneWithTone],
+      playerId: 'player',
       resolveZoneMood: (tone, zoneId) => {
         seen.push({ tone, zoneId });
         return { trackId: 'music_dread', layerId: 'ambient_drone' };
@@ -670,12 +677,14 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
   it('a zone-entry turn with an injected resolveZoneMood uses ITS trackId/layerId over the fallback', () => {
     const zoneWithTone: NarrationSourceEvent = {
       type: 'world.zone.entered',
+      actorId: 'player',
       payload: { zoneId: 'crypt', zoneName: 'Crypt', tone: 'dread' },
       presentation: { priority: 'normal', soundCues: ['scene.enter'] },
     };
     const plan = buildNarrationPlan({
       sceneText: 'Entered the crypt.',
       events: [zoneWithTone],
+      playerId: 'player',
       resolveZoneMood: (tone) => (tone === 'dread' ? { trackId: 'music_dread', layerId: 'ambient_drone' } : undefined),
     });
     expect(plan.musicCue).toEqual({ action: 'play', trackId: 'music_dread', fadeMs: 1000 });
@@ -685,12 +694,14 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
   it('an unmapped tone (resolveZoneMood returns undefined) falls through to the scene.enter fallback', () => {
     const zoneWithTone: NarrationSourceEvent = {
       type: 'world.zone.entered',
+      actorId: 'player',
       payload: { zoneId: 'nowhere', zoneName: 'Nowhere', tone: 'unmapped-tone' },
       presentation: { priority: 'normal' },
     };
     const plan = buildNarrationPlan({
       sceneText: 'Entered nowhere.',
       events: [zoneWithTone],
+      playerId: 'player',
       resolveZoneMood: () => undefined,
     });
     expect(plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
@@ -701,8 +712,71 @@ describe('buildNarrationPlan: zone-entry music (F-901767f5 composition half)', (
     const plan = buildNarrationPlan({
       sceneText: 'Entered the nave.',
       events: [sceneEnterEvent], // no `tone` field
+      playerId: 'player',
       resolveZoneMood: () => ({ trackId: 'should-not-be-used', layerId: 'should-not-be-used' }),
     });
     expect(plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
+  });
+});
+
+describe('buildNarrationPlan: zone-entry actor gate', () => {
+  const followerZoneEvent: NarrationSourceEvent = {
+    type: 'world.zone.entered',
+    actorId: 'aldric',
+    payload: { zoneId: 'crypt', zoneName: 'Crypt', tone: 'dread' },
+    presentation: { priority: 'normal', soundCues: ['scene.enter'] },
+  };
+  const playerZoneEvent: NarrationSourceEvent = {
+    type: 'world.zone.entered',
+    actorId: 'player',
+    payload: { zoneId: 'sanctuary', zoneName: 'Sanctuary', tone: 'wonder' },
+    presentation: { priority: 'normal', soundCues: ['scene.enter'] },
+  };
+
+  it('takes the player zone when a follower entry precedes the player entry in the same turn', () => {
+    const seen: Array<{ tone: string; zoneId?: string }> = [];
+    const plan = buildNarrationPlan({
+      sceneText: 'Entered Sanctuary.',
+      events: [followerZoneEvent, playerZoneEvent],
+      playerId: 'player',
+      resolveZoneMood: (tone, zoneId) => {
+        seen.push({ tone, zoneId });
+        return tone === 'wonder'
+          ? { trackId: 'music_wonder', layerId: 'ambient_chimes' }
+          : { trackId: 'music_dread', layerId: 'ambient_drone' };
+      },
+    });
+    expect(seen).toEqual([{ tone: 'wonder', zoneId: 'sanctuary' }]);
+    expect(plan.musicCue).toEqual({ action: 'play', trackId: 'music_wonder', fadeMs: 1000 });
+    expect(plan.ambientLayers).toEqual([{ layerId: 'ambient_chimes', action: 'start', volume: 0.3, fadeMs: 1000 }]);
+    expect(validateNarrationPlan(plan)).toEqual([]);
+  });
+
+  it('a follower-only turn receives no zone-entry musicCue or ambientLayers', () => {
+    const seen: string[] = [];
+    const plan = buildNarrationPlan({
+      sceneText: 'All is quiet.',
+      events: [followerZoneEvent],
+      playerId: 'player',
+      resolveZoneMood: (tone) => {
+        seen.push(tone);
+        return { trackId: 'music_dread', layerId: 'ambient_drone' };
+      },
+    });
+    expect(seen).toEqual([]);
+    expect(plan.musicCue).toBeUndefined();
+    expect(plan.ambientLayers).toEqual([]);
+    expect(validateNarrationPlan(plan)).toEqual([]);
+  });
+
+  it('a player-only zone-entry turn preserves musicCue and ambientLayers unchanged', () => {
+    const plan = buildNarrationPlan({
+      sceneText: 'Entered Sanctuary.',
+      events: [playerZoneEvent],
+      playerId: 'player',
+      resolveZoneMood: () => ({ trackId: 'music_wonder', layerId: 'ambient_chimes' }),
+    });
+    expect(plan.musicCue).toEqual({ action: 'play', trackId: 'music_wonder', fadeMs: 1000 });
+    expect(plan.ambientLayers).toEqual([{ layerId: 'ambient_chimes', action: 'start', volume: 0.3, fadeMs: 1000 }]);
   });
 });

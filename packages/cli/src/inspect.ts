@@ -286,7 +286,9 @@ export function renderSaveReport(state: WorldState, opts: SaveReportOptions = {}
   const tail = renderEventLog(
     state.eventLog,
     EVENT_TAIL,
-    opts.color === undefined ? undefined : { color: opts.color },
+    opts.color === undefined
+      ? { playerId: state.playerId }
+      : { color: opts.color, playerId: state.playerId },
   );
   if (tail === '') {
     lines.push('  (no renderable events)');
