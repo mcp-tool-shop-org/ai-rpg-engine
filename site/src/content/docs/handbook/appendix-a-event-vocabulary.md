@@ -6,7 +6,7 @@ sidebar:
 ---
 
 
-All core event types used by the engine and built-in modules.
+All core event types used by the engine and built-in modules. Exported programmatically as `ENGINE_EVENT_TYPES` (and type `EngineEventType`) from `@ai-rpg-engine/core`.
 
 ## Naming Convention
 
@@ -24,17 +24,16 @@ Events follow the pattern: `domain.object.verb`
 | Event | Source | Description |
 |-------|--------|-------------|
 | `combat.contact.hit` | combat-core | Attack connected |
-| `combat.contact.miss` | combat-core | Attack missed |
+| `combat.contact.missed` | combat-core | Attack missed |
 | `combat.damage.applied` | combat-core | Damage dealt to entity |
 | `combat.entity.defeated` | combat-core | Entity HP reached zero |
-| `combat.guard.start` | combat-core | Entity entered guarded stance |
-| `combat.guard.absorbed` | combat-core | Guard reduced incoming damage |
-| `combat.guard.broken` | combat-core | Attacker broke through guard |
-| `combat.counter.off_balance` | combat-core | Guard counter knocked attacker off balance |
-| `combat.disengage.success` | combat-core | Entity fled to adjacent zone |
-| `combat.disengage.fail` | combat-core | Disengage failed, entity exposed |
-| `combat.companion.intercepted` | combat-core | Ally intercepted damage for target |
-| `resource.changed` | combat-core | Entity resource pool changed |
+| `combat.guard.start` | combat-core | Entity raised guard stance |
+| `combat.guard.absorbed` | combat-core | Guard absorbed incoming damage (includes original/reduced values) |
+| `combat.disengage.success` | combat-core | Entity broke from combat and moved to adjacent zone |
+| `combat.disengage.fail` | combat-core | Entity failed to disengage and became exposed |
+| `combat.companion.intercepted` | combat-core | Companion intercepted damage aimed at player (includes interceptChance) |
+| `combat.morale.shift` | cognition-core | Entity morale changed due to combat (damage, defeat, guard absorb, miss) |
+| `combat.will.hold` | cognition-core | High-will entity resisted significant morale loss |
 
 ## Status Events
 

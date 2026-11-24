@@ -5,6 +5,7 @@ export * from './id.js';
 export * from './manifest.js';
 export * from './rng.js';
 export * from './events.js';
+export * from './event-vocabulary.js';
 export * from './world.js';
 export * from './actions.js';
 export * from './modules.js';

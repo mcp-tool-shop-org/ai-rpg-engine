@@ -1,6 +1,6 @@
 # Appendix A — Event Vocabulary Reference
 
-All core event types used by the engine and built-in modules.
+All core event types used by the engine and built-in modules. Exported programmatically as `ENGINE_EVENT_TYPES` (and type `EngineEventType`) from `@ai-rpg-engine/core`.
 
 ## Naming Convention
 
