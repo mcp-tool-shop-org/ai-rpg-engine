@@ -1,14 +1,15 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-24 from commit 3c05846 by Atlas 1.26.0.
+Mapped at 2026-11-24 from commit c44ca4d by Atlas 1.26.0.
 
 ## What this is
 
 40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-11-24 (faade54)
+## What changed since 2026-11-24 (3c05846)
 
-Nothing structural changed since 2026-11-24; 16 files changed content.
+- packages/cli/src/__fixtures__/c1-forge-manifest.json is now also read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.
+- 33 files changed content, across 10 parts.
 
 ## What comes in
 

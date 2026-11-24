@@ -209,23 +209,32 @@
   "changes": {
     "fileCounts": {
       "added": 0,
-      "changed": 16,
+      "changed": 33,
       "moved": 0,
-      "parts": 8,
+      "parts": 10,
       "removed": 0
     },
     "items": [
       {
+        "kind": "landing",
+        "sentence": "packages/cli/src/__fixtures__/c1-forge-manifest.json is now also read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.",
+        "subjects": [
+          "packages/cli/src/__fixtures__/c1-forge-manifest.json",
+          "packages/cli/src/c4-content-intake.test.ts",
+          "packages/cli/src/validate.test.ts"
+        ]
+      },
+      {
         "kind": "counts",
-        "sentence": "Nothing structural changed since 2026-11-24; 16 files changed content.",
+        "sentence": "33 files changed content, across 10 parts.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "faade5449afc222ecea8ffbb028df996e25d55da",
-      "generatedAt": "2026-11-24T10:50:57.357Z"
+      "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1",
+      "generatedAt": "2026-11-24T11:46:59.864Z"
     },
-    "unchanged": true
+    "unchanged": false
   },
   "changesTogether": [
     {
@@ -309,7 +318,7 @@
     "Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
   ],
   "changesTogetherWithTests": 12,
-  "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1",
+  "commit": "c44ca4db94a580b633aa80d9121fec2fce5acbab",
   "defaultBranch": "main",
   "derived": "40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
@@ -1558,7 +1567,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-11-24T11:46:59.864Z",
+  "generatedAt": "2026-11-24T12:35:45.809Z",
   "limits": [
     "5 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://framing.gd`; `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; and 2 more.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
@@ -1838,7 +1847,7 @@
     "equipment": 159,
     "image-gen": 6,
     "ledger-adapter": 17,
-    "modules": 236,
+    "modules": 239,
     "ollama": 38,
     "pack-registry": 105,
     "presentation": 6,

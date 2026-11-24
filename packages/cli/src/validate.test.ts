@@ -239,9 +239,11 @@ describe('runValidate', () => {
     expect(out.text()).toContain('skirmisher');
   });
 
-  it('escapes control/ANSI characters in human error output', () => {
+  it('escapes control/ANSI characters in human error output while keeping raw ids in --json errors', () => {
+    const rawId = `\x1b[31mevil\n_${'x'.repeat(80)}`;
+    const rawProfile = `bad\x07profile_${'p'.repeat(80)}`;
     const file = writePack('ansi-profile.json', {
-      entities: [{ id: '\x1b[31mevil\n', type: 'npc', name: 'Evil', aiProfile: 'bad\x07profile' }],
+      entities: [{ id: rawId, type: 'npc', name: 'Evil', aiProfile: rawProfile }],
       zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
     });
     const out = capture();
@@ -251,5 +253,44 @@ describe('runValidate', () => {
       expect(line).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
     }
     expect(out.text()).toContain('\\x1b[31m');
+    expect(out.text()).toContain('...');
+
+    const jsonOut = capture();
+    expect(runValidate([file, '--json'], { log: jsonOut.log, error: jsonOut.log })).toBe(1);
+    const parsed = JSON.parse(jsonOut.text()) as {
+      ok: boolean;
+      errors: Array<{ code?: string; entityId?: string; profileId?: string }>;
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        entityId: rawId,
+        profileId: rawProfile,
+      }),
+    );
+  });
+
+  it('prints valid --json with "must be a string" error when aiProfile is null or an array', () => {
+    for (const badAiProfile of [null, ['x']] as const) {
+      const file = writePack(`nonstring-${badAiProfile === null ? 'null' : 'array'}.json`, {
+        entities: [{ id: 'bad', type: 'npc', name: 'Bad', aiProfile: badAiProfile }],
+        zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
+      });
+      const out = capture();
+      const code = runValidate([file, '--json'], { log: out.log, error: out.log });
+      expect(code).toBe(1);
+      const parsed = JSON.parse(out.text()) as {
+        ok: boolean;
+        errors: Array<{ path: string; message: string }>;
+      };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.errors).toContainEqual(
+        expect.objectContaining({
+          path: 'entities[0](bad).aiProfile',
+          message: expect.stringMatching(/must be a string/),
+        }),
+      );
+    }
   });
 });

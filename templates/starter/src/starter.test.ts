@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { validateRulesetDefinition, validateGameContent, validateAbilityPack, loadContent, loadContentFromFile } from '@ai-rpg-engine/content-schema';
+import { validateRulesetDefinition, validateGameContent, validateAbilityPack, loadContent, loadContentFromFile, applyContentPack } from '@ai-rpg-engine/content-schema';
 import type { AbilityDefinition, DialogueDefinition } from '@ai-rpg-engine/content-schema';
-import { selectIntent } from '@ai-rpg-engine/modules';
+import { selectIntent, getRegisteredIntentProfiles } from '@ai-rpg-engine/modules';
 import type { CognitionState } from '@ai-rpg-engine/modules';
 import { myRuleset } from './ruleset.js';
 import { createGame, myIntentProfiles } from './setup.js';
@@ -148,12 +148,31 @@ describe('starter template — cross-reference integrity', () => {
 // declared profileId resolvable as you add content.
 // ═══════════════════════════════════════════════════════════════════
 describe('starter template — intent profile wiring', () => {
-    it('provides a non-empty intent profile list to cognition', () => {
+    it('provides all four built-in intent profiles matching the README', () => {
         expect(myIntentProfiles.length).toBeGreaterThan(0);
         for (const profile of myIntentProfiles) {
             expect(typeof profile.id).toBe('string');
             expect(typeof profile.evaluate).toBe('function');
         }
+        const registeredIds = getRegisteredIntentProfiles(createGame(1)).map((p) => p.id);
+        for (const id of ['aggressive', 'cautious', 'territorial', 'calculating']) {
+            expect(myIntentProfiles.map((p) => p.id)).toContain(id);
+            expect(registeredIds).toContain(id);
+        }
+
+        const engine = createGame(1);
+        const okRes = applyContentPack(
+            engine,
+            {
+                entities: [
+                    { id: 'probe-cautious', type: 'npc', name: 'Probe Cautious', aiProfile: 'cautious' },
+                    { id: 'probe-territorial', type: 'npc', name: 'Probe Territorial', aiProfile: 'territorial' },
+                    { id: 'probe-calc', type: 'npc', name: 'Probe Calc', aiProfile: 'calculating' },
+                ],
+            },
+            { profiles: getRegisteredIntentProfiles(engine), unresolvedAiProfile: 'fail' },
+        );
+        expect(okRes.ok).toBe(true);
     });
 
     it('every hostile entity declares a profileId that resolves to a provided profile', () => {

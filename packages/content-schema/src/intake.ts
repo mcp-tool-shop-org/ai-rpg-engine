@@ -137,8 +137,9 @@ export const MAX_DIAGNOSTIC_ID_LENGTH = 64;
  * Escape control, ANSI escape, and Unicode line/bidi characters and cap length
  * so untrusted pack ids cannot inject raw terminal sequences or log lines.
  */
-export function sanitizeDiagnosticText(raw: string, maxLength = MAX_DIAGNOSTIC_ID_LENGTH): string {
-  const capped = raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
+export function sanitizeDiagnosticText(raw: unknown, maxLength = MAX_DIAGNOSTIC_ID_LENGTH): string {
+  const text = typeof raw === 'string' ? raw : String(raw);
+  const capped = text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
   let out = '';
   for (let i = 0; i < capped.length; i++) {
     const code = capped.charCodeAt(i);
@@ -429,7 +430,7 @@ function aiFromProfileMap(
 
 function formatUnresolvedAiProfileMessage(entityId: string, profileId: string): string {
   const safeEntity = sanitizeDiagnosticText(entityId);
-  const safeProfile = sanitizeDiagnosticText(profileId);
+  const safeProfile = profileId === '' ? '(empty)' : sanitizeDiagnosticText(profileId);
   return (
     `entity "${safeEntity}" has unresolved aiProfile "${safeProfile}" — ` +
     'every authored aiProfile, ContentPack.entityAi.profileId, and profiles-map profileId ' +
@@ -446,8 +447,8 @@ function makeUnresolvedAiIssue(
   return {
     code: 'UNRESOLVED_AI_PROFILE',
     path,
-    entityId: sanitizeDiagnosticText(entityId),
-    profileId: sanitizeDiagnosticText(profileId),
+    entityId,
+    profileId,
     message: formatUnresolvedAiProfileMessage(entityId, profileId),
   };
 }
@@ -466,9 +467,9 @@ export function resolveEntityAi(
     if (fromEntity.profileId.length > 0 && registeredIds.has(fromEntity.profileId)) {
       return { ok: true, ai: cloneAiState(fromEntity) };
     }
-    return { ok: false, profileId: fromEntity.profileId || '(empty)', source: 'entityAi' };
+    return { ok: false, profileId: fromEntity.profileId, source: 'entityAi' };
   }
-  if (bp.aiProfile === undefined) return undefined;
+  if (typeof bp.aiProfile !== 'string') return undefined;
   const profiles = lookup?.profiles;
   if (Array.isArray(profiles)) {
     const ai = aiFromProfileList(bp.aiProfile, profiles, registeredIds);
@@ -528,7 +529,7 @@ export function checkUnresolvedAiProfiles(
           makeUnresolvedAiIssue(
             `entityAi.${sanitizeDiagnosticText(entityId)}.profileId`,
             entityId,
-            ai.profileId || '(empty)',
+            ai.profileId,
           ),
         );
       }
@@ -847,22 +848,32 @@ export function applyContentPack(
   // --- unresolved AI profiles (`fail`), before ANY mutation ---
   // Must run before world writes or module channels so a refused pack leaves
   // WorldState and external module registries completely untouched.
-  if (unresolvedAiProfile === 'fail' && profileIssues.length > 0) {
-    if (!options.prevalidated) {
-      if (pack.zones !== undefined && !Array.isArray(pack.zones)) {
-        errors.push({ path: 'pack.zones', message: 'must be an array if provided.' });
-      } else if (Array.isArray(pack.zones)) {
-        for (let i = 0; i < pack.zones.length; i++) {
-          const def = pack.zones[i];
-          errors.push(...validateZoneDefinition(def, `zones[${i}](${idOf(def)})`).errors);
+  const hasNonStringAiProfile =
+    Array.isArray(pack.entities) &&
+    pack.entities.some((bp) => isRecord(bp) && bp.aiProfile !== undefined && typeof bp.aiProfile !== 'string');
+  if (unresolvedAiProfile === 'fail' && (profileIssues.length > 0 || hasNonStringAiProfile)) {
+    if (!options.prevalidated || hasNonStringAiProfile) {
+      if (!options.prevalidated) {
+        if (pack.zones !== undefined && !Array.isArray(pack.zones)) {
+          errors.push({ path: 'pack.zones', message: 'must be an array if provided.' });
+        } else if (Array.isArray(pack.zones)) {
+          for (let i = 0; i < pack.zones.length; i++) {
+            const def = pack.zones[i];
+            errors.push(...validateZoneDefinition(def, `zones[${i}](${idOf(def)})`).errors);
+          }
         }
       }
       if (pack.entities !== undefined && !Array.isArray(pack.entities)) {
-        errors.push({ path: 'pack.entities', message: 'must be an array if provided.' });
+        if (!options.prevalidated) {
+          errors.push({ path: 'pack.entities', message: 'must be an array if provided.' });
+        }
       } else if (Array.isArray(pack.entities)) {
         for (let i = 0; i < pack.entities.length; i++) {
           const bp = pack.entities[i];
-          errors.push(...validateEntityBlueprint(bp, `entities[${i}](${idOf(bp)})`).errors);
+          const bpHasNonStringAi = isRecord(bp) && bp.aiProfile !== undefined && typeof bp.aiProfile !== 'string';
+          if (!options.prevalidated || bpHasNonStringAi) {
+            errors.push(...validateEntityBlueprint(bp, `entities[${i}](${idOf(bp)})`).errors);
+          }
         }
       }
     }

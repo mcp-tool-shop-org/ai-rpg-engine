@@ -1181,7 +1181,7 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     );
   });
 
-  it('escapes control/ANSI characters and caps echoed entity/profile ids in errors, warnings, and drops', () => {
+  it('preserves raw entityId/profileId on structured errors and warnings while escaping/capping rendered output', () => {
     const longId = `\x1b[31mevil\nline\x07\u202e_${'x'.repeat(120)}`;
     const badProfile = `\x1b[2Jbad\r\t_${'p'.repeat(120)}`;
     const pack: ContentPack = {
@@ -1191,8 +1191,10 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     const failRes = applyContentPack(bootEngine(), pack, { unresolvedAiProfile: 'fail' });
     expect(failRes.ok).toBe(false);
     const err = failRes.errors[0];
-    expect(err.entityId).toBe(sanitizeDiagnosticText(longId));
-    expect(err.profileId).toBe(sanitizeDiagnosticText(badProfile));
+    expect(longId.length).toBeGreaterThan(64);
+    expect(badProfile.length).toBeGreaterThan(64);
+    expect(err.entityId).toBe(longId);
+    expect(err.profileId).toBe(badProfile);
     expect(err.path).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
     expect(err.message).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
     expect(err.message).toContain('\\x1b[31m');
@@ -1201,9 +1203,64 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     const warnEngine = bootEngine();
     const warnRes = applyContentPack(warnEngine, pack, { unresolvedAiProfile: 'warn' });
     expect(warnRes.ok).toBe(true);
+    expect(warnRes.warnings[0].entityId).toBe(longId);
+    expect(warnRes.warnings[0].profileId).toBe(badProfile);
     expect(warnRes.warnings[0].message).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
     expect(warnRes.dropped[0].detail).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
     expect(checkUnresolvedAiProfiles(pack)).toEqual(warnRes.warnings);
+  });
+
+  it('skips non-string aiProfile (null and array) in resolveEntityAi without throwing, keeps world untouched under fail, and coerces String(raw) in sanitizeDiagnosticText', () => {
+    expect(sanitizeDiagnosticText(null)).toBe('null');
+    expect(sanitizeDiagnosticText(['x'])).toBe('x');
+
+    for (const badAiProfile of [null, ['x']] as const) {
+      const pack = {
+        zones: [{ id: 'staged-zone', name: 'Staged Zone' }],
+        entities: [
+          { id: 'ok-npc', type: 'npc', name: 'Ok', aiProfile: 'aggressive' },
+          { id: 'bad', type: 'npc', name: 'Bad', aiProfile: badAiProfile },
+        ],
+      } as unknown as ContentPack;
+
+      const failEngine = bootEngine();
+      let failRes!: ReturnType<typeof applyContentPack>;
+      expect(() => {
+        failRes = applyContentPack(failEngine, pack, {
+          profiles: [{ id: 'aggressive' }],
+          unresolvedAiProfile: 'fail',
+        });
+      }).not.toThrow();
+      expect(failRes.ok).toBe(false);
+      expect(failRes.warnings).toEqual([]);
+      expect(failRes.applied).toEqual({});
+      expect(failRes.errors).toContainEqual(
+        expect.objectContaining({
+          path: 'entities[1](bad).aiProfile',
+          message: expect.stringMatching(/must be a string/),
+        }),
+      );
+      expect(failEngine.world.zones['staged-zone']).toBeUndefined();
+      expect(failEngine.world.entities['ok-npc']).toBeUndefined();
+
+      const warnEngine = bootEngine();
+      let warnRes!: ReturnType<typeof applyContentPack>;
+      expect(() => {
+        warnRes = applyContentPack(warnEngine, pack, {
+          profiles: [{ id: 'aggressive' }],
+          unresolvedAiProfile: 'warn',
+        });
+      }).not.toThrow();
+      expect(warnRes.ok).toBe(false);
+      expect(warnRes.warnings).toEqual([]);
+      expect(warnRes.errors).toContainEqual(
+        expect.objectContaining({
+          path: 'entities[1](bad).aiProfile',
+          message: expect.stringMatching(/must be a string/),
+        }),
+      );
+      expect(warnEngine.world.entities['bad']).toBeUndefined();
+    }
   });
 
   it('unresolvedAiProfile: fail succeeds with empty warnings when every profile resolves', () => {
