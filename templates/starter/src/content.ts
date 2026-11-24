@@ -71,8 +71,9 @@ export const enemy: EntityBlueprint = {
     // provided in setup.ts (`cognition: { profiles: [...] }`) — without that
     // pairing the enemy never selects an intent and just stands there.
     // Built-ins: 'aggressive' (attack on sight), 'cautious' (observe first),
-    // 'territorial' (hold zone), 'calculating' (strike from advantage), and
-    // 'passive' (non-combatant idle, disengage on morale collapse).
+    // 'territorial' (hold zone), 'calculating' (strike from advantage),
+    // 'passive' (non-combatant idle, disengage on morale collapse), and
+    // 'follower' (follow player, never attack, disengage on morale collapse).
     // applyContentPack resolves this name against ContentPack.entityAi and
     // ApplyContentPackOptions.profiles (setup.ts).
     aiProfile: 'aggressive',

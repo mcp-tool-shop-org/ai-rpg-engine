@@ -1,0 +1,22 @@
+{
+  "id": "forge-companion-roles",
+  "title": "World Forge Default Roles with Companions Fixture",
+  "version": "1.0.0",
+  "engineVersion": ">=3.8.0 <4.0.0",
+  "ruleset": "standard-v1",
+  "modules": [
+    "traversal-core",
+    "status-core",
+    "cognition-core",
+    "combat-core",
+    "inventory-core",
+    "dialogue-core",
+    "perception-filter",
+    "progression-core",
+    "environment-core"
+  ],
+  "contentPacks": [
+    "forge-companion-roles"
+  ],
+  "contentHash": "sha256:35ccad3a1f7f705dacc184e6eee04296815f3ad0b4f0d55a30877b8069296be7"
+}

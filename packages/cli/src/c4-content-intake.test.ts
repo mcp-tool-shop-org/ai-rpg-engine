@@ -38,6 +38,19 @@ const FORGE_PASSIVE_MANIFEST_PATH = path.resolve(
   '__fixtures__/forge-passive-roles-manifest.json',
 );
 
+// Fixture shaped like mcp-tool-shop-org/world-forge commit eb2514c4
+// (packages/export-ai-rpg/src/convert-entities.ts:9-33, :139-145 and
+// packages/editor/src/templates/samples.ts:91-96), where companion roles
+// default to aiProfile: 'follower'.
+const FORGE_COMPANION_PACK_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__fixtures__/forge-companion-roles-pack.json',
+);
+const FORGE_COMPANION_MANIFEST_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__fixtures__/forge-companion-roles-manifest.json',
+);
+
 const HOST_PACK = 'chapel-threshold';
 
 /** Capture the command's diagnostics. Everything it says goes to stderr by contract. */
@@ -406,6 +419,26 @@ describe('sidecar --content', () => {
     expect(readyLine(text)).toBe(true);
     expect(text).toContain('entities=5');
     expect(text).toContain('entityAi=5');
+    expect(text).not.toContain('SIDECAR_CONTENT_REFUSED');
+  });
+
+  it('loads the World Forge default-roles fixture with companions (aiProfile follower) under default fail mode', async () => {
+    const { code, lines } = await run([
+      HOST_PACK,
+      '--content',
+      FORGE_COMPANION_PACK_PATH,
+      '--manifest',
+      FORGE_COMPANION_MANIFEST_PATH,
+      '--start',
+      'sanctuary-nave',
+      '--listen',
+      '0',
+    ]);
+    expect(code).toBeNull();
+    const text = lines.join('\n');
+    expect(readyLine(text)).toBe(true);
+    expect(text).toContain('entities=7');
+    expect(text).toContain('entityAi=7');
     expect(text).not.toContain('SIDECAR_CONTENT_REFUSED');
   });
 

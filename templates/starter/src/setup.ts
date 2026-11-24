@@ -57,8 +57,9 @@ function createTensionPressure(): EngineModule {
 // aggressive ('aggressive': attack visible hostiles, flee at low morale),
 // cautious ('cautious': observe first, strike when confident), territorial
 // ('territorial': hold zone and engage intruders), calculating
-// ('calculating': exploit debuffs and withdraw at low morale), and passive
-// ('passive': non-combatant idle, flee on morale collapse). Add your own
+// ('calculating': exploit debuffs and withdraw at low morale), passive
+// ('passive': non-combatant idle, flee on morale collapse), and follower
+// ('follower': follow player, idle peacefully, flee on morale collapse). Add your own
 // IntentProfile objects here for custom brains.
 // ═══════════════════════════════════════════════════════════════════
 

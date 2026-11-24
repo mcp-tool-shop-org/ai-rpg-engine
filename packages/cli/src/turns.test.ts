@@ -7,8 +7,20 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import { createGame } from '@ai-rpg-engine/starter-fantasy';
-import { selectActionForEntity, getPartyState, setPartyState, setCompanionActive } from '@ai-rpg-engine/modules';
-import { runNpcTurns, runCompanionTurns, listHostilesInPlayerZone, getAbilityCatalog } from './turns.js';
+import {
+  selectActionForEntity,
+  getPartyState,
+  setPartyState,
+  setCompanionActive,
+  traversalCore,
+  statusCore,
+  createCombatCore,
+  createCognitionCore,
+  COMBAT_STATES,
+  getCognition,
+  hasStatus,
+} from '@ai-rpg-engine/modules';
+import { runNpcTurns, runCompanionTurns, listHostilesInPlayerZone, listTurnActors, getAbilityCatalog } from './turns.js';
 
 const testManifest = {
   id: 'test-game',
@@ -125,6 +137,57 @@ describe('listHostilesInPlayerZone', () => {
     const engine = makeCryptGame();
     engine.store.state.entities['ash-ghoul'].resources.hp = 0;
     expect(listHostilesInPlayerZone(engine.world).map((h) => h.id)).toEqual(['crypt-warden']);
+  });
+});
+
+describe('listTurnActors', () => {
+  it('includes in-zone hostiles and passive NPCs, plus followers in any zone, and returns [] when player is missing', () => {
+    const engine = makeBareEngine();
+    engine.store.addEntity({
+      id: 'bystander-in',
+      blueprintId: 'bp',
+      type: 'npc',
+      name: 'In-Zone Passive',
+      tags: [],
+      stats: {},
+      resources: { hp: 5 },
+      statuses: [],
+      zoneId: 'cell',
+      ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+    engine.store.addEntity({
+      id: 'bystander-away',
+      blueprintId: 'bp',
+      type: 'npc',
+      name: 'Away Passive',
+      tags: [],
+      stats: {},
+      resources: { hp: 5 },
+      statuses: [],
+      zoneId: 'hall',
+      ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+    engine.store.addEntity({
+      id: 'companion-away',
+      blueprintId: 'bp',
+      type: 'npc',
+      name: 'Away Follower',
+      tags: ['recruitable', 'companion'],
+      stats: {},
+      resources: { hp: 5 },
+      statuses: [],
+      zoneId: 'hall',
+      ai: { profileId: 'follower', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+
+    expect(listTurnActors(engine.world).map((e) => e.id)).toEqual([
+      'bystander-in',
+      'companion-away',
+      'gnasher',
+    ]);
+
+    delete engine.store.state.entities['hero'];
+    expect(listTurnActors(engine.world)).toEqual([]);
   });
 });
 
@@ -289,6 +352,191 @@ describe('runNpcTurns (F1a) — enemies act after the player', () => {
     expect(results).toEqual([]);
     expect(engine.tick).toBe(tickBefore);
     expect(engine.world.entities['hero'].resources.hp).toBe(10);
+  });
+
+  it('a non-hostile passive NPC that becomes FLEEING disengages through runNpcTurns', () => {
+    const engine = new Engine({
+      manifest: testManifest,
+      seed: 7,
+      modules: [
+        traversalCore,
+        statusCore,
+        createCombatCore({ disengageChance: () => 100 }),
+        createCognitionCore(),
+      ],
+    });
+    engine.store.state.zones = {
+      a: { id: 'a', roomId: 'r1', name: 'Square', tags: [], neighbors: ['b'] },
+      b: { id: 'b', roomId: 'r1', name: 'Alley', tags: [], neighbors: ['a'] },
+    };
+    engine.store.state.locationId = 'a';
+    engine.store.state.playerId = 'hero';
+    engine.store.addEntity({
+      id: 'hero',
+      blueprintId: 'player',
+      type: 'player',
+      name: 'Hero',
+      tags: ['player'],
+      stats: { vigor: 4, instinct: 4, will: 4 },
+      resources: { hp: 20, maxHp: 20, stamina: 5 },
+      statuses: [],
+      zoneId: 'a',
+    });
+    engine.store.addEntity({
+      id: 'villager',
+      blueprintId: 'villager',
+      type: 'npc',
+      name: 'Villager',
+      tags: [],
+      stats: { vigor: 3, instinct: 4, will: 3 },
+      resources: { hp: 20, maxHp: 20, stamina: 5 },
+      statuses: [],
+      zoneId: 'a',
+      ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+
+    const tickBefore = engine.tick;
+    expect(runNpcTurns(engine, { log: vi.fn() })).toEqual([]);
+    expect(engine.tick).toBe(tickBefore);
+
+    const cog = getCognition(engine.world, 'villager');
+    cog.morale = 25;
+    engine.store.recordEvent({
+      id: 'evt-passive-collapse',
+      tick: engine.tick,
+      type: 'combat.damage.applied',
+      actorId: 'hero',
+      payload: { targetId: 'villager', damage: 15, previousHp: 20, currentHp: 5 },
+    });
+    expect(hasStatus(engine.world.entities['villager'], COMBAT_STATES.FLEEING)).toBe(true);
+
+    const results = runNpcTurns(engine, { log: vi.fn() });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      actorId: 'villager',
+      verb: 'disengage',
+      profileId: 'passive',
+      usedFallback: false,
+      submitted: true,
+    });
+    expect(engine.world.eventLog.some((e) => e.type === 'combat.disengage.success' && e.actorId === 'villager')).toBe(true);
+    expect(engine.world.entities['villager'].zoneId).toBe('b');
+  });
+
+  it('a non-hostile follower NPC follows the player through runNpcTurns, never attacks hostiles, and disengages when FLEEING', () => {
+    const engine = new Engine({
+      manifest: testManifest,
+      seed: 7,
+      modules: [
+        traversalCore,
+        statusCore,
+        createCombatCore({ disengageChance: () => 100 }),
+        createCognitionCore(),
+      ],
+    });
+    engine.store.state.zones = {
+      a: { id: 'a', roomId: 'r1', name: 'Entrance', tags: [], neighbors: ['b'] },
+      b: { id: 'b', roomId: 'r1', name: 'Nave', tags: [], neighbors: ['a', 'c'] },
+      c: { id: 'c', roomId: 'r1', name: 'Crypt', tags: [], neighbors: ['b'] },
+    };
+    engine.store.state.locationId = 'c';
+    engine.store.state.playerId = 'hero';
+    engine.store.addEntity({
+      id: 'hero',
+      blueprintId: 'player',
+      type: 'player',
+      name: 'Hero',
+      tags: ['player'],
+      stats: { vigor: 5, instinct: 5, will: 4 },
+      resources: { hp: 30, maxHp: 30, stamina: 8 },
+      statuses: [],
+      zoneId: 'c',
+    });
+    engine.store.addEntity({
+      id: 'aldric-follower',
+      blueprintId: 'aldric-follower',
+      type: 'npc',
+      name: 'Brother Aldric',
+      tags: ['recruitable', 'companion'],
+      stats: { vigor: 3, instinct: 4, will: 3 },
+      resources: { hp: 20, maxHp: 20, stamina: 6 },
+      statuses: [],
+      zoneId: 'a',
+      ai: { profileId: 'follower', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+
+    // Step 1: follower in 'a' walks one step to 'b' toward player in 'c'
+    const round1 = runNpcTurns(engine, { log: vi.fn() });
+    expect(round1).toHaveLength(1);
+    expect(round1[0]).toMatchObject({
+      actorId: 'aldric-follower',
+      verb: 'move',
+      targetIds: ['b'],
+      profileId: 'follower',
+      usedFallback: false,
+      submitted: true,
+    });
+    expect(engine.world.entities['aldric-follower'].zoneId).toBe('b');
+    expect(engine.world.locationId).toBe('c');
+
+    // Step 2: follower in 'b' arrives in player's zone 'c'
+    const round2 = runNpcTurns(engine, { log: vi.fn() });
+    expect(round2).toHaveLength(1);
+    expect(round2[0]).toMatchObject({
+      actorId: 'aldric-follower',
+      verb: 'move',
+      targetIds: ['c'],
+      profileId: 'follower',
+      usedFallback: false,
+      submitted: true,
+    });
+    expect(engine.world.entities['aldric-follower'].zoneId).toBe('c');
+
+    // Step 3: once in the player's zone (even with a hostile present), follower idles without attacking
+    engine.store.addEntity({
+      id: 'raider',
+      blueprintId: 'raider',
+      type: 'enemy',
+      name: 'Raider',
+      tags: ['hostile'],
+      stats: { vigor: 3, instinct: 3, will: 3 },
+      resources: { hp: 10, maxHp: 10, stamina: 5 },
+      statuses: [],
+      zoneId: 'c',
+      ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+    const round3 = runNpcTurns(engine, { log: vi.fn() });
+    expect(round3).toEqual([]);
+
+    // Even if recruited into party.companions, cognition-profiled follower skips runCompanionTurns
+    setPartyState(engine.world, {
+      ...getPartyState(engine.world),
+      companions: [{ npcId: 'aldric-follower', role: 'healer', abilityTags: [], active: true, joinedAtTick: 0, morale: 80 }],
+    });
+    expect(runCompanionTurns(engine, { log: vi.fn() })).toEqual([]);
+
+    // Morale collapse sends follower into FLEEING -> disengages through runNpcTurns
+    const cog = getCognition(engine.world, 'aldric-follower');
+    cog.morale = 25;
+    engine.store.recordEvent({
+      id: 'evt-follower-collapse',
+      tick: engine.tick,
+      type: 'combat.damage.applied',
+      actorId: 'raider',
+      payload: { targetId: 'aldric-follower', damage: 15, previousHp: 20, currentHp: 5 },
+    });
+    expect(hasStatus(engine.world.entities['aldric-follower'], COMBAT_STATES.FLEEING)).toBe(true);
+
+    const round4 = runNpcTurns(engine, { log: vi.fn() });
+    expect(round4).toHaveLength(1);
+    expect(round4[0]).toMatchObject({
+      actorId: 'aldric-follower',
+      verb: 'disengage',
+      profileId: 'follower',
+      usedFallback: false,
+      submitted: true,
+    });
+    expect(engine.world.entities['aldric-follower'].zoneId).toBe('b');
   });
 });
 

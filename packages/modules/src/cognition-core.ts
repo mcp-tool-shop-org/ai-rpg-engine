@@ -124,8 +124,8 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
     : (configOrProfiles ?? {});
 
   // Built-ins first, so every profile id shipped in starter content
-  // ('aggressive', 'cautious', 'territorial', 'calculating', 'passive')
-  // resolves out of the box; config-passed profiles override by id.
+  // ('aggressive', 'cautious', 'territorial', 'calculating', 'passive',
+  // 'follower') resolves out of the box; config-passed profiles override by id.
   const profileMap = new Map<string, IntentProfile>();
   for (const p of BUILTIN_INTENT_PROFILES) {
     profileMap.set(p.id, p);
@@ -983,14 +983,98 @@ export const passiveProfile: IntentProfile = {
   },
 };
 
+function findNextStepTowardZone(
+  world: WorldState,
+  fromZoneId: string,
+  toZoneId: string,
+): string | undefined {
+  const start = world.zones[fromZoneId];
+  if (!start || !world.zones[toZoneId]) return undefined;
+
+  const visited = new Set<string>([fromZoneId]);
+  const queue: Array<{ zoneId: string; firstStep: string }> = [];
+
+  for (const neighbor of start.neighbors) {
+    if (!world.zones[neighbor] || visited.has(neighbor)) continue;
+    if (neighbor === toZoneId) return neighbor;
+    visited.add(neighbor);
+    queue.push({ zoneId: neighbor, firstStep: neighbor });
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const zone = world.zones[current.zoneId];
+    for (const neighbor of zone.neighbors) {
+      if (!world.zones[neighbor] || visited.has(neighbor)) continue;
+      if (neighbor === toZoneId) return current.firstStep;
+      visited.add(neighbor);
+      queue.push({ zoneId: neighbor, firstStep: current.firstStep });
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Built-in follower profile: companion default (used by World Forge for
+ * companion roles). Follows the player one step along a neighbor path when
+ * apart, idles/inspects in the player's zone, never proposes a hostile intent
+ * regardless of perceived threats, and disengages through the FLEEING path
+ * when morale collapses.
+ */
+export const followerProfile: IntentProfile = {
+  id: 'follower',
+  evaluate(entity, _cognition, world) {
+    const options: IntentOption[] = [];
+    const zone = entity.zoneId;
+
+    // Fleeing entities can only disengage — suppress all other intents
+    if (hasStatus(entity, COMBAT_STATES.FLEEING)) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 100,
+          reason: 'disengage: fleeing',
+        });
+      }
+      return options;
+    }
+
+    const player = world.entities[world.playerId];
+    const playerZone = player?.zoneId ?? world.locationId;
+    if (player && entity.id !== world.playerId && zone && playerZone && zone !== playerZone) {
+      const nextZone = findNextStepTowardZone(world, zone, playerZone);
+      if (nextZone) {
+        options.push({
+          verb: 'move',
+          targetIds: [nextZone],
+          priority: 60,
+          reason: `follow player: move toward ${playerZone}`,
+        });
+        return options;
+      }
+    }
+
+    options.push({
+      verb: 'inspect',
+      priority: 10,
+      reason: 'idle: follower',
+    });
+
+    return options;
+  },
+};
+
 // --- Built-in Profile Registry ---
 
 /**
  * All built-in intent profiles, in id-resolution order. Content references
- * these by `entity.ai.profileId` — the five shipped ids are 'aggressive',
- * 'cautious', 'territorial', 'calculating', and 'passive'. `createCognitionCore`
- * seeds its profile map from this list (config-passed profiles override by id),
- * and `resolveIntentProfile` / `selectActionForEntity` resolve against it.
+ * these by `entity.ai.profileId` — the six shipped ids are 'aggressive',
+ * 'cautious', 'territorial', 'calculating', 'passive', and 'follower'.
+ * `createCognitionCore` seeds its profile map from this list (config-passed
+ * profiles override by id), and `resolveIntentProfile` / `selectActionForEntity`
+ * resolve against it.
  */
 export const BUILTIN_INTENT_PROFILES: readonly IntentProfile[] = [
   aggressiveProfile,
@@ -998,6 +1082,7 @@ export const BUILTIN_INTENT_PROFILES: readonly IntentProfile[] = [
   territorialProfile,
   calculatingProfile,
   passiveProfile,
+  followerProfile,
 ];
 
 /**
