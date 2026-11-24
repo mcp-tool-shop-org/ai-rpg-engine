@@ -274,8 +274,8 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(godot).toContain('persist-credentials: false');
     expect(godot).toContain('/tmp/godot-import.log');
     expect(godot).toMatch(/grep -Eq 'SCRIPT ERROR' \/tmp\/godot-import\.log/);
-    expect(godot).toContain('EXPECTED_COUNT=$((VECTOR_LINES + 4))');
-    expect(godot).toContain('DIGEST_VECTORS_OK count=${EXPECTED_COUNT}');
+    expect(godot).toContain('EXPECTED_COUNT=$((VECTOR_LINES + 5))');
+    expect(godot).toContain('grep -Fxq "DIGEST_VECTORS_OK count=${EXPECTED_COUNT}" /tmp/godot-digest.log');
   });
 
   it('ci.yml docker-smoke job loads the image and docker-runs --help (no push)', () => {

@@ -3,7 +3,7 @@
 // The live engine is a real createTestEngine (not a transport stub) so preview
 // isolation and actionLog/rng pins can fail for the reasons the findings name.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
 import { SidecarServer, attachedServerCount } from './server.js';
@@ -674,7 +674,7 @@ describe('F-3f53c837 — canonicalHashes is negotiated and additive', () => {
       | { code: number; message: string; data?: { code: string; path: string } }
       | undefined;
     expect(err).toBeDefined();
-    expect(err!.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(err!.code).toBe(ERROR_CODES.STATE_DIGEST_INVALID);
     expect(err!.data?.code).toBe('NON_ASCII_KEY');
     expect(err!.data?.path).toContain('café');
   });
@@ -1298,11 +1298,10 @@ describe('felt audio capability — additive, never hashed', () => {
 });
 
 describe('authority hashes quantized wire state across snapshot, tick, load, and rebase', () => {
-  it('globals.big = -4364405106.016256 with canonicalHashes: true matches client mirror after snapshot and tick with zero staleness', async () => {
+  it('globals.big = -4364405106.016256 with canonicalHashes: true matches client mirror after snapshot, tick, load, and rebase with zero staleness', async () => {
     const { a, b, engine } = dualLoopback(true);
     engine.store.state.globals.big = -4364405106.016256;
 
-    // Transport fidelity helper: verify quantize(projected) matches canonicalStateHash(mirroredState).
     await a.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
     await b.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
 
@@ -1314,12 +1313,31 @@ describe('authority hashes quantized wire state across snapshot, tick, load, and
     expect(a.client.stalenessReports).toEqual([]);
     expect(b.client.stalenessReports).toEqual([]);
 
+    const savedAtBand = await a.client.save();
+
     const step = (await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' })) as {
       canonicalHash?: string;
     };
     expect(step.canonicalHash).toBe(canonicalStateHash(quantize(engine.world)));
     expect(step.canonicalHash).toBe(canonicalStateHash(a.client.mirroredState));
     expect(a.client.stalenessReports).toEqual([]);
+    expect(b.client.stalenessReports).toEqual([]);
+
+    engine.store.state.globals.big = 1;
+    const loaded = await a.client.load(savedAtBand.serialized);
+    expect(loaded.canonicalHash).toBe(canonicalStateHash(quantize(engine.world)));
+    expect(loaded.canonicalHash).toBe(canonicalStateHash(a.client.mirroredState));
+    expect(loaded.canonicalHash).toBe(canonicalStateHash(b.client.mirroredState));
+    expect(loaded.canonicalHash).not.toBe(canonicalStateHash(engine.world));
+    expect(a.client.stalenessReports).toEqual([]);
+    expect(b.client.stalenessReports).toEqual([]);
+
+    engine.store.state.globals.big = 4364405106.016256;
+    b.server.rebaseAfterLoad();
+    const rebaseTick = b.client.receivedTicks.at(-1);
+    expect(rebaseTick?.canonicalHash).toBe(canonicalStateHash(quantize(engine.world)));
+    expect(rebaseTick?.canonicalHash).toBe(canonicalStateHash(b.client.mirroredState));
+    expect(rebaseTick?.canonicalHash).not.toBe(canonicalStateHash(engine.world));
     expect(b.client.stalenessReports).toEqual([]);
   });
 });
@@ -1407,20 +1425,35 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
     await writer.client.snapshot();
 
     engine.store.state.globals['caf\u00e9'] = 1;
-    await expect(observer.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+    await expect(observer.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
 
     const snapReplies = observer.sent.filter((m) => m.id === 2);
     expect(snapReplies).toHaveLength(1);
     expect((snapReplies[0].error as { data?: { code?: string } }).data?.code).toBe('NON_ASCII_KEY');
+    expect((observer.server as unknown as { snapshotSeq: number }).snapshotSeq).toBe(0);
 
     delete engine.store.state.globals['caf\u00e9'];
     // If failed snapshot had flipped hasSnapshotted, this tick would push before baseline; it must stay withheld until clean snapshot.
     await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: false } });
+    expect(observer.sent.filter((m) => m.method === NOTIFICATIONS.TICK)).toHaveLength(0);
+    expect(observer.client.receivedTicks).toHaveLength(0);
     expect(observer.client.mirroredState).toEqual({});
 
-    await observer.client.snapshot();
+    const snap1 = await observer.client.snapshot();
+    expect(snap1.snapshotSeq).toBe(1);
+    expect((observer.server as unknown as { snapshotSeq: number }).snapshotSeq).toBe(1);
     expect((observer.client.mirroredState as WorldState).globals.count).toBe(1);
     expect(observer.client.stalenessReports).toEqual([]);
+
+    engine.store.state.globals['caf\u00e9'] = 2;
+    await expect(observer.client.snapshot({ omitEventLog: true })).rejects.toMatchObject({
+      code: ERROR_CODES.STATE_DIGEST_INVALID,
+    });
+    expect((observer.server as unknown as { snapshotSeq: number }).snapshotSeq).toBe(1);
+
+    delete engine.store.state.globals['caf\u00e9'];
+    const snap2 = await observer.client.snapshot();
+    expect(snap2.snapshotSeq).toBe(2);
   });
 
   it('SUBMIT_ACTION rolls back verb-created invalid state so a retry never double-applies and observer loses no delta', async () => {
@@ -1441,13 +1474,13 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
         verb: 'taint-and-count',
         parameters: { ['bad\u00e9']: true },
       }),
-    ).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+    ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
     expect(engine.world.globals.count).toBe(1);
 
     const reqId = 5;
     await expect(
       writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: true } }),
-    ).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+    ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
 
     const repliesForId = writer.sent.filter((m) => m.id === reqId);
     expect(repliesForId).toHaveLength(1);
@@ -1474,7 +1507,7 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
     engine.store.state.globals['caf\u00e9'] = 1;
     const tickBefore = engine.store.tick;
     const advId = 3;
-    await expect(writer.client.advance(2)).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+    await expect(writer.client.advance(2)).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
 
     expect(writer.sent.filter((m) => m.id === advId)).toHaveLength(1);
     expect(engine.store.tick).toBe(tickBefore);
@@ -1487,7 +1520,7 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
     expect(observer.client.stalenessReports).toEqual([]);
   });
 
-  it('replicatePeerCommit isolates a bad peer without double-answering the writer, blocking healthy peers, or losing delta', async () => {
+  it('replicatePeerCommit isolates a bad peer, escapes ANSI/newlines in stderr, and lets healthy peers continue', async () => {
     const servers: SidecarServer[] = [];
     const engine = createTestEngine({
       modules: [countVerbModule(), brandModule()],
@@ -1529,7 +1562,7 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
         if (injectOnWriterTick && wire.method === NOTIFICATIONS.TICK) {
           injectOnWriterTick = false;
           // Reach state immediately after writer committed its tick, before peer fan-out runs.
-          engine.store.state.globals['caf\u00e9'] = 1;
+          engine.store.state.globals['\x1b[31mcaf\u00e9\n'] = 1;
         }
         writerClient.handle(wire);
       },
@@ -1559,18 +1592,34 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
     await badObserverClient.snapshot();
     await goodObserverClient.snapshot({ collections: ['entities', 'meta'] });
 
-    injectOnWriterTick = true;
-    const actionId = 3;
-    const res = await writerClient.request(METHODS.SUBMIT_ACTION, {
-      verb: 'taint-and-count',
-      parameters: { taint: false },
-    });
-    expect((res as { tick: number }).tick).toBe(1);
-    expect(writerSent.filter((m) => m.id === actionId)).toHaveLength(1);
-    expect((goodObserverClient.mirroredState as WorldState).meta.tick).toBe(1);
-    expect(badObserverClient.receivedTicks).toHaveLength(0);
+    const stderrLines: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderrLines.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      injectOnWriterTick = true;
+      const actionId = 3;
+      const res = await writerClient.request(METHODS.SUBMIT_ACTION, {
+        verb: 'taint-and-count',
+        parameters: { taint: false },
+      });
+      expect((res as { tick: number }).tick).toBe(1);
+      expect(writerSent.filter((m) => m.id === actionId)).toHaveLength(1);
+      expect((goodObserverClient.mirroredState as WorldState).meta.tick).toBe(1);
+      expect(badObserverClient.receivedTicks).toHaveLength(0);
 
-    delete engine.store.state.globals['caf\u00e9'];
+      const peerLine = stderrLines.find((line) => line.startsWith('[sidecar] peer tick skipped:'));
+      expect(peerLine).toBeDefined();
+      expect(peerLine).not.toContain('\x1b');
+      expect(peerLine).toContain('\\u001b');
+      expect(peerLine).toContain('\\n');
+      expect(peerLine!.slice(0, -1)).not.toContain('\n');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    delete engine.store.state.globals['\x1b[31mcaf\u00e9\n'];
     await writerClient.request(METHODS.SUBMIT_ACTION, { verb: 'brand' });
     expect((badObserverClient.mirroredState as WorldState).globals.count).toBe(1);
     expect((badObserverClient.mirroredState as WorldState).entities.hero.tags).toContain('previewed');
@@ -1598,7 +1647,7 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
 
     const loadId = 5;
     await expect(writer.client.load(JSON.stringify(tampered))).rejects.toMatchObject({
-      code: ERROR_CODES.INVALID_PARAMS,
+      code: ERROR_CODES.STATE_DIGEST_INVALID,
     });
 
     const loadReplies = writer.sent.filter((m) => m.id === loadId);
@@ -1615,6 +1664,260 @@ describe('refusal before bookkeeping across snapshot, submitAction, advance, loa
     expect(engine.world.globals.count).toBe(2);
     expect((observer.client.mirroredState as WorldState).globals.count).toBe(2);
     expect(observer.client.stalenessReports).toEqual([]);
+  });
+});
+
+describe('capability-scoped digest validation: non-canonical vs canonicalHashes sessions', () => {
+  const CANONICAL_EDGE_CASES = [
+    {
+      name: 'meta.seed = 1764000000000',
+      expectedCode: 'UNSAFE_SCALED_INTEGER',
+      inject: (state: WorldState) => {
+        state.meta.seed = 1764000000000;
+      },
+      clear: (state: WorldState) => {
+        state.meta.seed = 42;
+      },
+    },
+    {
+      name: 'globals.gold = 1e10',
+      expectedCode: 'UNSAFE_SCALED_INTEGER',
+      inject: (state: WorldState) => {
+        state.globals.gold = 1e10;
+      },
+      clear: (state: WorldState) => {
+        delete state.globals.gold;
+      },
+    },
+    {
+      name: 'key café',
+      expectedCode: 'NON_ASCII_KEY',
+      inject: (state: WorldState) => {
+        state.globals['caf\u00e9'] = 1;
+      },
+      clear: (state: WorldState) => {
+        delete state.globals['caf\u00e9'];
+      },
+    },
+    {
+      name: 'NUL in a string value',
+      expectedCode: 'NUL_CHARACTER',
+      inject: (state: WorldState) => {
+        state.globals.note = 'a\u0000b';
+      },
+      clear: (state: WorldState) => {
+        delete state.globals.note;
+      },
+    },
+    {
+      name: 'lone surrogate in a string value',
+      expectedCode: 'LONE_SURROGATE',
+      inject: (state: WorldState) => {
+        state.globals.note = 'x\ud800y';
+      },
+      clear: (state: WorldState) => {
+        delete state.globals.note;
+      },
+    },
+  ] as const;
+
+  function bootScopedEngine(inject?: (state: WorldState) => void) {
+    const engine = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    engine.dispatcher.registerVerb('inject-edge', (action, world) => {
+      if (action.parameters?.edge === true && inject) {
+        inject(world);
+      }
+      return [{ id: '', tick: action.issuedAtTick, type: 'probe.edge', actorId: 'hero', payload: {} }];
+    });
+    return engine;
+  }
+
+  function attachSession(engine: ReturnType<typeof createTestEngine>, peers: SidecarServer[]) {
+    const sent: RpcMessage[] = [];
+    const box: { server?: SidecarServer; client?: SidecarClient } = {};
+    box.server = new SidecarServer(
+      {
+        engine,
+        engineVersion: '3.8.0-test',
+        onWorldCommitted: () => {
+          for (const peer of peers) {
+            if (peer !== box.server) peer.replicatePeerCommit();
+          }
+        },
+      },
+      (msg) => {
+        const wire = JSON.parse(JSON.stringify(msg)) as RpcMessage;
+        sent.push(wire);
+        box.client!.handle(wire);
+      },
+    );
+    box.client = new SidecarClient((msg) => box.server!.handle(msg));
+    peers.push(box.server);
+    return { server: box.server, client: box.client, sent };
+  }
+
+  for (const edgeCase of CANONICAL_EDGE_CASES) {
+    it(`${edgeCase.name}: succeeds across snapshot/submitAction/advance/load without canonicalHashes; refuses with ${edgeCase.expectedCode} when canonicalHashes is true`, async () => {
+      // 1. Session WITHOUT canonicalHashes: everything succeeds.
+      const ncEngine = bootScopedEngine(edgeCase.inject);
+      edgeCase.inject(ncEngine.world);
+      const ncSave = ncEngine.serialize();
+      const ncPeers: SidecarServer[] = [];
+      const ncSession = attachSession(ncEngine, ncPeers);
+      await ncSession.client.initialize({ notifications: true, hashes: true, canonicalHashes: false });
+      const ncSnap = await ncSession.client.snapshot();
+      expect(ncSnap.canonicalHash).toBeUndefined();
+      await ncSession.client.request(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+      await ncSession.client.advance(1);
+      await ncSession.client.load(ncSave);
+      expect(ncSession.client.stalenessReports).toEqual([]);
+
+      // 2. Session WITH canonicalHashes: snapshot, submitAction, advance, and load each refuse with STATE_DIGEST_INVALID naming the rule.
+      const cEngine = bootScopedEngine(edgeCase.inject);
+      edgeCase.inject(cEngine.world);
+      const dirtySave = cEngine.serialize();
+      edgeCase.clear(cEngine.world);
+
+      const cPeers: SidecarServer[] = [];
+      const cSession = attachSession(cEngine, cPeers);
+      await cSession.client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+      await cSession.client.snapshot();
+
+      await expect(
+        cSession.client.request(METHODS.SUBMIT_ACTION, { verb: 'inject-edge', parameters: { edge: true } }),
+      ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+      const submitErr = cSession.sent.at(-1)?.error as { message: string; data?: { code?: string } };
+      expect(submitErr.message).toContain(edgeCase.expectedCode);
+      expect(submitErr.data?.code).toBe(edgeCase.expectedCode);
+
+      await expect(cSession.client.load(dirtySave)).rejects.toMatchObject({
+        code: ERROR_CODES.STATE_DIGEST_INVALID,
+      });
+      const loadErr = cSession.sent.at(-1)?.error as { message: string; data?: { code?: string } };
+      expect(loadErr.message).toContain(edgeCase.expectedCode);
+      expect(loadErr.data?.code).toBe(edgeCase.expectedCode);
+
+      edgeCase.inject(cEngine.world);
+      await expect(cSession.client.snapshot()).rejects.toMatchObject({
+        code: ERROR_CODES.STATE_DIGEST_INVALID,
+      });
+      const snapErr = cSession.sent.at(-1)?.error as { message: string; data?: { code?: string } };
+      expect(snapErr.message).toContain(edgeCase.expectedCode);
+      expect(snapErr.data?.code).toBe(edgeCase.expectedCode);
+
+      await expect(cSession.client.advance(1)).rejects.toMatchObject({
+        code: ERROR_CODES.STATE_DIGEST_INVALID,
+      });
+      const advErr = cSession.sent.at(-1)?.error as { message: string; data?: { code?: string } };
+      expect(advErr.message).toContain(edgeCase.expectedCode);
+      expect(advErr.data?.code).toBe(edgeCase.expectedCode);
+    });
+  }
+
+  it('always-on rules still refuse non-finite numbers and non-JSON types even when canonicalHashes is false', async () => {
+    const engine = bootScopedEngine();
+    const peers: SidecarServer[] = [];
+    const session = attachSession(engine, peers);
+    await session.client.initialize({ notifications: true, hashes: true, canonicalHashes: false });
+    await session.client.snapshot();
+
+    engine.store.state.globals.bad = Number.NaN;
+    await expect(session.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    expect((session.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('NON_FINITE_NUMBER');
+
+    engine.store.state.globals.bad = Number.POSITIVE_INFINITY;
+    await expect(session.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    expect((session.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('NON_FINITE_NUMBER');
+
+    engine.store.state.globals.bad = 12n as unknown as number;
+    await expect(session.client.advance(1)).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    expect((session.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('UNSUPPORTED_VALUE_TYPE');
+
+    engine.store.state.globals.bad = (() => 1) as unknown as number;
+    await expect(session.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    expect((session.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('UNSUPPORTED_VALUE_TYPE');
+
+    engine.store.state.globals.bad = Symbol('s') as unknown as number;
+    await expect(session.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    expect((session.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('UNSUPPORTED_VALUE_TYPE');
+  });
+
+  it('mixed session: mid-session canonical violation isolates canonical session while non-canonical sessions continue across submitAction, advance, snapshot, and load', async () => {
+    const engine = bootScopedEngine((world) => {
+      world.globals['caf\u00e9'] = 1;
+    });
+    const seedSaveEngine = bootScopedEngine();
+    seedSaveEngine.world.meta.seed = 1764000000000;
+    const highSeedSave = seedSaveEngine.serialize();
+
+    const peers: SidecarServer[] = [];
+    const nonCanon = attachSession(engine, peers);
+    const canonObs = attachSession(engine, peers);
+    const canonWriter = attachSession(engine, peers);
+
+    await nonCanon.client.initialize({ notifications: true, hashes: true, canonicalHashes: false, writes: true });
+    await canonObs.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await canonWriter.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+
+    await nonCanon.client.snapshot();
+    await canonObs.client.snapshot();
+    await canonWriter.client.snapshot();
+
+    const obsTicksBefore = canonObs.client.receivedTicks.length;
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((() => true) as typeof process.stderr.write);
+    try {
+      await nonCanon.client.request(METHODS.SUBMIT_ACTION, {
+        verb: 'inject-edge',
+        parameters: { edge: true },
+      });
+      await nonCanon.client.advance(1);
+      const ncSnapAfterTaint = await nonCanon.client.snapshot();
+      expect(ncSnapAfterTaint.hash).toBe(stateHash(nonCanon.client.mirroredState as WorldState));
+
+      expect(canonObs.client.receivedTicks).toHaveLength(obsTicksBefore);
+
+      await expect(canonObs.client.snapshot()).rejects.toMatchObject({
+        code: ERROR_CODES.STATE_DIGEST_INVALID,
+      });
+      expect((canonObs.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('NON_ASCII_KEY');
+
+      await expect(canonWriter.client.advance(1)).rejects.toMatchObject({
+        code: ERROR_CODES.STATE_DIGEST_INVALID,
+      });
+      expect((canonWriter.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('NON_ASCII_KEY');
+
+      const loadRes = await nonCanon.client.load(highSeedSave);
+      expect(loadRes.hash).toMatch(/^[0-9a-f]{32}$/);
+      expect(canonObs.client.receivedTicks).toHaveLength(obsTicksBefore);
+
+      await nonCanon.client.request(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+      expect(canonObs.client.receivedTicks).toHaveLength(obsTicksBefore);
+
+      await expect(canonObs.client.snapshot()).rejects.toMatchObject({
+        code: ERROR_CODES.STATE_DIGEST_INVALID,
+      });
+      expect((canonObs.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('UNSAFE_SCALED_INTEGER');
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 });
 

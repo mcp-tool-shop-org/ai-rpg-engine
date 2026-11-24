@@ -30,8 +30,9 @@
 // here.
 
 import {
+  sanitizeDiagnosticMessage,
   StateDigestError,
-  validateDigestState,
+  validateJsonState,
   type AIState,
   type Engine,
   type EntityState,
@@ -629,14 +630,43 @@ export function applyContentPack(
     }
   }
 
-  // Snapshot before core writes so a throwing module channel can roll the
-  // world back (F-f7358f53). structuredClone can fail if module state holds
-  // closures; in that case we still catch the throw and skip rollback.
-  let preApply: unknown;
+  // Snapshot before any mutation so a throwing channel or invalid post-apply
+  // JSON state can roll the world back cleanly. If existing world state is not
+  // JSON-valid or cannot be cloned, refuse upfront before applying anything.
+  let preApply: Record<string, unknown>;
   try {
-    preApply = structuredClone(engine.store.state);
-  } catch {
-    preApply = undefined;
+    validateJsonState(engine.store.state);
+    const cloned = structuredClone(engine.store.state);
+    if (!isRecord(cloned)) {
+      throw new Error('world state snapshot must be an object.');
+    }
+    preApply = cloned;
+  } catch (err) {
+    if (err instanceof StateDigestError) {
+      return {
+        ok: false,
+        ...(gateResult ? { gate: gateResult } : {}),
+        applied,
+        dropped,
+        errors: [{ path: err.path, code: err.code, message: err.message }],
+        advisories,
+      };
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      ...(gateResult ? { gate: gateResult } : {}),
+      applied,
+      dropped,
+      errors: [
+        {
+          path: '$',
+          code: 'UNCLONEABLE_WORLD_STATE',
+          message: `engine.store.state could not be cloned before applying content pack (${sanitizeDiagnosticMessage(reason)}). The pack was not applied.`,
+        },
+      ],
+      advisories,
+    };
   }
 
   // --- zones (core-only) ---
@@ -1042,7 +1072,7 @@ export function applyContentPack(
   let digestRefused = false;
   if (!channelThrew) {
     try {
-      validateDigestState(engine.store.state);
+      validateJsonState(engine.store.state);
     } catch (err) {
       if (err instanceof StateDigestError) {
         digestRefused = true;
@@ -1057,7 +1087,7 @@ export function applyContentPack(
     }
   }
 
-  if ((channelThrew || digestRefused) && preApply !== undefined && isRecord(preApply)) {
+  if (channelThrew || digestRefused) {
     const state = engine.store.state as unknown as Record<string, unknown>;
     const restored = structuredClone(preApply) as Record<string, unknown>;
     for (const key of Object.keys(state)) {

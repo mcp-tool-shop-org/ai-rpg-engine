@@ -37,6 +37,9 @@ describe('F-31094245 — GDScript framing fixture matches Node MessageReader', (
     expect(gdClient).toMatch(/SidecarAttachClient/);
     expect(gdClient).toMatch(/apply_patches/);
     expect(gdClient).toMatch(/canonical_state_hash/);
+    expect(gdClient).toMatch(/try_canonical_json/);
+    expect(gdClient).toMatch(/_escape_json_codepoints/);
+    expect(gdClient).not.toMatch(/push_error[^\n]+\n\s*return ""/);
     expect(gdClient).toMatch(new RegExp(`const DIGEST_SPEC_VERSION := ${DIGEST_SPEC_VERSION}\\b`));
     expect(gdClient).not.toMatch(/%\.\*f/);
     expect(gdClient).not.toMatch(/\b_quantize\b/);

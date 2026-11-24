@@ -192,7 +192,7 @@
       "confidence": "full",
       "highWater": 1,
       "name": "content-schema",
-      "qualifyingSourceCommits": 30,
+      "qualifyingSourceCommits": 31,
       "rebaseline": null
     },
     {
@@ -235,7 +235,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "core",
-      "qualifyingSourceCommits": 24,
+      "qualifyingSourceCommits": 25,
       "rebaseline": null
     },
     {
@@ -320,7 +320,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "fixtures",
-      "qualifyingSourceCommits": 1,
+      "qualifyingSourceCommits": 2,
       "rebaseline": null
     },
     {
@@ -508,7 +508,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "scripts",
-      "qualifyingSourceCommits": 8,
+      "qualifyingSourceCommits": 9,
       "rebaseline": null
     },
     {
@@ -526,7 +526,7 @@
       "confidence": "low",
       "highWater": 1,
       "name": "sidecar",
-      "qualifyingSourceCommits": 25,
+      "qualifyingSourceCommits": 26,
       "rebaseline": null
     },
     {
@@ -886,8 +886,8 @@
         "path": ".gitattributes"
       },
       {
-        "commits": 30,
-        "lines": 622,
+        "commits": 31,
+        "lines": 655,
         "path": ".github/workflows/ci.yml"
       },
       {
@@ -916,8 +916,8 @@
         "path": ".signalfire/save.json"
       },
       {
-        "commits": 50,
-        "lines": 2324,
+        "commits": 51,
+        "lines": 2337,
         "path": "CHANGELOG.md"
       },
       {
@@ -986,8 +986,8 @@
         "path": "SHIP_GATE.md"
       },
       {
-        "commits": 11,
-        "lines": 547,
+        "commits": 12,
+        "lines": 568,
         "path": "atlas/README.md"
       },
       {
@@ -996,18 +996,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 11,
-        "lines": 5102,
+        "commits": 12,
+        "lines": 5186,
         "path": "atlas/page.json"
       },
       {
-        "commits": 11,
-        "lines": 43533,
+        "commits": 12,
+        "lines": 43689,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 11,
-        "lines": 105545,
+        "commits": 12,
+        "lines": 105726,
         "path": "atlas/structure.json"
       },
       {
@@ -1071,8 +1071,8 @@
         "path": "docs/composition-model.md"
       },
       {
-        "commits": 3,
-        "lines": 796,
+        "commits": 4,
+        "lines": 828,
         "path": "docs/contract-v1/CONTRACT.md"
       },
       {
@@ -1366,13 +1366,13 @@
         "path": "dogfood/roadmap/swarm-1788226678-0c6b.json"
       },
       {
-        "commits": 1,
-        "lines": 19,
+        "commits": 2,
+        "lines": 26,
         "path": "fixtures/state_digest_vectors.jsonl"
       },
       {
-        "commits": 1,
-        "lines": 79,
+        "commits": 2,
+        "lines": 209,
         "path": "fixtures/verify_state_digest_vectors.gd"
       },
       {
@@ -2221,13 +2221,13 @@
         "path": "packages/content-schema/src/index.ts"
       },
       {
-        "commits": 25,
-        "lines": 2958,
+        "commits": 26,
+        "lines": 2985,
         "path": "packages/content-schema/src/intake.test.ts"
       },
       {
-        "commits": 30,
-        "lines": 3585,
+        "commits": 31,
+        "lines": 3615,
         "path": "packages/content-schema/src/intake.ts"
       },
       {
@@ -2296,8 +2296,8 @@
         "path": "packages/content-schema/src/validate.test.ts"
       },
       {
-        "commits": 21,
-        "lines": 908,
+        "commits": 22,
+        "lines": 909,
         "path": "packages/content-schema/src/validate.ts"
       },
       {
@@ -2371,8 +2371,8 @@
         "path": "packages/core/src/id.ts"
       },
       {
-        "commits": 3,
-        "lines": 3,
+        "commits": 4,
+        "lines": 4,
         "path": "packages/core/src/index.ts"
       },
       {
@@ -2419,6 +2419,11 @@
         "commits": 3,
         "lines": 918,
         "path": "packages/core/src/save-migration.test.ts"
+      },
+      {
+        "commits": 1,
+        "lines": 305,
+        "path": "packages/core/src/state-digest.ts"
       },
       {
         "commits": 2,
@@ -4456,8 +4461,8 @@
         "path": "packages/sidecar/LICENSE"
       },
       {
-        "commits": 15,
-        "lines": 391,
+        "commits": 16,
+        "lines": 395,
         "path": "packages/sidecar/README.md"
       },
       {
@@ -4471,8 +4476,8 @@
         "path": "packages/sidecar/gdscript/framing.gd"
       },
       {
-        "commits": 7,
-        "lines": 1030,
+        "commits": 8,
+        "lines": 1100,
         "path": "packages/sidecar/gdscript/sidecar_client.gd"
       },
       {
@@ -4481,13 +4486,13 @@
         "path": "packages/sidecar/package.json"
       },
       {
-        "commits": 6,
-        "lines": 550,
+        "commits": 7,
+        "lines": 641,
         "path": "packages/sidecar/src/client.test.ts"
       },
       {
-        "commits": 11,
-        "lines": 890,
+        "commits": 12,
+        "lines": 932,
         "path": "packages/sidecar/src/client.ts"
       },
       {
@@ -4511,8 +4516,8 @@
         "path": "packages/sidecar/src/framing.ts"
       },
       {
-        "commits": 5,
-        "lines": 156,
+        "commits": 6,
+        "lines": 182,
         "path": "packages/sidecar/src/gdscript-kit.test.ts"
       },
       {
@@ -4526,23 +4531,23 @@
         "path": "packages/sidecar/src/protocol.ts"
       },
       {
-        "commits": 6,
-        "lines": 294,
+        "commits": 7,
+        "lines": 430,
         "path": "packages/sidecar/src/serializer.test.ts"
       },
       {
-        "commits": 12,
-        "lines": 848,
+        "commits": 13,
+        "lines": 1031,
         "path": "packages/sidecar/src/serializer.ts"
       },
       {
-        "commits": 27,
-        "lines": 2581,
+        "commits": 28,
+        "lines": 2904,
         "path": "packages/sidecar/src/server.test.ts"
       },
       {
-        "commits": 28,
-        "lines": 2654,
+        "commits": 29,
+        "lines": 2922,
         "path": "packages/sidecar/src/server.ts"
       },
       {
@@ -4556,8 +4561,8 @@
         "path": "packages/sidecar/src/socket.ts"
       },
       {
-        "commits": 1,
-        "lines": 70,
+        "commits": 2,
+        "lines": 119,
         "path": "packages/sidecar/src/state-digest-vectors.test.ts"
       },
       {
@@ -5906,8 +5911,8 @@
         "path": "scripts/check-packaging.mjs"
       },
       {
-        "commits": 11,
-        "lines": 783,
+        "commits": 12,
+        "lines": 792,
         "path": "scripts/gates.test.ts"
       },
       {
@@ -6211,24 +6216,17 @@
     "level": "full",
     "reason": "at least 30 qualifying commits, and at least 20 source files reach 10 revisions"
   },
-  "generatedAt": "2026-11-24T10:50:57.357Z",
+  "generatedAt": "2026-11-24T11:46:59.864Z",
   "generatedFrom": {
-    "commit": "faade5449afc222ecea8ffbb028df996e25d55da"
+    "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
-      "b": "README.md",
-      "either": 28,
-      "shared": 14,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
       "b": "package.json",
-      "either": 26,
+      "either": 27,
       "shared": 14,
-      "strength": 0.538462
+      "strength": 0.518519
     },
     {
       "a": "README.es.md",
@@ -7857,23 +7855,16 @@
     {
       "a": "packages/content-schema/src/gate.ts",
       "b": "packages/content-schema/src/intake.ts",
-      "either": 20,
+      "either": 21,
       "shared": 11,
-      "strength": 0.55
+      "strength": 0.52381
     },
     {
       "a": "packages/content-schema/src/intake.test.ts",
       "b": "packages/content-schema/src/intake.ts",
-      "either": 21,
-      "shared": 13,
-      "strength": 0.619048
-    },
-    {
-      "a": "packages/content-schema/src/intake.test.ts",
-      "b": "packages/content-schema/src/refs.ts",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
+      "either": 22,
+      "shared": 14,
+      "strength": 0.636364
     },
     {
       "a": "packages/core/package.json",
@@ -8872,23 +8863,23 @@
     {
       "a": "packages/sidecar/src/protocol.ts",
       "b": "packages/sidecar/src/server.test.ts",
+      "either": 19,
+      "shared": 10,
+      "strength": 0.526316
+    },
+    {
+      "a": "packages/sidecar/src/protocol.ts",
+      "b": "packages/sidecar/src/server.ts",
       "either": 18,
       "shared": 10,
       "strength": 0.555556
     },
     {
-      "a": "packages/sidecar/src/protocol.ts",
-      "b": "packages/sidecar/src/server.ts",
-      "either": 17,
-      "shared": 10,
-      "strength": 0.588235
-    },
-    {
       "a": "packages/sidecar/src/server.test.ts",
       "b": "packages/sidecar/src/server.ts",
-      "either": 22,
-      "shared": 11,
-      "strength": 0.5
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
     },
     {
       "a": "packages/soundpack-core/package.json",
@@ -9461,16 +9452,16 @@
     "floor": "strong",
     "floorHeld": false,
     "floorTrigger": null,
-    "headDate": "2026-11-24T03:39:30-05:00",
+    "headDate": "2026-11-24T05:54:07-05:00",
     "inScopeFiles": 1395,
     "pinnedStart": null,
     "priorFloor": "strong",
-    "qualifyingCommits": 431,
+    "qualifyingCommits": 432,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 10,
-    "since": "2026-05-28T08:39:30.000Z",
+    "since": "2026-05-28T10:54:07.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",

@@ -322,7 +322,18 @@ func _note_position(tick_n: int, hash: String) -> void:
 
 
 func _check_canonical(tick_n: int, expected: String) -> void:
-	var actual := canonical_state_hash(mirrored_state)
+	var res := try_canonical_state_hash(mirrored_state)
+	if not bool(res.get("ok", false)):
+		stale.emit({
+			"tick": tick_n,
+			"expected": expected,
+			"actual": "",
+			"kind": "canonical_error",
+			"code": str(res.get("code", "CANONICAL_ERROR")),
+			"message": str(res.get("message", "canonical hashing failed")),
+		})
+		return
+	var actual := str(res["hash"])
 	if actual != expected:
 		stale.emit({ "tick": tick_n, "expected": expected, "actual": actual, "kind": "canonical" })
 
@@ -391,21 +402,53 @@ static func _resolve_parent(root: Variant, path: Array) -> Variant:
 	return node
 
 
+static func _fail_canonical(err: Variant, code: String, msg: String) -> Variant:
+	if typeof(err) == TYPE_DICTIONARY:
+		var err_dict := err as Dictionary
+		if not err_dict.has("ok") or bool(err_dict.get("ok", true)):
+			err_dict["ok"] = false
+			err_dict["code"] = code
+			err_dict["message"] = msg
+	push_error("SidecarAttachClient: " + msg)
+	return null
+
+
+static func try_canonical_json(value: Variant) -> Dictionary:
+	var err := { "ok": true }
+	var out: Variant = _write_canonical(value, err)
+	if out == null or not bool(err.get("ok", true)):
+		return {
+			"ok": false,
+			"code": str(err.get("code", "CANONICAL_ERROR")),
+			"message": str(err.get("message", "canonical JSON serialization failed")),
+		}
+	return { "ok": true, "json": str(out) }
+
+
 static func canonical_json(value: Variant) -> String:
-	return _write_canonical(value)
+	var res := try_canonical_json(value)
+	return str(res["json"]) if bool(res.get("ok", false)) else ""
+
+
+static func try_canonical_state_hash(state: Variant) -> Dictionary:
+	var res := try_canonical_json(state)
+	if not bool(res.get("ok", false)):
+		return res
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(str(res["json"]).to_utf8_buffer())
+	return { "ok": true, "hash": ctx.finish().hex_encode().substr(0, 32) }
 
 
 static func canonical_state_hash(state: Variant) -> String:
-	var ctx := HashingContext.new()
-	ctx.start(HashingContext.HASH_SHA256)
-	ctx.update(canonical_json(state).to_utf8_buffer())
-	return ctx.finish().hex_encode().substr(0, 32)
+	var res := try_canonical_state_hash(state)
+	return str(res["hash"]) if bool(res.get("ok", false)) else ""
 
 
-static func _escape_json_string(s: String) -> String:
+static func _escape_json_codepoints(cps: Array, err: Variant = null) -> Variant:
 	var out := "\""
-	for i in range(s.length()):
-		var cp := s.unicode_at(i)
+	for cp_v in cps:
+		var cp := int(cp_v)
 		match cp:
 			0x22:
 				out += "\\\""
@@ -422,45 +465,76 @@ static func _escape_json_string(s: String) -> String:
 			0x09:
 				out += "\\t"
 			_:
-				if cp < 0x20:
-					out += "\\u%04x" % cp
+				if cp == 0x0000:
+					return _fail_canonical(err, "NUL_CHARACTER", "NUL/lone-surrogate rule (NUL_CHARACTER): U+0000 is invalid in canonical JSON")
+				elif cp < 0 or cp > 0x10FFFF:
+					return _fail_canonical(err, "INVALID_CODEPOINT", "invalid Unicode scalar %d in canonical JSON" % cp)
 				elif cp >= 0xD800 and cp <= 0xDFFF:
-					push_error("SidecarAttachClient: lone surrogate U+%04X is invalid in canonical JSON" % cp)
-					return ""
+					return _fail_canonical(err, "LONE_SURROGATE", "NUL/lone-surrogate rule (LONE_SURROGATE): lone surrogate U+%04X is invalid in canonical JSON" % cp)
+				elif cp < 0x20:
+					out += "\\u%04x" % cp
 				else:
 					out += char(cp)
 	out += "\""
 	return out
 
 
-static func _write_canonical(value: Variant) -> String:
+static func _escape_json_string(s: String, err: Variant = null) -> Variant:
+	var cps: Array = []
+	for i in range(s.length()):
+		cps.append(s.unicode_at(i))
+	return _escape_json_codepoints(cps, err)
+
+
+static func _write_canonical(value: Variant, err: Variant = null) -> Variant:
 	match typeof(value):
 		TYPE_NIL:
 			return "null"
 		TYPE_BOOL:
 			return "true" if value else "false"
 		TYPE_INT, TYPE_FLOAT:
-			var scaled: float = float(value) * 1e6
-			var rounded: int = int(round(scaled))
+			var f := float(value)
+			if is_nan(f) or is_inf(f):
+				return _fail_canonical(err, "NON_FINITE_NUMBER", "JSON-number rule (NON_FINITE_NUMBER): non-finite number is invalid in canonical JSON")
+			var scaled: float = f * 1e6
+			if is_nan(scaled) or is_inf(scaled) or absf(scaled) > 9007199254740991.0 or absf(roundf(scaled)) > 9007199254740991.0:
+				return _fail_canonical(err, "UNSAFE_SCALED_INTEGER", "integer-range rule (UNSAFE_SCALED_INTEGER): scaled number exceeds safe integer bound (2^53 - 1)")
+			var rounded: int = int(roundf(scaled))
 			return "0" if rounded == 0 else str(rounded)
 		TYPE_STRING:
-			return _escape_json_string(value)
+			return _escape_json_string(value, err)
 		TYPE_ARRAY:
 			var parts: PackedStringArray = PackedStringArray()
 			for item in value:
-				parts.append(_write_canonical(item))
+				var written: Variant = _write_canonical(item, err)
+				if written == null:
+					return null
+				parts.append(str(written))
 			return "[" + ",".join(parts) + "]"
 		TYPE_DICTIONARY:
 			var pairs: Array = []
 			for k in (value as Dictionary).keys():
-				pairs.append([str(k), k])
+				var k_str := str(k)
+				for ki in range(k_str.length()):
+					var kcp := k_str.unicode_at(ki)
+					if kcp == 0x0000:
+						return _fail_canonical(err, "NUL_CHARACTER", "ASCII-key rule (NUL_CHARACTER): object key contains U+0000")
+					if kcp > 0x7F:
+						return _fail_canonical(err, "NON_ASCII_KEY", "ASCII-key rule (NON_ASCII_KEY): object key contains non-ASCII character U+%04X" % kcp)
+				pairs.append([k_str, k])
 			pairs.sort_custom(func(a: Array, b: Array) -> bool: return String(a[0]) < String(b[0]))
 			var parts: PackedStringArray = PackedStringArray()
 			for pair in pairs:
 				var k_str: String = pair[0]
 				var orig_k: Variant = pair[1]
 				var v: Variant = (value as Dictionary)[orig_k]
-				parts.append(_escape_json_string(k_str) + ":" + _write_canonical(v))
+				var ek: Variant = _escape_json_string(k_str, err)
+				if ek == null:
+					return null
+				var ev: Variant = _write_canonical(v, err)
+				if ev == null:
+					return null
+				parts.append(str(ek) + ":" + str(ev))
 			return "{" + ",".join(parts) + "}"
 		_:
-			return "null"
+			return _fail_canonical(err, "UNSUPPORTED_VALUE_TYPE", "JSON-value rule (UNSUPPORTED_VALUE_TYPE): unsupported Variant type %d in canonical JSON" % typeof(value))

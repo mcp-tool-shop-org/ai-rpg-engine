@@ -293,8 +293,8 @@ jobs:
             exit 1
           fi
           VECTOR_LINES=$(grep -cve '^[[:space:]]*$' fixtures/state_digest_vectors.jsonl)
-          EXPECTED_COUNT=$((VECTOR_LINES + 4))
-          grep -Fq "DIGEST_VECTORS_OK count=${EXPECTED_COUNT}" /tmp/godot-digest.log || {
+          EXPECTED_COUNT=$((VECTOR_LINES + 5))
+          grep -Fxq "DIGEST_VECTORS_OK count=${EXPECTED_COUNT}" /tmp/godot-digest.log || {
             echo "::error::Missing DIGEST_VECTORS_OK count=${EXPECTED_COUNT} verdict in Godot output"
             exit 1
           }

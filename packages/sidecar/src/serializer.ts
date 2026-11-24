@@ -13,14 +13,18 @@ import { createHash } from 'node:crypto';
 import type { SnapshotView, StatePatch, WireEvent } from './protocol.js';
 import {
   assertAsciiKey,
+  assertJsonRuntimeValue,
   assertValidDigestString,
   DIGEST_SCALE,
   escapeDiagnosticText,
   roundHalfAwayFromZero,
+  sanitizeDiagnosticMessage,
   scaleDigestNumber,
   StateDigestError,
   validateDigestState,
+  validateJsonState,
   WIRE_PRECISION,
+  type DigestValidationOptions,
   type ResolvedEvent,
   type StateDigestErrorCode,
   type WorldState,
@@ -31,8 +35,11 @@ export {
   DIGEST_SCALE,
   StateDigestError,
   validateDigestState,
+  validateJsonState,
   escapeDiagnosticText,
+  sanitizeDiagnosticMessage,
   roundHalfAwayFromZero,
+  type DigestValidationOptions,
   type StateDigestErrorCode,
 };
 
@@ -273,15 +280,7 @@ function writeCanonical(value: unknown, path: string): string {
   if (value === null || value === undefined) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
-  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
-    const kind = typeof value;
-    throw new StateDigestError(
-      'UNSUPPORTED_VALUE_TYPE',
-      path,
-      `unsupported non-JSON value of type ${kind} at ${escapeDiagnosticText(path, 96)}`,
-      { valueType: kind },
-    );
-  }
+  assertJsonRuntimeValue(value, path);
   if (typeof value === 'number') {
     return String(scaleDigestNumber(value, path));
   }

@@ -304,12 +304,9 @@ index (mapping sparse holes to `null`), sorting ASCII keys lexicographically,
 escaping control characters and quotes/backslashes consistently (ECMA-262 / RFC 8785),
 and scaling every finite number by `1e6` rounded half away from zero to plain
 decimal integer digits (`-0` writes as `0`, bypassing float-to-text formatting).
-`validateDigestState` enforces these bounds at state-accepting entry points
-(`snapshot`, `submitAction`, `advance`, `load`, and `applyContentPack`), refusing
-non-finite numbers, scaled values beyond `2^53 - 1`, non-ASCII object keys,
-`U+0000`, lone surrogates, and non-JSON runtime values (`function`, `symbol`,
-`bigint`) with `StateDigestError` before mutating session bookkeeping or world
-state, with echoed key/path/value text escaped and capped.
+`validateDigestState` splits validation so 3.x minor compatibility holds for hosts that never request `canonicalHashes`:
+- **Always-on JSON rules (`validateJsonState` / `{ canonical: false }`, enforced on every session and in `applyContentPack`):** refuse only non-finite numbers (`NON_FINITE_NUMBER`) and non-JSON runtime values (`function`, `symbol`, `bigint` -> `UNSUPPORTED_VALUE_TYPE`), plus upfront `UNCLONEABLE_WORLD_STATE` refusal in `applyContentPack` before applying any content when `engine.store.state` fails `structuredClone`.
+- **`canonicalHashes`-only rules (`{ canonical: true }`, enforced only in sessions that negotiated `capabilities.canonicalHashes: true`, and in `canonicalJson`/`canonicalStateHash`):** also refuse scaled values beyond `±9,007,199,254` (`|v * 1e6| > 2^53 - 1`, `UNSAFE_SCALED_INTEGER`), non-ASCII object keys (`NON_ASCII_KEY`), `U+0000` (`NUL_CHARACTER`), and lone UTF-16 surrogates (`LONE_SURROGATE`), using the unified JSON-RPC refusal code `ERROR_CODES.STATE_DIGEST_INVALID` (`-32006`) across `snapshot`, `submitAction`, `advance`, `preview`, and `load` with `error.data.code` and `error.message` naming the rule before mutating session bookkeeping or world state (with echoed key/path/value text control-escaped and capped). Mid-session state changes that break a canonical rule refuse only canonical sessions' hashes/snapshots (or isolate incompatible peer ticks/rebases without pushing silent unhashable state) while non-canonical sessions continue working.
 In `@ai-rpg-engine/core`, the full-world helper is named `stateHash` (with
 `worldStateHash` as an alias for `stateHash`), while `canonicalStateHash` remains
 a `@deprecated` re-export of `stateHash`.

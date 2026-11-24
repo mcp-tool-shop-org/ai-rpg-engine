@@ -14,6 +14,7 @@ import {
   StateDigestError,
   stateHash,
   validateDigestState,
+  validateJsonState,
 } from './serializer.js';
 
 function logOf(n: number): { id: string; tick: number; type: string }[] {
@@ -236,6 +237,27 @@ describe('canonicalStateHash — digest formatting, validation, and JS stateHash
         const e = err as StateDigestError;
         expect(e.code).toBe('NON_ASCII_KEY');
       }
+    }
+  });
+
+  it('validateJsonState (canonical: false) allows canonical-only edge states while refusing non-finite numbers and non-JSON types', () => {
+    const allowedOnlyNonCanonical = {
+      meta: { seed: 1764000000000 },
+      globals: {
+        gold: 1e10,
+        ['caf\u00e9']: 1,
+        nulText: 'a\u0000b',
+        surrogateText: 'x\ud800y',
+      },
+      arr: [1e12, { ['\u03bb']: 'ok' }],
+    };
+    expect(() => validateJsonState(allowedOnlyNonCanonical)).not.toThrow();
+
+    for (const nonFinite of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => validateJsonState({ hp: nonFinite })).toThrowError(StateDigestError);
+    }
+    for (const unsupported of [() => 1, Symbol('s'), 10n]) {
+      expect(() => validateJsonState({ v: unsupported })).toThrowError(StateDigestError);
     }
   });
 

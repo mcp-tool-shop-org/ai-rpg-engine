@@ -1,15 +1,14 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-24 from commit faade54 by Atlas 1.26.0.
+Mapped at 2026-11-24 from commit 3c05846 by Atlas 1.26.0.
 
 ## What this is
 
 40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-11-24 (03342f5)
+## What changed since 2026-11-24 (faade54)
 
-- fixtures/verify_state_digest_vectors.gd is now also read by packages/sidecar/src/gdscript-kit.test.ts.
-- 1 file added and 20 changed content, across 8 parts.
+Nothing structural changed since 2026-11-24; 16 files changed content.
 
 ## What comes in
 

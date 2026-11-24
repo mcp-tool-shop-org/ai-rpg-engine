@@ -8,7 +8,7 @@ extends SceneTree
 const SidecarClient := preload("res://sidecar_client.gd")
 const Framing := preload("res://framing.gd")
 
-const NATIVE_CHECK_COUNT := 4
+const NATIVE_CHECK_COUNT := 5
 
 
 func _init() -> void:
@@ -178,6 +178,47 @@ func _init() -> void:
 		printerr(
 			"FAIL native_version_mismatch_behavior canonical=%s warnings=%d stale=%s"
 			% [str(client_mismatch.canonical_hashes), client_mismatch.digest_version_warnings.size(), str(stale_mismatch)]
+		)
+		failed += 1
+	else:
+		passed += 1
+
+	# Native check 5: _escape_json_codepoints / try_canonical_json fail clearly on surrogates & invalid canonical state (never "").
+	var sur_high_err := { "ok": true }
+	var sur_high: Variant = SidecarClient._escape_json_codepoints([0xD800], sur_high_err)
+	var sur_low_err := { "ok": true }
+	var sur_low: Variant = SidecarClient._escape_json_codepoints([0x61, 0xDFFF, 0x62], sur_low_err)
+	var nan_res: Dictionary = SidecarClient.try_canonical_json({ "a": 1, "bad": NAN })
+	var ascii_dict := {}
+	ascii_dict["caf" + String.chr(0x00E9)] = 1
+	var ascii_res: Dictionary = SidecarClient.try_canonical_json(ascii_dict)
+	var big_res: Dictionary = SidecarClient.try_canonical_json({ "big": 1e10 })
+	var client_err := SidecarClient.new()
+	var stale_err: Array = []
+	client_err.stale.connect(func(report: Dictionary) -> void: stale_err.append(report))
+	client_err.mirrored_state = { "bad": NAN }
+	client_err._check_canonical(1, "00000000000000000000000000000000")
+	var fail_clearly_ok := (
+		sur_high == null
+		and sur_low == null
+		and str(sur_high_err.get("code", "")) == "LONE_SURROGATE"
+		and str(sur_low_err.get("code", "")) == "LONE_SURROGATE"
+		and not bool(nan_res.get("ok", true))
+		and str(nan_res.get("code", "")) == "NON_FINITE_NUMBER"
+		and SidecarClient.canonical_json({ "bad": NAN }) == ""
+		and SidecarClient.canonical_state_hash({ "bad": NAN }) == ""
+		and not bool(ascii_res.get("ok", true))
+		and str(ascii_res.get("code", "")) == "NON_ASCII_KEY"
+		and not bool(big_res.get("ok", true))
+		and str(big_res.get("code", "")) == "UNSAFE_SCALED_INTEGER"
+		and stale_err.size() == 1
+		and str(stale_err[0].get("kind", "")) == "canonical_error"
+		and str(stale_err[0].get("code", "")) == "NON_FINITE_NUMBER"
+	)
+	if not fail_clearly_ok:
+		printerr(
+			"FAIL native_canonical_error_propagation sur_high=%s sur_low=%s nan=%s ascii=%s stale=%s"
+			% [str(sur_high), str(sur_low), str(nan_res), str(ascii_res), str(stale_err)]
 		)
 		failed += 1
 	else:

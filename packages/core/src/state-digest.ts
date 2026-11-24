@@ -16,6 +16,16 @@ export type StateDigestErrorCode =
   | 'NUL_CHARACTER'
   | 'UNSUPPORTED_VALUE_TYPE';
 
+export type DigestValidationOptions = {
+  /**
+   * Enforce canonical cross-language digest rules (`UNSAFE_SCALED_INTEGER`,
+   * `NON_ASCII_KEY`, `NUL_CHARACTER`, `LONE_SURROGATE`). When `false`, only
+   * JSON-representability rules (`NON_FINITE_NUMBER`, `UNSUPPORTED_VALUE_TYPE`) run.
+   * Defaults to `true`.
+   */
+  canonical?: boolean;
+};
+
 const DEFAULT_DIAGNOSTIC_MAX_LEN = 64;
 
 function isControlOrLoneSurrogateCode(code: number, nextCode: number | undefined): {
@@ -106,7 +116,7 @@ export function escapeDiagnosticText(raw: string, maxLen = DEFAULT_DIAGNOSTIC_MA
 }
 
 /** Escape only C0/DEL/C1 control characters and lone surrogates inside a preformatted message. */
-function sanitizeDiagnosticMessage(raw: string, maxLen = 256): string {
+export function sanitizeDiagnosticMessage(raw: string, maxLen = 256): string {
   return sanitizeBoundedText(raw, maxLen, false);
 }
 
@@ -172,7 +182,7 @@ export function assertValidDigestString(str: string, path: string): void {
       throw new StateDigestError(
         'NUL_CHARACTER',
         path,
-        `string at ${safePath} contains U+0000 (NUL) at index ${i}, which cannot round-trip across UTF-32/C-string hosts`,
+        `NUL/lone-surrogate rule (NUL_CHARACTER): string at ${safePath} contains U+0000 at index ${i}, which cannot round-trip across UTF-32/C-string hosts`,
         { index: i, codeUnit: 'U+0000' },
       );
     }
@@ -186,7 +196,7 @@ export function assertValidDigestString(str: string, path: string): void {
       throw new StateDigestError(
         'LONE_SURROGATE',
         path,
-        `string at ${safePath} contains lone high surrogate U+${hex} at index ${i} (RFC 8785 §3.2.2.2)`,
+        `NUL/lone-surrogate rule (LONE_SURROGATE): string at ${safePath} contains lone high surrogate U+${hex} at index ${i} (RFC 8785 §3.2.2.2)`,
         { index: i, codeUnit: `U+${hex}` },
       );
     }
@@ -195,7 +205,7 @@ export function assertValidDigestString(str: string, path: string): void {
       throw new StateDigestError(
         'LONE_SURROGATE',
         path,
-        `string at ${safePath} contains lone low surrogate U+${hex} at index ${i} (RFC 8785 §3.2.2.2)`,
+        `NUL/lone-surrogate rule (LONE_SURROGATE): string at ${safePath} contains lone low surrogate U+${hex} at index ${i} (RFC 8785 §3.2.2.2)`,
         { index: i, codeUnit: `U+${hex}` },
       );
     }
@@ -213,7 +223,7 @@ export function assertAsciiKey(key: string, parentPath: string): void {
       throw new StateDigestError(
         'NUL_CHARACTER',
         fullPath,
-        `object key "${safeKey}" at ${safeParent} contains U+0000 (NUL) at index ${i}`,
+        `ASCII-key rule (NUL_CHARACTER): object key "${safeKey}" at ${safeParent} contains U+0000 at index ${i}`,
         { key, index: i, codeUnit: 'U+0000' },
       );
     }
@@ -222,24 +232,44 @@ export function assertAsciiKey(key: string, parentPath: string): void {
       throw new StateDigestError(
         'NON_ASCII_KEY',
         fullPath,
-        `object key "${safeKey}" at ${safeParent} contains non-ASCII character U+${hex}`,
+        `ASCII-key rule (NON_ASCII_KEY): object key "${safeKey}" at ${safeParent} contains non-ASCII character U+${hex}`,
         { key, codePoint: code },
       );
     }
   }
 }
 
-/** Multiply `value` by `1e6` in IEEE-754 binary64, verify safe-integer magnitude, and round half-away-from-zero. */
-export function scaleDigestNumber(value: number, path: string): number {
-  const safePath = escapeDiagnosticText(path, 96);
+/** Reject `function`, `symbol`, and `bigint` values that can never be serialized to JSON state. */
+export function assertJsonRuntimeValue(value: unknown, path: string): void {
+  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+    const safePath = escapeDiagnosticText(path, 96);
+    const kind = typeof value;
+    throw new StateDigestError(
+      'UNSUPPORTED_VALUE_TYPE',
+      path,
+      `JSON-value rule (UNSUPPORTED_VALUE_TYPE): unsupported non-JSON value of type ${kind} at ${safePath}`,
+      { valueType: kind },
+    );
+  }
+}
+
+/** Reject `NaN` and `±Infinity`, which are valid JS numbers but never valid JSON state. */
+export function assertFiniteJsonNumber(value: number, path: string): void {
   if (!Number.isFinite(value)) {
+    const safePath = escapeDiagnosticText(path, 96);
     throw new StateDigestError(
       'NON_FINITE_NUMBER',
       path,
-      `non-finite number (${String(value)}) at ${safePath} is not valid in canonical digest state`,
+      `JSON-number rule (NON_FINITE_NUMBER): non-finite number (${String(value)}) at ${safePath} is not valid JSON state`,
       { value: String(value) },
     );
   }
+}
+
+/** Multiply `value` by `1e6` in IEEE-754 binary64, verify safe-integer magnitude, and round half-away-from-zero. */
+export function scaleDigestNumber(value: number, path: string): number {
+  const safePath = escapeDiagnosticText(path, 96);
+  assertFiniteJsonNumber(value, path);
   const scaled = value * DIGEST_SCALE;
   const rounded = roundHalfAwayFromZero(scaled);
   if (
@@ -250,7 +280,7 @@ export function scaleDigestNumber(value: number, path: string): number {
     throw new StateDigestError(
       'UNSAFE_SCALED_INTEGER',
       path,
-      `scaled number ${value} * 1e6 = ${scaled} at ${safePath} exceeds safe integer bound (2^53 - 1)`,
+      `integer-range rule (UNSAFE_SCALED_INTEGER): scaled number ${value} * 1e6 = ${scaled} at ${safePath} exceeds safe integer bound (±9,007,199,254 / 2^53 - 1)`,
       { value, scaled, rounded },
     );
   }
@@ -258,48 +288,58 @@ export function scaleDigestNumber(value: number, path: string): number {
 }
 
 /**
- * Validate a state tree for cross-language canonical digest compatibility:
- * - rejects non-finite numbers and numbers with |v * 1e6| > 2^53 - 1;
- * - rejects non-ASCII object keys (> 0x7f) and NUL characters (`U+0000`);
- * - rejects lone UTF-16 surrogates (RFC 8785 §3.2.2.2);
- * - rejects non-JSON runtime types (`function`, `symbol`, `bigint`);
+ * Validate a state tree for JSON representability and, when `options.canonical !== false`,
+ * cross-language canonical digest compatibility:
+ * - always rejects non-finite numbers (`NON_FINITE_NUMBER`) and non-JSON runtime values
+ *   (`function`, `symbol`, `bigint` -> `UNSUPPORTED_VALUE_TYPE`);
+ * - when `canonical !== false` (default), also enforces the scaled integer-range rule
+ *   (`|v * 1e6| <= 2^53 - 1`), ASCII-key rule (`> 0x7f` / `U+0000`), and NUL/lone-surrogate rule;
  * - walks arrays by index so sparse holes map cleanly to `null` on wire.
  */
-export function validateDigestState(value: unknown, path = '$'): void {
+export function validateDigestState(
+  value: unknown,
+  path = '$',
+  options?: DigestValidationOptions,
+): void {
   if (value === null || value === undefined || typeof value === 'boolean') {
     return;
   }
-  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
-    const safePath = escapeDiagnosticText(path, 96);
-    const kind = typeof value;
-    throw new StateDigestError(
-      'UNSUPPORTED_VALUE_TYPE',
-      path,
-      `unsupported non-JSON value of type ${kind} at ${safePath}`,
-      { valueType: kind },
-    );
-  }
+  assertJsonRuntimeValue(value, path);
+  const canonical = options?.canonical !== false;
   if (typeof value === 'number') {
-    scaleDigestNumber(value, path);
+    if (canonical) {
+      scaleDigestNumber(value, path);
+    } else {
+      assertFiniteJsonNumber(value, path);
+    }
     return;
   }
   if (typeof value === 'string') {
-    assertValidDigestString(value, path);
+    if (canonical) {
+      assertValidDigestString(value, path);
+    }
     return;
   }
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
-      validateDigestState(value[i], `${path}[${i}]`);
+      validateDigestState(value[i], `${path}[${i}]`, options);
     }
     return;
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     for (const k of Object.keys(obj)) {
-      assertAsciiKey(k, path);
+      if (canonical) {
+        assertAsciiKey(k, path);
+      }
       const v = obj[k];
       if (v === undefined) continue;
-      validateDigestState(v, `${path}.${k}`);
+      validateDigestState(v, `${path}.${k}`, options);
     }
   }
+}
+
+/** Always-on validation helper: refuses only non-finite numbers and non-JSON runtime types (`function`, `symbol`, `bigint`). */
+export function validateJsonState(value: unknown, path = '$'): void {
+  validateDigestState(value, path, { canonical: false });
 }

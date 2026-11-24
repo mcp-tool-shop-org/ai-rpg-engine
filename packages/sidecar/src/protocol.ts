@@ -298,6 +298,12 @@ export const ERROR_CODES = {
    * not written — a peer that received it could not parse it.
    */
   SNAPSHOT_TOO_LARGE: -32005,
+  /**
+   * World state or parameters violated always-on JSON rules or (for sessions
+   * that negotiated `canonicalHashes`) canonical digest rules (`error.data.code`
+   * names the rule).
+   */
+  STATE_DIGEST_INVALID: -32006,
 } as const;
 
 // --- The reserved graveyard ----------------------------------------------

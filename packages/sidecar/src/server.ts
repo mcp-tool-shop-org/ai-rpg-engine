@@ -51,6 +51,7 @@ import {
   diffState,
   projectState,
   quantize,
+  sanitizeDiagnosticMessage,
   snapshotDelta,
   stateHash,
   StateDigestError,
@@ -136,7 +137,7 @@ function buildProjectedDigest(
   nextLastState: WorldState;
 } {
   const projected = projectState(world, view);
-  validateDigestState(projected);
+  validateDigestState(projected, '$', { canonical: includeCanonical });
   const quantized = quantize(projected);
   const hash = stateHash(quantized as WorldState);
   const canonicalHash = includeCanonical ? canonicalStateHash(quantized) : undefined;
@@ -357,7 +358,7 @@ export class SidecarServer {
     } catch (err) {
       if (hasId) {
         if (err instanceof StateDigestError) {
-          this.fail(id, ERROR_CODES.INTERNAL_ERROR, err.message, err.toJSON());
+          this.fail(id, ERROR_CODES.STATE_DIGEST_INVALID, err.message, err.toJSON());
         } else {
           this.fail(id, ERROR_CODES.INTERNAL_ERROR, err instanceof Error ? err.message : String(err));
         }
@@ -448,7 +449,9 @@ export class SidecarServer {
           return;
         }
         if (parsed.options.parameters !== undefined) {
-          validateDigestState(parsed.options.parameters, '$.parameters');
+          validateDigestState(parsed.options.parameters, '$.parameters', {
+            canonical: this.clientCapabilities.canonicalHashes === true,
+          });
         }
         const result = this.runWorldMutation(() =>
           parsed.actorId && typeof this.engine.submitActionAs === 'function'
@@ -489,7 +492,9 @@ export class SidecarServer {
           return;
         }
         if (parsed.options.parameters !== undefined) {
-          validateDigestState(parsed.options.parameters, '$.parameters');
+          validateDigestState(parsed.options.parameters, '$.parameters', {
+            canonical: this.clientCapabilities.canonicalHashes === true,
+          });
         }
         if (hasId) this.reply(id, this.preview(parsed.verb, params));
         return;
@@ -590,23 +595,38 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"serialized" must be a non-empty string.');
           return;
         }
+        const includeCanonical = this.clientCapabilities.canonicalHashes === true;
         let loaded: Engine;
-        let preparedPeers: Array<{ peer: SidecarServer; prepared: PreparedRebase }>;
         let selfDigest: PreparedRebase;
+        let peerPlans: Array<
+          | { kind: 'rebase'; peer: SidecarServer; prepared: PreparedRebase }
+          | { kind: 'skip'; peer: SidecarServer; err: StateDigestError }
+        >;
         try {
           loaded = this.deserializeCandidate(params.serialized);
-          validateDigestState(loaded.store.state);
-          preparedPeers = [...this.gate.servers].map((peer) => ({
-            peer,
-            prepared: peer.prepareRebase(loaded.world as WorldState, loaded.store.tick),
-          }));
-          const selfEntry = preparedPeers.find((entry) => entry.peer === this);
-          selfDigest =
-            selfEntry?.prepared ?? this.prepareRebase(loaded.world as WorldState, loaded.store.tick);
+          validateDigestState(loaded.store.state, '$', { canonical: includeCanonical });
+          selfDigest = this.prepareRebase(loaded.world as WorldState, loaded.store.tick);
+          peerPlans = [];
+          for (const peer of this.gate.servers) {
+            if (peer === this) continue;
+            try {
+              peerPlans.push({
+                kind: 'rebase',
+                peer,
+                prepared: peer.prepareRebase(loaded.world as WorldState, loaded.store.tick),
+              });
+            } catch (err) {
+              if (err instanceof StateDigestError && !includeCanonical) {
+                peerPlans.push({ kind: 'skip', peer, err });
+              } else {
+                throw err;
+              }
+            }
+          }
         } catch (err) {
           if (hasId) {
             if (err instanceof StateDigestError) {
-              this.fail(id, ERROR_CODES.INVALID_PARAMS, `load refused: ${err.message}`, err.toJSON());
+              this.fail(id, ERROR_CODES.STATE_DIGEST_INVALID, `load refused: ${err.message}`, err.toJSON());
             } else {
               const message =
                 err instanceof SaveLoadError || err instanceof Error ? err.message : String(err);
@@ -616,10 +636,16 @@ export class SidecarServer {
           return;
         }
         // Commit point: swap Engine and apply every peer's rebase only after
-        // candidate deserialization, whole-world validation, and all peer digests succeed.
+        // candidate deserialization, requester digest rules, and canonical peer digests succeed.
         this.applyRestoredEngine(loaded);
-        for (const { peer, prepared } of preparedPeers) {
-          peer.applyPreparedRebase(prepared);
+        this.applyPreparedRebase(selfDigest);
+        for (const plan of peerPlans) {
+          if (plan.kind === 'rebase') {
+            plan.peer.applyPreparedRebase(plan.prepared);
+          } else {
+            process.stderr.write(`[sidecar] peer rebase skipped: ${sanitizeDiagnosticMessage(plan.err.message, 256)}\n`);
+            plan.peer.invalidateIncompatibleRebase();
+          }
         }
         const result: LoadResult = {
           tick: this.engine.store.tick,
@@ -878,7 +904,8 @@ export class SidecarServer {
 
   /** Execute a world mutation atomically with digest validation and commit rollback. */
   private runWorldMutation(mutate: () => readonly ResolvedEvent[]): SubmitActionResult {
-    validateDigestState(this.engine.world);
+    const includeCanonical = this.clientCapabilities.canonicalHashes === true;
+    validateDigestState(this.engine.world, '$', { canonical: includeCanonical });
     const state = this.engine.store.state as unknown as Record<string, unknown>;
     const preWorld = structuredClone(state);
     const rng = this.engine.store?.rng;
@@ -888,7 +915,7 @@ export class SidecarServer {
     const preActionLogLen = Array.isArray(engineWithLog.actionLog) ? engineWithLog.actionLog.length : -1;
     try {
       const direct = mutate();
-      validateDigestState(this.engine.world);
+      validateDigestState(this.engine.world, '$', { canonical: includeCanonical });
       return this.commit(direct);
     } catch (err) {
       for (const key of Object.keys(state)) {
@@ -1054,6 +1081,13 @@ export class SidecarServer {
     }
   }
 
+  private invalidateIncompatibleRebase(): void {
+    this.emitted.clear();
+    this.snapshotSeq += 1;
+    this.hasSnapshotted = false;
+    this.packIntake = undefined;
+  }
+
   /**
    * After LOAD: rebuild emitted, lastState, bump snapshotSeq, and push a
    * snapshot-shaped baseline so every live mirror rebases (including omitEventLog).
@@ -1153,7 +1187,7 @@ export class SidecarServer {
       this.pushTick(this.commit([]));
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[sidecar] peer tick skipped: ${detail}\n`);
+      process.stderr.write(`[sidecar] peer tick skipped: ${sanitizeDiagnosticMessage(detail, 256)}\n`);
     }
   }
 
