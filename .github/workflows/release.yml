@@ -157,7 +157,9 @@ jobs:
       # Isolated-consumer.mjs stays the tarball-on-disk gate; do not fold this in.
       - name: Registry round-trip — npm install CLI from registry
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        timeout-minutes: 6
+        timeout-minutes: 10
+        env:
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
           ver=$(node -p "require('./packages/cli/package.json').version")
@@ -173,7 +175,7 @@ jobs:
             echo "$install_out"
             retry_reason=""
             if [ "$install_ec" -ne 0 ]; then
-              if ! echo "$install_out" | grep -Eq '(^|[^A-Za-z0-9_])(E404|ETARGET)([^A-Za-z0-9_]|$)'; then
+              if ! grep -Eq '(^|[^A-Za-z0-9_])(E404|ETARGET)([^A-Za-z0-9_]|$)' <<<"$install_out"; then
                 echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed with non-propagation error (exit $install_ec)"
                 exit 1
               fi
@@ -282,10 +284,13 @@ jobs:
               process.exit(2);
             }
 
-            // CLI dependencies are "*", so `--tag next` prerelease installs resolve
-            // sibling packages to `latest` instead of prereleases. Verify the CLI
+            // CLI dependencies are "*", so `--tag next` prerelease installs (flagged via
+            // GitHub `release.prerelease` or carrying a hyphenated semver prerelease tag)
+            // resolve sibling packages to `latest` instead of prereleases. Verify the CLI
             // itself for prereleases and skip sibling version parity.
-            const isPrerelease = expectedVer.split('+')[0].includes('-');
+            const isPrerelease =
+              process.env.RELEASE_PRERELEASE === 'true' ||
+              expectedVer.split('+')[0].includes('-');
             if (isPrerelease) {
               console.log(`verified @ai-rpg-engine/cli@${expectedVer} (prerelease build; skipping sibling version check because "*" dependencies resolve to latest)`);
               process.exit(0);

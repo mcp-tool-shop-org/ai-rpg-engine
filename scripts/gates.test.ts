@@ -375,7 +375,8 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(installAt).toBeGreaterThan(publishAt);
 
     const roundTripStep = npmJob.slice(npmJob.indexOf('- name: Registry round-trip'));
-    expect(roundTripStep).toMatch(/^\s*timeout-minutes:\s*\d+/m);
+    expect(roundTripStep).toMatch(/^\s*timeout-minutes:\s*10\b/m);
+    expect(roundTripStep).toContain('RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}');
     expect(roundTripStep).toContain('delays=(5 10 20 30 45 45)');
     expect(roundTripStep).toContain('max_attempts=$(( ${#delays[@]} + 1 ))');
 
@@ -384,11 +385,13 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     const retryLoop = loopMatch![1];
     expect(retryLoop).toContain('npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"');
     expect(retryLoop).toContain('E404|ETARGET');
-    expect(retryLoop).toMatch(/if ! echo "\$install_out"[\s\S]{0,260}exit 1\s+fi/);
+    expect(retryLoop).not.toMatch(/echo\s+"\$install_out"\s*\|/);
+    expect(retryLoop).toMatch(/if ! grep -Eq [^\r\n]+<<<"\$install_out"; then[\s\S]{0,260}exit 1\s+fi/);
     expect(retryLoop).toContain('node - "$prefix" "$ver" <<\'EOF\'');
     expect(retryLoop).not.toContain('createRequire');
     expect(retryLoop).not.toContain('req.resolve');
     expect(retryLoop).toContain('isPrerelease');
+    expect(retryLoop).toContain("process.env.RELEASE_PRERELEASE === 'true'");
     expect(retryLoop).toMatch(/if \[ "\$check_ec" -eq 0 \]; then[\s\S]{0,40}break/);
     expect(retryLoop).toMatch(/if \[ "\$check_ec" -ne 2 \]; then[\s\S]{0,180}exit 1/);
     expect(retryLoop).toMatch(/if \[ "\$attempt" -ge "\$max_attempts" \]; then[\s\S]{0,180}exit 1/);
@@ -533,11 +536,25 @@ describe('release.yml registry version check against real package exports', () =
     return prefix;
   }
 
-  function runExtractedCheck(prefix: string, ver: string) {
+  function runExtractedCheck(
+    prefix: string,
+    ver: string,
+    extraEnv: Record<string, string | undefined> = {},
+  ) {
     const script = extractReleaseVersionCheck();
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    delete childEnv.RELEASE_PRERELEASE;
+    for (const [key, value] of Object.entries(extraEnv)) {
+      if (value === undefined) {
+        delete childEnv[key];
+      } else {
+        childEnv[key] = value;
+      }
+    }
     const res = spawnSync(process.execPath, ['-', prefix, ver], {
       input: script,
       encoding: 'utf8',
+      env: childEnv,
       timeout: 30_000,
     });
     return {
@@ -634,6 +651,62 @@ describe('release.yml registry version check against real package exports', () =
       expect(res.stderr).toContain('@ai-rpg-engine/cli@3.12.2');
     } finally {
       rmSync(nextStaleCli, { recursive: true, force: true });
+    }
+  });
+
+  it('passes when RELEASE_PRERELEASE=true on a plain version with older siblings, and still exits 2 when CLI itself is stale', () => {
+    const flaggedPlainOk = buildRealExportsTree({
+      cliVersion: '3.13.0',
+      coreVersion: '3.12.2',
+      sidecarVersion: '3.12.2',
+      presentationVersion: '3.12.2',
+    });
+    try {
+      const res = runExtractedCheck(flaggedPlainOk, '3.13.0', { RELEASE_PRERELEASE: 'true' });
+      expect(res.status, res.combined).toBe(0);
+      expect(res.stdout).toContain('@ai-rpg-engine/cli@3.13.0');
+      expect(res.stdout).toMatch(/prerelease/i);
+    } finally {
+      rmSync(flaggedPlainOk, { recursive: true, force: true });
+    }
+
+    const flaggedPlainStaleCli = buildRealExportsTree({
+      cliVersion: '3.12.2',
+      coreVersion: '3.12.2',
+      sidecarVersion: '3.12.2',
+      presentationVersion: '3.12.2',
+    });
+    try {
+      const res = runExtractedCheck(flaggedPlainStaleCli, '3.13.0', { RELEASE_PRERELEASE: 'true' });
+      expect(res.status, res.combined).toBe(2);
+      expect(res.stderr).toContain('@ai-rpg-engine/cli@3.12.2');
+      expect(res.combined).not.toMatch(/\n\s+at\s+/);
+    } finally {
+      rmSync(flaggedPlainStaleCli, { recursive: true, force: true });
+    }
+  });
+
+  it('still checks sibling versions on an unflagged plain version (RELEASE_PRERELEASE unset or false)', () => {
+    const unflaggedStaleSiblings = buildRealExportsTree({
+      cliVersion: '3.13.0',
+      coreVersion: '3.12.2',
+      sidecarVersion: '3.12.2',
+      presentationVersion: '3.12.2',
+    });
+    try {
+      const resUnset = runExtractedCheck(unflaggedStaleSiblings, '3.13.0');
+      expect(resUnset.status, resUnset.combined).toBe(2);
+      expect(resUnset.stderr).toContain('@ai-rpg-engine/core@3.12.2');
+      expect(resUnset.stderr).toContain('@ai-rpg-engine/sidecar@3.12.2');
+      expect(resUnset.stderr).toContain('@ai-rpg-engine/presentation@3.12.2');
+      expect(resUnset.combined).not.toMatch(/\n\s+at\s+/);
+
+      const resFalse = runExtractedCheck(unflaggedStaleSiblings, '3.13.0', { RELEASE_PRERELEASE: 'false' });
+      expect(resFalse.status, resFalse.combined).toBe(2);
+      expect(resFalse.stderr).toContain('@ai-rpg-engine/core@3.12.2');
+      expect(resFalse.combined).not.toMatch(/\n\s+at\s+/);
+    } finally {
+      rmSync(unflaggedStaleSiblings, { recursive: true, force: true });
     }
   });
 });
