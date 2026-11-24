@@ -113,17 +113,17 @@ jobs:
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          TAG_ARGS=()
-          if [ "${RELEASE_PRERELEASE:-}" = "true" ]; then
-            TAG_ARGS=(--tag next)
-            echo "GitHub prerelease: publishing with --tag next (never latest)"
-          fi
           for dir in packages/* templates/*; do
             [ -f "$dir/package.json" ] || continue
             priv=$(node -p "require('./$dir/package.json').private === true")
             [ "$priv" = "true" ] && { echo "skip private $dir"; continue; }
             name=$(node -p "require('./$dir/package.json').name")
             ver=$(node -p "require('./$dir/package.json').version")
+            ver_core="${ver%%+*}"
+            TAG_ARGS=()
+            if [ "${RELEASE_PRERELEASE:-}" = "true" ] || [[ "$ver_core" == *-* ]]; then
+              TAG_ARGS=(--tag next)
+            fi
             view_out=""
             view_ec=0
             view_out="$(npm view "$name@$ver" version 2>&1)" && view_ec=0 || view_ec=$?

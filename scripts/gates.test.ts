@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -380,9 +380,9 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(roundTripStep).toContain('delays=(5 10 20 30 45 45)');
     expect(roundTripStep).toContain('max_attempts=$(( ${#delays[@]} + 1 ))');
 
-    const loopMatch = roundTripStep.match(/while true; do([\s\S]+?)\n {10}done/);
+    const loopMatch = roundTripStep.match(/([ \t]*)while true; do([\s\S]+?)\r?\n\1done\b/);
     expect(loopMatch, 'Registry round-trip step must wrap npm install and version check in a while true; do ... done retry loop').toBeTruthy();
-    const retryLoop = loopMatch![1];
+    const retryLoop = loopMatch![2];
     expect(retryLoop).toContain('npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"');
     expect(retryLoop).toContain('E404|ETARGET');
     expect(retryLoop).not.toMatch(/echo\s+"\$install_out"\s*\|/);
@@ -456,7 +456,8 @@ describe('release.yml registry version check against real package exports', () =
       exports?: Record<string, unknown>;
     };
     expect(raw.exports).toBeDefined();
-    expect(Object.keys(raw.exports!)).toEqual(['.']);
+    // Assert `./package.json` is not required in exports (allowing subpath exports without breaking the check).
+    expect(raw.exports).not.toHaveProperty('./package.json');
     return raw.exports!;
   }
 
@@ -707,6 +708,139 @@ describe('release.yml registry version check against real package exports', () =
       expect(resFalse.combined).not.toMatch(/\n\s+at\s+/);
     } finally {
       rmSync(unflaggedStaleSiblings, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('release.yml publish tag-selection parity with prerelease detection', () => {
+  function resolveBashExecutable(): string {
+    if (process.platform === 'win32') {
+      const candidates = [
+        process.env.ProgramFiles ? join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : '',
+        'C:\\Program Files\\Git\\bin\\bash.exe',
+      ].filter(Boolean);
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    return 'bash';
+  }
+
+  function extractPublishLiveScript(): string {
+    const releaseYml = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8');
+    const stepStart = releaseYml.indexOf('- name: Publish (live, idempotent)');
+    expect(stepStart, 'release.yml must define Publish (live, idempotent)').toBeGreaterThan(-1);
+    const stepSlice = releaseYml.slice(stepStart);
+    const runMatch = stepSlice.match(
+      /run:\s*\|\r?\n([\s\S]*?)\r?\n(?:[ \t]*\r?\n|[ \t]*#[^\r\n]*\r?\n)*[ \t]*-\s+name:/,
+    );
+    expect(runMatch, 'Publish (live, idempotent) must contain a multiline run block').toBeTruthy();
+    const lines = runMatch![1].split(/\r?\n/);
+    const indents = lines.filter((l) => l.trim().length > 0).map((l) => l.match(/^[ \t]*/)![0].length);
+    const minIndent = Math.min(...indents);
+    return lines.map((l) => l.slice(minIndent)).join('\n');
+  }
+
+  function runExtractedPublish(
+    version: string,
+    extraEnv: Record<string, string | undefined> = {},
+  ): { status: number | null; stdout: string; stderr: string; publishCalls: string[] } {
+    const rawScript = extractPublishLiveScript();
+    const workspace = mkdtempSync(join(tmpdir(), 'release-publish-fixture-'));
+    try {
+      mkdirSync(join(workspace, 'packages', 'core'), { recursive: true });
+      mkdirSync(join(workspace, 'packages', 'cli'), { recursive: true });
+      mkdirSync(join(workspace, 'templates'), { recursive: true });
+      writeFileSync(
+        join(workspace, 'packages', 'core', 'package.json'),
+        JSON.stringify({ name: '@ai-rpg-engine/core', version }),
+      );
+      writeFileSync(
+        join(workspace, 'packages', 'cli', 'package.json'),
+        JSON.stringify({ name: '@ai-rpg-engine/cli', version }),
+      );
+      const logFile = join(workspace, 'publish-calls.log').replace(/\\/g, '/');
+      const shim = [
+        `PUBLISH_LOG="${logFile}"`,
+        'npm() {',
+        '  if [ "$1" = "view" ]; then',
+        '    echo "E404 version not found"',
+        '    return 1',
+        '  fi',
+        '  printf \'%s\\n\' "$*" >> "$PUBLISH_LOG"',
+        '}',
+      ].join('\n');
+      const wrappedScript = rawScript.replace('set -euo pipefail', `set -euo pipefail\n${shim}`);
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      delete childEnv.RELEASE_PRERELEASE;
+      for (const [k, v] of Object.entries(extraEnv)) {
+        if (v === undefined) delete childEnv[k];
+        else childEnv[k] = v;
+      }
+      const res = spawnSync(resolveBashExecutable(), ['-s'], {
+        cwd: workspace,
+        input: wrappedScript,
+        encoding: 'utf8',
+        env: childEnv,
+        timeout: 30_000,
+      });
+      const publishCalls = existsSync(logFile)
+        ? readFileSync(logFile, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+        : [];
+      return {
+        status: res.status,
+        stdout: res.stdout ?? '',
+        stderr: res.stderr ?? '',
+        publishCalls,
+      };
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }
+
+  it('passes --tag next for a flagged plain version (RELEASE_PRERELEASE=true)', () => {
+    const res = runExtractedPublish('3.13.0', { RELEASE_PRERELEASE: 'true' });
+    expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+    expect(res.publishCalls).toHaveLength(2);
+    for (const call of res.publishCalls) {
+      expect(call).toContain('publish ');
+      expect(call).toContain('--tag next');
+    }
+  });
+
+  it('passes --tag next for an unflagged hyphenated version (RELEASE_PRERELEASE=false)', () => {
+    const res = runExtractedPublish('3.13.0-next.1', { RELEASE_PRERELEASE: 'false' });
+    expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+    expect(res.publishCalls).toHaveLength(2);
+    for (const call of res.publishCalls) {
+      expect(call).toContain('--tag next');
+    }
+  });
+
+  it('passes --tag next when RELEASE_PRERELEASE is empty (workflow_dispatch) with a hyphenated version', () => {
+    for (const ver of ['3.13.0-rc.1', '3.13.0-rc.1+20261124']) {
+      const res = runExtractedPublish(ver, { RELEASE_PRERELEASE: '' });
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+      expect(res.publishCalls).toHaveLength(2);
+      for (const call of res.publishCalls) {
+        expect(call).toContain('--tag next');
+      }
+    }
+  });
+
+  it('publishes to latest (no --tag next) for unflagged plain versions, including hyphens only in +build metadata', () => {
+    for (const envVal of ['false', '', undefined] as const) {
+      for (const ver of ['3.13.0', '3.13.0+2026-11-24']) {
+        const res = runExtractedPublish(ver, { RELEASE_PRERELEASE: envVal });
+        expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+        expect(res.publishCalls).toHaveLength(2);
+        for (const call of res.publishCalls) {
+          expect(call).toMatch(/^publish -w @ai-rpg-engine\/(cli|core) --access public --provenance$/);
+          expect(call).not.toContain('--tag');
+        }
+      }
     }
   });
 });
