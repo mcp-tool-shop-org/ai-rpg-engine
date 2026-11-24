@@ -1210,10 +1210,42 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     expect(checkUnresolvedAiProfiles(pack)).toEqual(warnRes.warnings);
   });
 
-  it('skips non-string aiProfile (null and array) in resolveEntityAi without throwing, keeps world untouched under fail, and coerces String(raw) in sanitizeDiagnosticText', () => {
+  it('stores raw empty profileId on orphan entityAi warn path (matching fail and checkUnresolvedAiProfiles) while printing (empty) in message', () => {
+    const pack: ContentPack = {
+      entityAi: { 'orphan-npc': { profileId: '' } },
+    };
+    const failRes = applyContentPack(bootEngine(), pack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'fail',
+    });
+    expect(failRes.ok).toBe(false);
+    expect(failRes.errors[0]).toMatchObject({
+      code: 'UNRESOLVED_AI_PROFILE',
+      entityId: 'orphan-npc',
+      profileId: '',
+    });
+    expect(failRes.errors[0].message).toContain('(empty)');
+
+    const warnRes = applyContentPack(bootEngine(), pack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+    });
+    expect(warnRes.ok).toBe(true);
+    expect(warnRes.warnings[0]).toMatchObject({
+      code: 'UNRESOLVED_AI_PROFILE',
+      entityId: 'orphan-npc',
+      profileId: '',
+    });
+    expect(warnRes.warnings[0].message).toContain('(empty)');
+    expect(checkUnresolvedAiProfiles(pack, { profiles: [{ id: 'aggressive' }] })).toEqual(warnRes.warnings);
+  });
+
+  it('coerces non-string inputs cleanly in sanitizeDiagnosticText', () => {
     expect(sanitizeDiagnosticText(null)).toBe('null');
     expect(sanitizeDiagnosticText(['x'])).toBe('x');
+  });
 
+  it('reports non-string aiProfile (null and array) without throwing under fail and warn, including prevalidated: true', () => {
     for (const badAiProfile of [null, ['x']] as const) {
       const pack = {
         zones: [{ id: 'staged-zone', name: 'Staged Zone' }],
@@ -1243,23 +1275,26 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
       expect(failEngine.world.zones['staged-zone']).toBeUndefined();
       expect(failEngine.world.entities['ok-npc']).toBeUndefined();
 
-      const warnEngine = bootEngine();
-      let warnRes!: ReturnType<typeof applyContentPack>;
-      expect(() => {
-        warnRes = applyContentPack(warnEngine, pack, {
-          profiles: [{ id: 'aggressive' }],
-          unresolvedAiProfile: 'warn',
-        });
-      }).not.toThrow();
-      expect(warnRes.ok).toBe(false);
-      expect(warnRes.warnings).toEqual([]);
-      expect(warnRes.errors).toContainEqual(
-        expect.objectContaining({
-          path: 'entities[1](bad).aiProfile',
-          message: expect.stringMatching(/must be a string/),
-        }),
-      );
-      expect(warnEngine.world.entities['bad']).toBeUndefined();
+      for (const prevalidated of [false, true] as const) {
+        const warnEngine = bootEngine();
+        let warnRes!: ReturnType<typeof applyContentPack>;
+        expect(() => {
+          warnRes = applyContentPack(warnEngine, pack, {
+            profiles: [{ id: 'aggressive' }],
+            unresolvedAiProfile: 'warn',
+            ...(prevalidated ? { prevalidated: true } : {}),
+          });
+        }).not.toThrow();
+        expect(warnRes.ok).toBe(false);
+        expect(warnRes.warnings).toEqual([]);
+        expect(warnRes.errors).toContainEqual(
+          expect.objectContaining({
+            path: 'entities[1](bad).aiProfile',
+            message: expect.stringMatching(/must be a string/),
+          }),
+        );
+        expect(warnEngine.world.entities['bad']).toBeUndefined();
+      }
     }
   });
 
@@ -1986,6 +2021,39 @@ describe('applyContentPack — JSON state validation & upfront clone guard', () 
     expect(wmResult.applied).toEqual({});
     expect(wmEngine.world.zones['clean-zone']).toBeUndefined();
     expect(wmEngine.world.entities['npc-1']).toBeUndefined();
+  });
+
+  it('rolls back applied world writes before rethrowing a non-digest validation error', () => {
+    const engine = bootEngine();
+    expect(() =>
+      applyContentPack(
+        engine,
+        {
+          zones: [{ id: 'rollback-zone', name: 'Rollback Zone' }],
+          districts: [{ id: 'd1', name: 'District', zoneIds: ['rollback-zone'], tags: [] }],
+        },
+        {
+          channels: [
+            {
+              key: 'districts',
+              apply: (target) => {
+                Object.defineProperty(target.world.globals, 'exploding', {
+                  enumerable: true,
+                  configurable: true,
+                  get() {
+                    throw new TypeError('getter exploded');
+                  },
+                });
+                return { applied: 1 };
+              },
+            },
+          ],
+        },
+      ),
+    ).toThrow(TypeError);
+
+    expect(engine.world.zones['rollback-zone']).toBeUndefined();
+    expect('exploding' in engine.world.globals).toBe(false);
   });
 });
 
