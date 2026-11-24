@@ -34,6 +34,7 @@ import type {
  */
 export type NarrationSourceEvent = {
   type: string;
+  actorId?: string;
   payload?: Record<string, unknown>;
   presentation?: {
     priority?: string;
@@ -69,9 +70,10 @@ export type BuildNarrationPlanInput = {
   resolveSoundCue?: SoundCueResolver;
   /**
    * The player entity id — lets defeat events distinguish "you fell"
-   * (sorrow) from anything else. Omitted ⇒ no defeat can ever read as
-   * sorrow (there is no player to attribute it to); tone falls through to
-   * 'combat'/'calm' exactly as an unattributable defeat always has.
+   * (sorrow) from anything else, and gates zone-entry music/ambient cues to
+   * the player's own `world.zone.entered` events (`event.actorId === playerId`).
+   * Omitted ⇒ no defeat can ever read as sorrow and no zone-entry event
+   * triggers zone-entry cues.
    */
   playerId?: string;
   /** Optional voice profile passed through to the plan (TTS embedders). */
@@ -84,7 +86,7 @@ export type BuildNarrationPlanInput = {
    * pickMusicStem/pickAmbientBed (see terminal-ui's TurnPresenter). Returning
    * undefined, or omitting either trackId/layerId, falls through per-field to
    * the documented 'scene.enter' fallback. Only consulted on turns containing
-   * a presentation-bearing world.zone.entered event; ignored otherwise.
+   * a presentation-bearing player world.zone.entered event; ignored otherwise.
    */
   resolveZoneMood?: ZoneMoodResolver;
 };
@@ -150,6 +152,11 @@ export function collectSoundCues(events: readonly NarrationSourceEvent[]): strin
 /** True when the defeated entity in a defeat event is the player. */
 function isPlayerDefeat(event: NarrationSourceEvent, playerId?: string): boolean {
   return playerId !== undefined && event.payload?.entityId === playerId;
+}
+
+/** True when a zone-entry event belongs to the player (not an NPC or follower). */
+function isPlayerZoneEntry(event: NarrationSourceEvent, playerId?: string): boolean {
+  return playerId !== undefined && event.actorId === playerId;
 }
 
 /**
@@ -455,7 +462,10 @@ export function buildNarrationPlan(input: BuildNarrationPlanInput): NarrationPla
   let musicCue: MusicCue | undefined;
   let ambientLayers: AmbientCue[] = [];
   const zoneEnteredEvent = events.find(
-    (event) => event.type === ZONE_ENTERED_EVENT && presentable(event),
+    (event) =>
+      event.type === ZONE_ENTERED_EVENT &&
+      presentable(event) &&
+      isPlayerZoneEntry(event, input.playerId),
   );
   if (zoneEnteredEvent) {
     const tone = zoneEnteredEvent.payload?.tone;

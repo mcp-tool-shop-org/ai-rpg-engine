@@ -889,6 +889,44 @@ describe('formatEvent — moodHint / situationHint hint placements (F-fdc1f590)'
     expect(text).not.toContain('(');
   });
 
+  it('actor gate: follower world.zone.entered produces no "> Entered" line while player line is byte-identical', () => {
+    const followerEntry = cev(
+      'world.zone.entered',
+      { zoneId: 'chapel-steps', zoneName: 'Chapel Steps', moodHint: 'Chapel Grounds: calm and watchful' },
+      { actorId: 'aldric' },
+    );
+    const playerEntryPlain = cev(
+      'world.zone.entered',
+      { zoneId: 'chapel-steps', zoneName: 'Chapel Steps' },
+      { actorId: 'hero' },
+    );
+    const playerEntryMood = cev(
+      'world.zone.entered',
+      { zoneId: 'chapel-steps', zoneName: 'Chapel Steps', moodHint: 'Chapel Grounds: calm and watchful' },
+      { actorId: 'hero' },
+    );
+
+    // Non-player zone entry suppressed across single-line, log, and full-screen callers
+    expect(formatEventLine(followerEntry, { playerId: 'hero' })).toBeNull();
+    expect(renderEventLog([followerEntry], 8, { color: false, playerId: 'hero' })).toBe('');
+
+    const world = makeWorld();
+    const screen = stripAnsi(renderFullScreen(world, [followerEntry], PLAIN));
+    expect(screen).not.toContain('> Entered');
+    expect(screen).not.toContain('Entered Chapel Steps');
+
+    // Player entry stays byte-identical with and without moodHint
+    expect(formatEventLine(playerEntryPlain, { playerId: 'hero' })).toBe(
+      '> Entered Chapel Steps',
+    );
+    expect(formatEventLine(playerEntryMood, { playerId: 'hero' })).toBe(
+      '> Entered Chapel Steps. (Chapel Grounds: calm and watchful)',
+    );
+
+    // Standalone formatEventLine with no playerId preserves existing unattributed behavior
+    expect(formatEventLine(playerEntryPlain)).toBe('> Entered Chapel Steps');
+  });
+
   it('situationHint appends a labeled "Situation:" clause after You-see/Points-of-interest/Hazards, verbatim', () => {
     const text = renderEventLog([
       cev('world.zone.inspected', {

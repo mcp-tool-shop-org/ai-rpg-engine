@@ -9,8 +9,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import { TurnPresenter, QUIET_TURN_TEXT, stripAnsi } from '@ai-rpg-engine/terminal-ui';
-import { runWorldTick, HEAT_KEY } from '@ai-rpg-engine/modules';
-import { narrateRound } from './bin.js';
+import {
+  runWorldTick,
+  HEAT_KEY,
+  traversalCore,
+  createCognitionCore,
+  BUILTIN_INTENT_PROFILES,
+} from '@ai-rpg-engine/modules';
+import {
+  narrateRound,
+  runHostileRound,
+  handlePlayerInput,
+  computeExtras,
+  renderFrame,
+} from './bin.js';
 import { allPacks } from './packs.js';
 
 const testManifest = {
@@ -300,5 +312,83 @@ describe('runWorldTick in the round (F-ENG005) — the world reacts', () => {
     const line = stripAnsi(String(print.mock.calls[0][0]));
     expect(line).toContain('Gnasher defeated!');
     expect(line).toContain('Rumor spreads: gnashers has placed a bounty on the player');
+  });
+});
+
+describe('follower zone-entry through CLI turn loop', () => {
+  it('a follower walking toward a stationary player produces no "> Entered" log or narration line', () => {
+    const engine = new Engine({
+      manifest: testManifest,
+      modules: [
+        traversalCore,
+        createCognitionCore({ profiles: [...BUILTIN_INTENT_PROFILES] }),
+      ],
+    });
+    engine.store.state.zones = {
+      hall: { id: 'hall', roomId: 'r1', name: 'Hall', tags: [], neighbors: ['nave'] },
+      nave: { id: 'nave', roomId: 'r1', name: 'Nave', tags: [], neighbors: ['hall', 'crypt'] },
+      crypt: { id: 'crypt', roomId: 'r1', name: 'Crypt', tags: [], neighbors: ['nave'] },
+    };
+    engine.store.state.locationId = 'hall';
+    engine.store.state.playerId = 'hero';
+    engine.store.addEntity({
+      id: 'hero',
+      blueprintId: 'player',
+      type: 'player',
+      name: 'Hero',
+      tags: ['player'],
+      stats: { vigor: 5, instinct: 5, will: 4 },
+      resources: { hp: 20, maxHp: 20, stamina: 8 },
+      statuses: [],
+      zoneId: 'hall',
+    });
+    engine.store.addEntity({
+      id: 'aldric',
+      blueprintId: 'aldric',
+      type: 'npc',
+      name: 'Brother Aldric',
+      tags: ['companion'],
+      stats: { vigor: 3, instinct: 4, will: 3 },
+      resources: { hp: 20, maxHp: 20, stamina: 6 },
+      statuses: [],
+      zoneId: 'crypt',
+      ai: { profileId: 'follower', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+
+    const pack = {
+      meta: { id: 'follower-gate-check', name: 'Follower Gate Check', version: '0.1.0', genres: ['fantasy'] },
+      createGame: () => engine,
+    } as never;
+
+    const logLenBefore = engine.world.eventLog.length;
+    const inputResult = handlePlayerInput(engine, 'wait', {
+      pack,
+      extras: computeExtras(engine, pack),
+    });
+    expect(inputResult.kind).toBe('wait');
+
+    // Follower steps from crypt -> nave while player stays put in hall
+    runHostileRound(engine, pack, { log: () => {} });
+    expect(engine.world.entities.aldric.zoneId).toBe('nave');
+    expect(engine.world.entities.hero.zoneId).toBe('hall');
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'world.zone.entered' && e.actorId === 'aldric' && e.payload.zoneId === 'nave',
+      ),
+    ).toBe(true);
+
+    // Next CLI frame log and round narration must not report "> Entered Nave" for the player
+    const frameOutput: string[] = [];
+    renderFrame(engine, pack, { print: (line) => frameOutput.push(stripAnsi(line)) });
+    const frame = frameOutput.join('\n');
+    expect(frame).not.toContain('> Entered');
+    expect(frame).not.toContain('Entered Nave');
+
+    const narrationPrint = vi.fn();
+    narrateRound(new TurnPresenter(), engine, logLenBefore, narrationPrint);
+    expect(narrationPrint).toHaveBeenCalledTimes(1);
+    const narrated = stripAnsi(String(narrationPrint.mock.calls[0][0]));
+    expect(narrated).not.toContain('Entered Nave');
+    expect(narrated).toBe(`  ${QUIET_TURN_TEXT}`);
   });
 });
