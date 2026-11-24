@@ -169,7 +169,7 @@ export function createGame(seed?: number): Engine {
     // apply copies EntityBlueprint relations/custom/resistances/faction/
     // ruleProfileId and resolves aiProfile against cognition profiles +
     // pack.entityAi.
-    const applied = applyContentPack(engine, pack, { profiles: myIntentProfiles });
+    const applied = applyContentPack(engine, pack, { profiles: myIntentProfiles, unresolvedAiProfile: 'fail' });
     if (!applied.ok) {
         const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
         throw new Error(`applyContentPack failed:\n${detail}`);

@@ -130,6 +130,18 @@ export type IntentProfileRef = {
   id: string;
 };
 
+/** Policy when an entity blueprint's `aiProfile` does not resolve against known profiles. */
+export type UnresolvedAiProfilePolicy = 'fail' | 'warn';
+
+/** Structured warning emitted when `unresolvedAiProfile` is `'warn'` and an entity's `aiProfile` cannot resolve. */
+export type UnresolvedAiProfileWarning = {
+  code: 'UNRESOLVED_AI_PROFILE';
+  path: string;
+  entityId: string;
+  profileId: string;
+  message: string;
+};
+
 /** How applyContentPack turns an authored aiProfile name into EntityState.ai. */
 export type AiProfileLookup = {
   profiles?: IntentProfileRef[] | Record<string, EntityAiState>;
@@ -163,13 +175,20 @@ export type ApplyContentPackOptions = {
   /**
    * Named intent profiles (IntentProfile[] or id→AIState). When an entity's
    * `aiProfile` matches, {@link EntityState.ai} is written instead of dropped.
-   * Unresolved names are a structured error — an unresolved brain stands still.
+   * By default, unresolved names emit a structured warning; pass
+   * `unresolvedAiProfile: 'fail'` to refuse the pack instead.
    */
   profiles?: IntentProfileRef[] | Record<string, EntityAiState>;
+  /**
+   * Policy when an entity's `aiProfile` does not resolve against `profiles` or
+   * `pack.entityAi`. Defaults to `'warn'`, which drops the profile and emits a
+   * structured warning; `'fail'` rejects the load and rolls back mutations.
+   */
+  unresolvedAiProfile?: UnresolvedAiProfilePolicy;
 };
 
 export type ApplyContentPackResult = {
-  /** False if anything was refused. Dropped fields do NOT flip this. */
+  /** False if anything was refused. Dropped fields do NOT flip this unless `unresolvedAiProfile` is `'fail'`. */
   ok: boolean;
   /** Present when `options.gate` was supplied. Carries the diff report. */
   gate?: GateResult;
@@ -178,6 +197,8 @@ export type ApplyContentPackResult = {
   /** Every field the converter did not carry, named. */
   dropped: DroppedField[];
   errors: ValidationError[];
+  /** Structured warnings emitted during intake (e.g. unresolved `aiProfile` in `'warn'` mode). */
+  warnings: UnresolvedAiProfileWarning[];
   /** Non-fatal observations (unhandled channels, inert-by-construction data). */
   advisories: ValidationError[];
 };
@@ -380,7 +401,8 @@ export function resolveEntityAi(
  *
  * `aiProfile` is resolved against {@link AiProfileLookup} (options.profiles and/or
  * ContentPack.entityAi). A hit writes EntityState.ai; an unresolved name is
- * dropped AND reported as a structured error when `errors` is supplied.
+ * dropped and either pushed to `errors` (`unresolvedAiProfile: 'fail'`) or
+ * emitted as a structured warning in `warnings` (`'warn'`, default).
  */
 export function entityBlueprintToState(
   bp: EntityBlueprint,
@@ -388,6 +410,8 @@ export function entityBlueprintToState(
   path = '',
   lookup?: AiProfileLookup,
   errors?: ValidationError[],
+  warnings?: UnresolvedAiProfileWarning[],
+  unresolvedAiProfile: UnresolvedAiProfilePolicy = 'warn',
 ): EntityState {
   const p = path || `entities(${bp.id})`;
 
@@ -453,14 +477,29 @@ export function entityBlueprintToState(
   if (ai?.ok === true) {
     state.ai = ai.ai;
   } else if (ai?.ok === false) {
+    const unresolvedMessage =
+      `entity "${bp.id}" has unresolved aiProfile "${ai.profileId}" — pass ApplyContentPackOptions.profiles ` +
+      '(IntentProfile[] or id→AIState) and/or ContentPack.entityAi so this name becomes EntityState.ai. ' +
+      'An unresolved brain never selects an intent.';
     dropped?.push({
       path: `${p}.aiProfile`,
       reason: 'needs-module-vocabulary',
-      detail:
-        `unresolved aiProfile "${ai.profileId}" — pass ApplyContentPackOptions.profiles ` +
-        '(IntentProfile[] or id→AIState) and/or ContentPack.entityAi so this name becomes EntityState.ai. ' +
-        'An unresolved brain never selects an intent.',
+      detail: unresolvedMessage,
     });
+    if (unresolvedAiProfile === 'fail') {
+      errors?.push({
+        path: `${p}.aiProfile`,
+        message: unresolvedMessage,
+      });
+    } else {
+      warnings?.push({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: `${p}.aiProfile`,
+        entityId: bp.id,
+        profileId: ai.profileId,
+        message: unresolvedMessage,
+      });
+    }
   }
   return state;
 }
@@ -600,8 +639,10 @@ export function applyContentPack(
 ): ApplyContentPackResult {
   const errors: ValidationError[] = [];
   const advisories: ValidationError[] = [];
+  const warnings: UnresolvedAiProfileWarning[] = [];
   const dropped: DroppedField[] = [];
   const applied: Record<string, number> = {};
+  const unresolvedAiProfile: UnresolvedAiProfilePolicy = options.unresolvedAiProfile ?? 'warn';
 
   if (pack === null || typeof pack !== 'object' || Array.isArray(pack)) {
     return {
@@ -614,6 +655,7 @@ export function applyContentPack(
           message: 'content pack must be a plain object — pass the `pack` from loadContentFromFile.',
         },
       ],
+      warnings,
       advisories,
     };
   }
@@ -626,7 +668,7 @@ export function applyContentPack(
     gateResult = runLoadGate(pack, options.gate);
     advisories.push(...gateResult.advisories);
     if (!gateResult.ok) {
-      return { ok: false, gate: gateResult, applied, dropped, errors: gateResult.errors, advisories };
+      return { ok: false, gate: gateResult, applied, dropped, errors: gateResult.errors, warnings, advisories };
     }
   }
 
@@ -698,6 +740,7 @@ export function applyContentPack(
     entityAi: isRecord(pack.entityAi) ? pack.entityAi : undefined,
   };
   const entities = pack.entities ?? [];
+  let unresolvedProfileFailed = false;
   if (!Array.isArray(entities)) {
     errors.push({ path: 'pack.entities', message: 'must be an array if provided.' });
   } else {
@@ -713,7 +756,17 @@ export function applyContentPack(
           continue;
         }
       }
-      const state = entityBlueprintToState(bp as EntityBlueprint, dropped, label, aiLookup, errors);
+      const errorsBefore = errors.length;
+      const state = entityBlueprintToState(
+        bp as EntityBlueprint,
+        dropped,
+        label,
+        aiLookup,
+        errors,
+        warnings,
+        unresolvedAiProfile,
+      );
+      if (errors.length > errorsBefore) unresolvedProfileFailed = true;
       retainResolvedItems(state, bp as EntityBlueprint, itemCatalogIds, errors, label);
       engine.store.addEntity(state);
       if (state.ai) aiApplied++;
@@ -1069,25 +1122,7 @@ export function applyContentPack(
     applied[key] = report.applied;
   }
 
-  let digestRefused = false;
-  if (!channelThrew) {
-    try {
-      validateJsonState(engine.store.state);
-    } catch (err) {
-      if (err instanceof StateDigestError) {
-        digestRefused = true;
-        errors.push({
-          path: err.path,
-          code: err.code,
-          message: err.message,
-        });
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  if (channelThrew || digestRefused) {
+  if (channelThrew || digestRefused || unresolvedProfileFailed) {
     const state = engine.store.state as unknown as Record<string, unknown>;
     const restored = structuredClone(preApply) as Record<string, unknown>;
     for (const key of Object.keys(state)) {
@@ -1164,6 +1199,7 @@ export function applyContentPack(
     applied,
     dropped,
     errors,
+    warnings,
     advisories,
   };
 }

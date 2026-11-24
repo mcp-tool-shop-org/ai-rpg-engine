@@ -31,6 +31,8 @@ export {
   territorialProfile,
   calculatingProfile,
   BUILTIN_INTENT_PROFILES,
+  COGNITION_PROFILES_FORMULA,
+  getRegisteredIntentProfiles,
   resolveIntentProfile,
   selectActionForEntity,
 } from './cognition-core.js';

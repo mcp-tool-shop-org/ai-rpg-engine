@@ -230,6 +230,15 @@ export type PackIntakeDrop = {
 /** One non-fatal note the content-pack gate raised while loading this world. */
 export type PackIntakeNote = { path: string; message: string };
 
+/** One structured intake warning surfaced alongside dropped/advisories (e.g. unresolved aiProfile in `'warn'` mode). */
+export type PackIntakeWarning = {
+  code: string;
+  path: string;
+  entityId?: string;
+  profileId?: string;
+  message: string;
+};
+
 /**
  * What the content-pack gate (`runLoadGate` / `applyContentPack`, both in
  * content-schema) dropped or advised while this world was built. Carried on
@@ -249,6 +258,7 @@ export type PackIntakeNote = { path: string; message: string };
 export type PackIntakeSummary = {
   dropped: PackIntakeDrop[];
   advisories: PackIntakeNote[];
+  warnings?: PackIntakeWarning[];
 };
 
 export type InitializeResult = {

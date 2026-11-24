@@ -370,10 +370,18 @@ describe('C1/P1 — applyContentPack routes content into a booted world', () => 
     // Declared, validated, real content — and still unrouted at this rung.
     expect(paths).toContain('pack.quests');
     expect(paths).toContain('pack.verbs');
-    // Unresolved aiProfile is named in dropped[] (F-035ac806). Overlay packs
-    // without profiles still load (sidecar --content / C3 fixture).
+    // Unresolved aiProfile is named in dropped[] and emitted as a structured
+    // warning under default 'warn' mode.
     expect(r.ok).toBe(true);
     expect(r.dropped.some((d) => d.path.includes('aiProfile'))).toBe(true);
+    expect(r.warnings).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[0](e).aiProfile',
+        entityId: 'e',
+        profileId: 'cautious',
+      }),
+    ]);
   });
 
   it('CLOSED BY C3/P1: the placement hole is a channel now, not an advisory', () => {
@@ -873,16 +881,115 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     });
   });
 
-  it('unresolved aiProfile is a structured error, not a silent stand-still', () => {
+  it('unresolved aiProfile emits a structured warning by default and under warn policy', () => {
+    const engine = bootEngine();
+    const pack: ContentPack = {
+      entities: [
+        { id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' },
+        { id: 'stalker', type: 'enemy', name: 'Stalker', aiProfile: 'shadow-mind' },
+      ],
+    };
+    const r = applyContentPack(engine, pack, { profiles: [{ id: 'aggressive' }] });
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toHaveLength(2);
+    expect(r.warnings).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[0](grunt).aiProfile',
+        entityId: 'grunt',
+        profileId: 'ghost-brain',
+      }),
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[1](stalker).aiProfile',
+        entityId: 'stalker',
+        profileId: 'shadow-mind',
+      }),
+    ]);
+    expect(r.dropped.some((d) => d.path.includes('aiProfile') && d.detail?.includes('ghost-brain'))).toBe(true);
+    expect(engine.world.entities['grunt'].ai).toBeUndefined();
+    expect(engine.world.entities['stalker'].ai).toBeUndefined();
+
+    const engineExplicitWarn = bootEngine();
+    const explicit = applyContentPack(engineExplicitWarn, pack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+    });
+    expect(explicit.ok).toBe(true);
+    expect(explicit.warnings).toHaveLength(2);
+  });
+
+  it('unresolvedAiProfile: fail collects every unresolved entity+profile and rolls back world state', () => {
+    const engine = bootEngine();
+    const zonesBefore = Object.keys(engine.world.zones).length;
+    const entitiesBefore = Object.keys(engine.world.entities).length;
+
+    const errors: Array<{ path: string; message: string }> = [];
+    const warnings: Array<{ code: string }> = [];
+    const directState = entityBlueprintToState(
+      { id: 'probe', type: 'npc', name: 'Probe', aiProfile: 'missing-direct' },
+      [],
+      'entities[0](probe)',
+      { profiles: [{ id: 'aggressive' }] },
+      errors,
+      warnings as never,
+      'fail',
+    );
+    expect(directState.ai).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('missing-direct');
+    expect(warnings).toEqual([]);
+
+    const r = applyContentPack(
+      engine,
+      {
+        zones: [{ id: 'staged-zone', name: 'Staged Zone' }],
+        entities: [
+          { id: 'ok-guard', type: 'npc', name: 'OK Guard', aiProfile: 'aggressive' },
+          { id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' },
+          { id: 'stalker', type: 'enemy', name: 'Stalker', aiProfile: 'feral-mind' },
+        ],
+      },
+      {
+        profiles: [{ id: 'aggressive' }],
+        unresolvedAiProfile: 'fail',
+      },
+    );
+
+    expect(r.ok).toBe(false);
+    expect(r.warnings).toEqual([]);
+    expect(r.errors).toHaveLength(2);
+    expect(r.errors[0].path).toBe('entities[1](grunt).aiProfile');
+    expect(r.errors[0].message).toContain('grunt');
+    expect(r.errors[0].message).toContain('ghost-brain');
+    expect(r.errors[1].path).toBe('entities[2](stalker).aiProfile');
+    expect(r.errors[1].message).toContain('stalker');
+    expect(r.errors[1].message).toContain('feral-mind');
+    expect(r.applied).toEqual({});
+    expect(Object.keys(engine.world.zones).length).toBe(zonesBefore);
+    expect(Object.keys(engine.world.entities).length).toBe(entitiesBefore);
+    expect(engine.world.zones['staged-zone']).toBeUndefined();
+    expect(engine.world.entities['ok-guard']).toBeUndefined();
+    expect(engine.world.entities['grunt']).toBeUndefined();
+  });
+
+  it('unresolvedAiProfile: fail succeeds with empty warnings when every profile resolves', () => {
     const engine = bootEngine();
     const r = applyContentPack(
       engine,
-      { entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' }] },
-      { profiles: [{ id: 'aggressive' }] },
+      {
+        entities: [{ id: 'guard', type: 'npc', name: 'Guard', aiProfile: 'aggressive' }],
+      },
+      {
+        profiles: [{ id: 'aggressive' }],
+        unresolvedAiProfile: 'fail',
+      },
     );
     expect(r.ok).toBe(true);
-    expect(r.dropped.some((d) => d.path.includes('aiProfile') && d.detail?.includes('ghost-brain'))).toBe(true);
-    expect(engine.world.entities['grunt'].ai).toBeUndefined();
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([]);
+    expect(engine.world.entities['guard'].ai?.profileId).toBe('aggressive');
   });
 
   it('F-cf3fc257: unknown resistance names stay dropped[] only — do not flip ok', () => {

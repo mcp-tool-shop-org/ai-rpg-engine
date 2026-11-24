@@ -223,6 +223,46 @@ describe('sidecar --content', () => {
     expect(text).toContain('2.0.0');
     expect(readyLine(text)).toBe(false);
   });
+
+  it('unresolved aiProfile values are refused with SIDECAR_CONTENT_REFUSED naming every entity and profile', async () => {
+    const file = writePack({
+      ...MINIMAL_PACK,
+      entities: [
+        { id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' },
+        { id: 'stalker', type: 'enemy', name: 'Stalker', aiProfile: 'feral-mind' },
+      ],
+    });
+    const man = writeManifest(file);
+    const { code, lines } = await run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_CONTENT_REFUSED');
+    expect(text).toContain('grunt');
+    expect(text).toContain('ghost-brain');
+    expect(text).toContain('stalker');
+    expect(text).toContain('feral-mind');
+    expect(readyLine(text)).toBe(false);
+  });
+
+  it('a content entity whose aiProfile matches a registered cognition profile loads cleanly', async () => {
+    const file = writePack({
+      ...MINIMAL_PACK,
+      entities: [
+        { id: 'lookout', type: 'npc', name: 'Lookout', aiProfile: 'cautious' },
+      ],
+    });
+    const man = writeManifest(file);
+    const { code, lines } = await run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(code).toBeNull();
+    const text = lines.join('\n');
+    expect(readyLine(text)).toBe(true);
+    expect(text).toContain('entities=1');
+    expect(text).not.toContain('UNRESOLVED_AI_PROFILE');
+  });
 });
 
 describe('sidecar --start', () => {

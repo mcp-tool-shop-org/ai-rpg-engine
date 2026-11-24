@@ -162,7 +162,7 @@ describe('F-c9309691 — the corrected JSDoc boot recipe actually constructs', (
         createWorldTick(),
       ],
     });
-    const result = applyContentPack(engine, loaded, { channels: createStandardChannels() });
+    const result = applyContentPack(engine, loaded, { channels: createStandardChannels(), unresolvedAiProfile: 'fail' });
     expect(result.ok).toBe(true);
 
     const state = engine.store.state;

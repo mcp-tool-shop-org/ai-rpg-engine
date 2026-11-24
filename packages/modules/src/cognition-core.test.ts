@@ -20,6 +20,7 @@ import {
   calculatingProfile,
   BUILTIN_INTENT_PROFILES,
   resolveIntentProfile,
+  getRegisteredIntentProfiles,
   selectActionForEntity,
 } from './cognition-core.js';
 import type { IntentProfile } from './cognition-core.js';
@@ -982,5 +983,29 @@ describe('selectActionForEntity (turn-driver helper)', () => {
     const sel = selectActionForEntity(engine.world, 'warden', { profiles: [custom] });
     expect(sel!.verb).toBe('taunt');
     expect(sel!.profileId).toBe('territorial');
+  });
+
+  it('getRegisteredIntentProfiles exposes built-ins, custom profiles, and falls back without cognition-core', () => {
+    const bare = createTestEngine({
+      modules: [],
+      entities: [makePlayer('a')],
+      zones: zonesWithExit,
+    });
+    expect(getRegisteredIntentProfiles(bare).map((p) => p.id)).toEqual(
+      BUILTIN_INTENT_PROFILES.map((p) => p.id),
+    );
+
+    const custom: IntentProfile = {
+      id: 'sentinel',
+      evaluate: () => [{ verb: 'guard', priority: 90, reason: 'watch' }],
+    };
+    const withCustom = createTestEngine({
+      modules: [createCognitionCore([custom])],
+      entities: [makePlayer('a')],
+      zones: zonesWithExit,
+    });
+    const ids = getRegisteredIntentProfiles(withCustom).map((p) => p.id);
+    expect(ids).toContain('aggressive');
+    expect(ids).toContain('sentinel');
   });
 });

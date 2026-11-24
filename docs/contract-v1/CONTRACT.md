@@ -93,6 +93,7 @@ declarative content into an existing `WorldStore`.
 | `applied` | counts per channel, by id |
 | `dropped` | **every field the converter did not carry, named** — the differ pattern from C0's export table, moved into production |
 | `errors` | structured `{ path, message }`, never a raw throw |
+| `warnings` | structured `{ code, path, entityId, profileId, message }` when `unresolvedAiProfile` is `'warn'` (default); pass `unresolvedAiProfile: 'fail'` to collect every entity+profile mismatch into `errors` and roll back |
 
 `dropped` is the load-bearing field. C0's headline failure mode was not that data
 was lost; it was that data was lost *silently* while an instrument reported

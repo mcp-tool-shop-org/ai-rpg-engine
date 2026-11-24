@@ -201,7 +201,7 @@ function playSession(): Played {
       createWorldTick(),
     ],
   });
-  const applied = applyContentPack(engine, loaded, { channels: createStandardChannels() });
+  const applied = applyContentPack(engine, loaded, { channels: createStandardChannels(), unresolvedAiProfile: 'fail' });
   expect(applied.ok).toBe(true);
 
   const presenter = new TurnPresenter();

@@ -460,6 +460,7 @@ describe('C1/P2 — applyContentPack refuses BEFORE touching the world', () => {
     const r = applyContentPack(engine, pack, {
       channels: createStandardChannels(),
       gate: goodCtx(pack),
+      unresolvedAiProfile: 'fail',
     });
 
     expect(r.ok, JSON.stringify(r.errors)).toBe(true);

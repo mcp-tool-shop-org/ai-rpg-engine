@@ -14,7 +14,12 @@
 import * as fs from 'node:fs';
 import { startStdioServer, startSocketServer, type PackIntakeSummary } from '@ai-rpg-engine/sidecar';
 import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
-import { createStandardChannels, modifyDistrictMetric, emitZoneEnteredForPlacement } from '@ai-rpg-engine/modules';
+import {
+  createStandardChannels,
+  getRegisteredIntentProfiles,
+  modifyDistrictMetric,
+  emitZoneEnteredForPlacement,
+} from '@ai-rpg-engine/modules';
 import { allPacks } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
@@ -312,6 +317,8 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
 
     const applied = applyContentPack(engine, load.pack, {
       channels: createStandardChannels(),
+      profiles: getRegisteredIntentProfiles(engine),
+      unresolvedAiProfile: 'fail',
       gate: {
         engineVersion: ENGINE_VERSION,
         registeredModuleIds: engine.moduleManager.getModules().map((m) => m.id),
