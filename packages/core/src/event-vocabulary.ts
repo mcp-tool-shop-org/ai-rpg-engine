@@ -1,22 +1,53 @@
 /**
- * Canonical list of simulation event types emitted via `makeEvent`,
- * `makeCognitionEvent`, and `makeStatusEvent` across package and template
- * source, matching docs/handbook/appendix-a-event-vocabulary.md.
+ * Complete simulation event vocabulary emitted across all engine, module, and
+ * starter/template event sinks (`store.emitEvent`, `makeEvent`,
+ * `makeCognitionEvent`, `makeStatusEvent`, `makePeriodicEvent`,
+ * `makeTriggerEvent`, `emitHidden`, `defeat-fallout` `emit`, `emitQuestEvent`,
+ * `emitPressureEvent`, `pursuit-core` `event`, `contract-core` `base`, and
+ * `ResolvedEvent` / `PendingEffect` object literals), including
+ * TypeScript `TypeChecker`-expanded finite union templates and any explicit
+ * dynamic patterns.
  *
- * This list is complete for those three emission helpers because the
- * source-scan test in packages/core/src/event-vocabulary.test.ts enforces
- * exact parity against the codebase and both appendix tables.
+ * Enforced against the full codebase, unregistered-sink guard, and both
+ * `docs/handbook/appendix-a-event-vocabulary.md` and its Starlight site
+ * mirror by `packages/core/src/event-vocabulary.test.ts`.
  */
 export const ENGINE_EVENT_TYPES = [
-  // World & action (traversal-core, dialogue-core, action rejection)
+  // Core, world, action & lifecycle
+  'action.declared',
   'action.rejected',
+  'action.resolved',
+  'encounter.spawned',
+  'event.log.compacted',
+  'hazard.damage.applied',
+  'hazard.depth.exceeded',
+  'module.init.failed',
+  'module.round.failed',
+  'module.teardown.failed',
+  'pending.failed',
+  'pending.skipped',
+  'resource.modify.missed',
+  'rule.effect.failed',
   'world.entity.inspected',
   'world.flag.changed',
   'world.zone.entered',
   'world.zone.gate.refused',
   'world.zone.gate.warned',
   'world.zone.inspected',
-  // Combat & resources (combat-core, combat-tactics, cognition-core, ability-core)
+  'world.zone.state.changed',
+  // Combat, resources, recovery & boss roles
+  'boss.definition.invalid',
+  'boss.phase.spawn.unresolved',
+  'boss.phase.transition',
+  'combat.aftermath.hp-tick',
+  'combat.aftermath.injury',
+  'combat.aftermath.morale',
+  'combat.aftermath.recovery-complete',
+  'combat.aftermath.stamina-tick',
+  'combat.aftermath.started',
+  'combat.aftermath.summary',
+  'combat.ai.decision',
+  'combat.ambush.triggered',
   'combat.brace.stabilized',
   'combat.brace.start',
   'combat.companion.intercepted',
@@ -26,7 +57,9 @@ export const ENGINE_EVENT_TYPES = [
   'combat.damage.applied',
   'combat.disengage.fail',
   'combat.disengage.success',
+  'combat.encounter.cleared',
   'combat.entity.defeated',
+  'combat.frontline.collapsed',
   'combat.guard.absorbed',
   'combat.guard.broken',
   'combat.guard.start',
@@ -37,9 +70,11 @@ export const ENGINE_EVENT_TYPES = [
   'combat.reposition.guard_broken',
   'combat.reposition.outflank',
   'combat.reposition.success',
+  'combat.resource.trigger.unknown',
+  'combat.review.trace',
   'combat.will.hold',
   'resource.changed',
-  // Abilities (ability-core, ability-effects)
+  // Abilities
   'ability.check.failed',
   'ability.damage.applied',
   'ability.effect.unknown',
@@ -47,6 +82,7 @@ export const ENGINE_EVENT_TYPES = [
   'ability.rejected',
   'ability.resolved',
   'ability.resource.modified',
+  'ability.review.trace',
   'ability.stat.modified',
   'ability.status.applied',
   'ability.status.immune',
@@ -55,12 +91,18 @@ export const ENGINE_EVENT_TYPES = [
   'ability.status.unregistered',
   'ability.status.vulnerable',
   'ability.used',
-  // Statuses (status-core)
+  // Statuses
   'status.applied',
   'status.expired',
+  'status.periodic.damage',
+  'status.periodic.expired',
+  'status.periodic.heal',
   'status.removed',
   'status.stacked',
-  // Dialogue, reputation & leverage (dialogue-core, player-leverage)
+  'status.trigger.fired',
+  'status.trigger.halted',
+  'status.trigger.heal',
+  // Dialogue, progression, rumor & leverage
   'dialogue.choice.selected',
   'dialogue.effect.unknown',
   'dialogue.ended',
@@ -68,9 +110,12 @@ export const ENGINE_EVENT_TYPES = [
   'dialogue.started',
   'leverage.adjusted',
   'leverage.resolved',
+  'progression.node.unlocked',
+  'progression.unlock.rejected',
   'reputation.adjusted',
+  'rumor.belief.propagated',
   'rumor.seeded',
-  // Inventory, equipment, crafting & trade (inventory-core, equipment-core, crafting-recipes, trade-core, item-recognition)
+  // Inventory, equipment, crafting & trade
   'inventory.item.received',
   'item.acquired',
   'item.already-equipped',
@@ -86,25 +131,62 @@ export const ENGINE_EVENT_TYPES = [
   'item.sold',
   'item.unequipped',
   'item.used',
-  // Companions (companion-core, item-recognition, player-leverage, world-tick)
+  // Companions, quests & agency
   'companion.departed',
   'companion.reaction',
   'companion.recruited',
-  // Opportunities & pressures (opportunity-resolution, player-leverage, world-tick)
-  // opportunity.abandoned / .betrayed / .completed are emitted dynamically via
-  // `opportunity.${resolutionType}` over OpportunityResolutionType in opportunity-resolution.ts.
+  'faction.action.resolved',
+  'npc.action.resolved',
+  'npc.betrayal.witnessed',
+  'quest.completed',
+  'quest.failed',
+  'quest.offered',
+  'quest.stage.advanced',
+  // Opportunities, pressures & defeat fallout
+  'defeat.fallout.chronicle',
+  'defeat.fallout.companion',
+  'defeat.fallout.milestone',
+  'defeat.fallout.player-fallen',
+  'defeat.fallout.pressure',
+  'defeat.fallout.rumor',
+  'defeat.fallout.triggered',
+  'defeat.region.violence-escalated',
   'opportunity.abandoned',
   'opportunity.accepted',
   'opportunity.betrayed',
   'opportunity.completed',
+  'opportunity.expired',
+  'opportunity.spawned',
+  'pressure.escalated',
+  'pressure.expired',
   'pressure.resolved',
+  'pressure.revealed',
   'pressure.spawned',
-  // Merchant contracts (starter-merchant contract-core)
+  // Presentation & starter domains (audio, merchant, cyberpunk, pursuit)
+  'audio.cue.requested',
   'merchant.audit.requested',
+  'merchant.books.opened',
   'merchant.contract.consigned',
+  'merchant.contract.defaulted',
+  'merchant.contract.honoured',
+  'merchant.factor.encumbered',
+  'merchant.factor.unencumbered',
+  'merchant.instrument.seized',
   'merchant.item.appraised',
+  'merchant.lien.accrued',
   'merchant.price.haggled',
+  'merchant.risk.claimed',
+  'merchant.risk.lapsed',
   'merchant.risk.underwritten',
+  'merchant.seal.revoked',
+  'netrunning.ice.breached',
+  'pursuit.bounty.posted',
+  'pursuit.goods.fenced',
+  'pursuit.mark.collared',
+  'pursuit.mark.convicted',
+  'pursuit.state.changed',
+  'pursuit.sworn.in',
+  'pursuit.word.bought',
 ] as const;
 
 export type EngineEventType = (typeof ENGINE_EVENT_TYPES)[number];

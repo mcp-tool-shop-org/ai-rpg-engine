@@ -29,7 +29,7 @@ npm install @ai-rpg-engine/core
 - **EntityState** — resources, inventory, status effects, beliefs, memories
 - **Action Pipeline** — validate → pre-process → resolve → post-process → commit
 - **Event Bus** — structured events with type, source, targets, payload
-- **Event Vocabulary** — `ENGINE_EVENT_TYPES` constant list of simulation event types emitted via `makeEvent`, `makeCognitionEvent`, and `makeStatusEvent` (kept complete for those helpers by a source-scan test)
+- **Event Vocabulary** — `ENGINE_EVENT_TYPES` (and `EngineEventType`) exporting the complete scan-derived list of all simulation event types emitted across engine, module, and starter/template event sinks and `ResolvedEvent` / `PendingEffect` literals (enforced by source-scan, unregistered-sink guard, and handbook parity tests)
 - **Seeded RNG** — reproducible randomness from a single seed
 - **Module System** — register/compose simulation modules
 - **Test Harness** — helpers for deterministic module testing
