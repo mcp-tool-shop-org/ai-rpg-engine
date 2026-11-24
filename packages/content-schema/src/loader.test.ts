@@ -40,6 +40,25 @@ describe('loadContent', () => {
     expect(r.summary).toContain('1 dialogues');
   });
 
+  it('loads dialogue nodes whose speaker is empty or omitted when dialogue speaker resolves', () => {
+    const r = loadContent({
+      entities: [{ id: 'keeper', type: 'npc', name: 'Keeper' }],
+      dialogues: [
+        {
+          id: 'keeper-talk',
+          speakers: ['keeper'],
+          entryNodeId: 'start',
+          nodes: {
+            start: { id: 'start', speaker: '', text: 'Step inside.', nextNodeId: 'follow' },
+            follow: { id: 'follow', text: 'Ask what you will.' },
+          },
+        },
+      ],
+    });
+    expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
   it('loads empty pack', () => {
     const r = loadContent({});
     expect(r.ok).toBe(true);

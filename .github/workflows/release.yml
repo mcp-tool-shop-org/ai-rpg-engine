@@ -162,7 +162,22 @@ jobs:
           ver=$(node -p "require('./packages/cli/package.json').version")
           prefix=$(mktemp -d)
           echo "installing @ai-rpg-engine/cli@$ver from https://registry.npmjs.org into $prefix"
-          npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"
+          delays=(5 10 20 30 45 45)
+          max_attempts=$(( ${#delays[@]} + 1 ))
+          attempt=1
+          while true; do
+            if npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"; then
+              break
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "::error::npm install -g @ai-rpg-engine/cli@$ver failed after $attempt attempts"
+              exit 1
+            fi
+            delay=${delays[$((attempt - 1))]}
+            echo "npm install attempt $attempt failed; waiting ${delay}s for registry propagation"
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
           PATH="$prefix/bin:$PATH" ai-rpg-engine --help
 
   docker:

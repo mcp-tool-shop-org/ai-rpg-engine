@@ -542,3 +542,33 @@ describe('F-bb72a8ab — two writers serialize by sessionOrder, not TCP arrival'
   }, 12000);
 });
 
+describe('empty or missing host falls back to 127.0.0.1 loopback', () => {
+  it('omitted host and empty string host both bind 127.0.0.1 and accept connectSocketClient("", ...)', async () => {
+    const omittedHosts: string[] = [];
+    const omittedServer = startSocketServer(
+      { engine: stubEngine() as never, engineVersion: '3.8.0-test', port: 0 },
+      { onListening: (_port, boundHost) => omittedHosts.push(boundHost) },
+    );
+    opened.push(omittedServer);
+    const omittedPort = await ready(omittedServer);
+    expect((omittedServer.net.address() as net.AddressInfo).address).toBe('127.0.0.1');
+    expect(omittedHosts).toEqual(['127.0.0.1']);
+
+    const emptyHosts: string[] = [];
+    const emptyServer = startSocketServer(
+      { engine: stubEngine() as never, engineVersion: '3.8.0-test', port: 0, host: '' },
+      { onListening: (_port, boundHost) => emptyHosts.push(boundHost) },
+    );
+    opened.push(emptyServer);
+    const emptyPort = await ready(emptyServer);
+    expect((emptyServer.net.address() as net.AddressInfo).address).toBe('127.0.0.1');
+    expect(emptyHosts).toEqual(['127.0.0.1']);
+
+    const { client, socket } = await connectSocketClient(emptyPort, '');
+    sockets.push(socket);
+    const init = await client.initialize({ notifications: true, hashes: true });
+    expect(init.serverName).toBeTruthy();
+    expect(omittedPort).toBeGreaterThan(0);
+  });
+});
+

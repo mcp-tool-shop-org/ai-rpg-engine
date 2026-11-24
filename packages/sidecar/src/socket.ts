@@ -104,7 +104,7 @@ export function startSocketServer(
   options: SidecarServerOptions & SocketServerOptions,
   hooks: SocketServerHooks = {},
 ): SocketServerHandles {
-  const host = options.host ?? '127.0.0.1';
+  const host = options.host || '127.0.0.1';
   const maxConnections = options.maxConnections ?? 1;
   const sessions: SidecarServer[] = [];
   const live = new Set<net.Socket>();
@@ -265,8 +265,9 @@ export function connectSocketClient(
   host = '127.0.0.1',
   options?: SidecarClientOptions,
 ): Promise<SocketClientHandles> {
+  const targetHost = host || '127.0.0.1';
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ port, host }, () => {
+    const socket = net.createConnection({ port, host: targetHost }, () => {
       const client = new SidecarClient((msg) => {
         if (socket.destroyed || socket.writableEnded) return;
         socket.write(encodeMessage(msg));

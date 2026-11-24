@@ -373,6 +373,9 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(consumerAt).toBeGreaterThan(-1);
     expect(publishAt).toBeGreaterThan(consumerAt);
     expect(installAt).toBeGreaterThan(publishAt);
+    expect(npmJob).toContain('delays=(');
+    expect(npmJob).toContain('max_attempts=');
+    expect(npmJob).toContain('sleep "$delay"');
     const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
     expect(dockerJob).toContain('docker pull');
     expect(dockerJob).toContain('docker rmi');
