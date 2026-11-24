@@ -66,6 +66,14 @@ function scanEmittedEventTypes(): {
 
   for (const filePath of scannedFiles) {
     const sourceText = readFileSync(filePath, 'utf8');
+    let mentionsHelper = false;
+    for (const helperName of HELPER_TYPE_ARG_INDEX.keys()) {
+      if (sourceText.includes(helperName)) {
+        mentionsHelper = true;
+        break;
+      }
+    }
+    if (!mentionsHelper) continue;
     const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
     const relPath = relative(repoRoot, filePath).replace(/\\/g, '/');
 
@@ -165,7 +173,7 @@ describe('ENGINE_EVENT_TYPES vocabulary contract', () => {
 
     const sample: EngineEventType = ENGINE_EVENT_TYPES[0];
     expect(emittedTypes.has(sample)).toBe(true);
-  });
+  }, 30_000);
 
   it('matches all data rows in docs/handbook/appendix-a-event-vocabulary.md without skipping unbackticked rows', () => {
     const raw = readFileSync(
