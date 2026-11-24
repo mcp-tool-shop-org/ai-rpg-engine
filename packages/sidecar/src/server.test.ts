@@ -14,9 +14,10 @@ import {
   NOTIFICATIONS,
   type PackIntakeSummary,
   type RpcMessage,
+  type SubmitActionResult,
 } from './protocol.js';
 import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
-import { applyPatches, canonicalStateHash, quantize, stateHash } from './serializer.js';
+import { applyPatches, canonicalStateHash, quantize, stateHash, StateDigestError } from './serializer.js';
 import type { StatePatch } from './protocol.js';
 
 function brandModule(): EngineModule {
@@ -1964,6 +1965,396 @@ describe('capability-scoped digest validation: non-canonical vs canonicalHashes 
         code: ERROR_CODES.STATE_DIGEST_INVALID,
       });
       expect((canonObs.sent.at(-1)?.error as { data?: { code?: string } }).data?.code).toBe('UNSAFE_SCALED_INTEGER');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('notifies skipped canonical peers with sim/resyncRequired on skipped tick and skipped rebase without polluting stalenessReports', async () => {
+    const engine = bootScopedEngine((world) => {
+      world.globals['caf\u00e9'] = 1;
+    });
+    const seedSaveEngine = bootScopedEngine();
+    seedSaveEngine.world.meta.seed = 1764000000000;
+    const highSeedSave = seedSaveEngine.serialize();
+
+    const peers: SidecarServer[] = [];
+    const nonCanon = attachSession(engine, peers);
+    const canonObs = attachSession(engine, peers);
+    await nonCanon.client.initialize({ notifications: true, hashes: true, canonicalHashes: false, writes: true });
+    await canonObs.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await nonCanon.client.snapshot();
+    const initialSnap = await canonObs.client.snapshot();
+
+    const stderrLines: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderrLines.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      await nonCanon.client.request(METHODS.SUBMIT_ACTION, {
+        verb: 'inject-edge',
+        parameters: { edge: true },
+      });
+
+      const tickNotices = canonObs.sent.filter((m) => m.method === NOTIFICATIONS.RESYNC_REQUIRED);
+      expect(tickNotices).toHaveLength(1);
+      expect(tickNotices[0].params).toMatchObject({
+        reason: 'tick_skipped',
+        code: 'NON_ASCII_KEY',
+        snapshotSeq: initialSnap.snapshotSeq,
+      });
+      expect(canonObs.client.resyncRequiredNotices).toEqual([tickNotices[0].params]);
+      expect(canonObs.client.stalenessReports).toEqual([]);
+
+      await nonCanon.client.load(highSeedSave);
+      const rebaseNotices = canonObs.sent.filter((m) => m.method === NOTIFICATIONS.RESYNC_REQUIRED);
+      expect(rebaseNotices).toHaveLength(2);
+      expect(rebaseNotices[1].params).toMatchObject({
+        reason: 'rebase_skipped',
+        code: 'UNSAFE_SCALED_INTEGER',
+        snapshotSeq: initialSnap.snapshotSeq + 1,
+      });
+      expect(canonObs.client.resyncRequiredNotices).toHaveLength(2);
+      const rebaseLine = stderrLines.find((line) => line.startsWith('[sidecar] peer rebase skipped:'));
+      expect(rebaseLine).toBeDefined();
+      expect(canonObs.client.stalenessReports).toEqual([]);
+
+      // Also verify onResyncRequired hook fires on a client constructed with SidecarClientOptions.
+      const hookedNotices: unknown[] = [];
+      const hookedBox: { server?: SidecarServer; client?: SidecarClient } = {};
+      hookedBox.server = new SidecarServer(
+        { engine, engineVersion: '3.8.0-test' },
+        (msg) => hookedBox.client!.handle(JSON.parse(JSON.stringify(msg)) as RpcMessage),
+      );
+      hookedBox.client = new SidecarClient((msg) => hookedBox.server!.handle(msg), {
+        onResyncRequired: (notice) => hookedNotices.push(notice),
+      });
+      await hookedBox.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+      const hookedRes = hookedBox.server.rebaseAfterLoad();
+      expect(hookedRes.ok).toBe(false);
+      expect(hookedNotices).toHaveLength(1);
+      expect(hookedBox.client.resyncRequiredNotices).toEqual(hookedNotices);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('refuses writes and never replays loaded eventLog entries after an invalidated rebase until snapshot', async () => {
+    const preEngine = bootScopedEngine();
+    await preEngine.submitAction('brand');
+    const taintedSaveObj = JSON.parse(preEngine.serialize()) as {
+      world: { state: { meta: { seed: number }; eventLog: Array<{ id: string }> } };
+      actionLog: unknown[];
+    };
+    const loadedEventIds = taintedSaveObj.world.state.eventLog.map((e) => e.id);
+    expect(loadedEventIds.length).toBeGreaterThan(0);
+    taintedSaveObj.world.state.meta.seed = 1764000000000;
+    const taintedSave = JSON.stringify(taintedSaveObj);
+
+    const liveEngine = bootScopedEngine();
+    const peers: SidecarServer[] = [];
+    const nonCanon = attachSession(liveEngine, peers);
+    const canonWriter = attachSession(liveEngine, peers);
+
+    await nonCanon.client.initialize({ notifications: true, hashes: true, canonicalHashes: false, writes: true });
+    await canonWriter.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await nonCanon.client.snapshot();
+    await canonWriter.client.snapshot();
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((() => true) as typeof process.stderr.write);
+    try {
+      await nonCanon.client.load(taintedSave);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    // Clear canonical violation on live world so digest validation itself would pass if writes were allowed before snapshot.
+    liveEngine.store.state.meta.seed = 42;
+
+    await expect(
+      canonWriter.client.request(METHODS.SUBMIT_ACTION, { verb: 'brand' }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    await expect(canonWriter.client.advance(1)).rejects.toMatchObject({
+      code: ERROR_CODES.STATE_DIGEST_INVALID,
+    });
+
+    await canonWriter.client.snapshot();
+    const afterResync = (await canonWriter.client.request(METHODS.SUBMIT_ACTION, { verb: 'brand' })) as {
+      events: Array<{ id: string; type: string }>;
+    };
+    for (const oldId of loadedEventIds) {
+      expect(afterResync.events.map((e) => e.id)).not.toContain(oldId);
+    }
+    expect(canonWriter.client.stalenessReports).toEqual([]);
+  });
+
+  it('uses one projection validation scope across snapshot, submitAction, advance, and load', async () => {
+    const engine = bootScopedEngine((world) => {
+      world.globals['caf\u00e9'] = 1;
+    });
+    const peers: SidecarServer[] = [];
+    const session = attachSession(engine, peers);
+
+    await session.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    const snap = await session.client.snapshot({ collections: ['entities', 'zones', 'meta'] });
+    expect(snap.canonicalHash).toBeDefined();
+
+    // Inject non-canonical key inside unprojected globals via action, plus verify advance succeeds.
+    await expect(
+      session.client.request(METHODS.SUBMIT_ACTION, { verb: 'inject-edge', parameters: { edge: true } }),
+    ).resolves.toBeDefined();
+    await expect(session.client.advance(1)).resolves.toBeDefined();
+
+    const saveWithUnprojectedNonAscii = session.client.save();
+    await expect(saveWithUnprojectedNonAscii).resolves.toBeDefined();
+    const saved = await saveWithUnprojectedNonAscii;
+    await expect(session.client.load(saved.serialized)).resolves.toBeDefined();
+
+    // Taint an included collection -> must still refuse with STATE_DIGEST_INVALID.
+    engine.store.state.entities.hero.name = 'Bad\u0000Hero';
+    await expect(session.client.advance(1)).rejects.toMatchObject({
+      code: ERROR_CODES.STATE_DIGEST_INVALID,
+    });
+  });
+
+  it('escapes raw control characters on non-digest stderr errors and returns non-throwing results from rebaseAfterLoad()', async () => {
+    const engine = bootScopedEngine();
+    (engine as unknown as { presentAll: (events: unknown[]) => unknown[] }).presentAll = () => {
+      throw new Error('tick\x1b[31m\nspoof\x07');
+    };
+
+    const peers: SidecarServer[] = [];
+    const writer = attachSession(engine, peers);
+    const presentationObs = attachSession(engine, peers);
+    const canonicalPeer = attachSession(engine, peers);
+    const cleanSubsetPeer = attachSession(engine, peers);
+
+    await writer.client.initialize({ notifications: true, hashes: true, canonicalHashes: false, writes: true });
+    await presentationObs.client.initialize({
+      notifications: true,
+      hashes: true,
+      canonicalHashes: false,
+      writes: false,
+      presentation: true,
+    });
+    await canonicalPeer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await cleanSubsetPeer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+
+    await writer.client.snapshot();
+    await presentationObs.client.snapshot();
+    await canonicalPeer.client.snapshot();
+    await cleanSubsetPeer.client.snapshot({ collections: ['entities', 'zones', 'meta'] });
+
+    const stderrLines: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderrLines.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+
+      const tickLine = stderrLines.find((l) => l.startsWith('[sidecar] peer tick skipped:'));
+      expect(tickLine).toBeDefined();
+      expect(tickLine).toContain('\\u001b[31m\\nspoof\\u0007');
+      expect(tickLine).not.toContain('\x1b');
+      expect(tickLine).not.toContain('\x07');
+      expect(tickLine!.slice(0, -1)).not.toContain('\n');
+      expect(presentationObs.sent.filter((m) => m.method === 'sim/resyncRequired')).toHaveLength(1);
+
+      stderrLines.length = 0;
+      Object.defineProperty(engine.store.state.globals, 'exploding', {
+        enumerable: true,
+        configurable: true,
+        get() {
+          const err = new StateDigestError('NON_ASCII_KEY', '$.globals.exploding', 'rebase');
+          err.message = 'rebase\x1b[31m\nspoof\x07';
+          throw err;
+        },
+      });
+      try {
+        const results: unknown[] = [];
+        expect(() => {
+          for (const peer of [canonicalPeer.server, cleanSubsetPeer.server]) {
+            results.push(peer.rebaseAfterLoad());
+          }
+        }).not.toThrow();
+
+        expect(results).toEqual([
+          expect.objectContaining({ ok: false }),
+          expect.objectContaining({ ok: true }),
+        ]);
+        const rebaseLine = stderrLines.find((l) => l.startsWith('[sidecar] peer rebase skipped:'));
+        expect(rebaseLine).toBeDefined();
+        expect(rebaseLine).toContain('\\u001b[31m\\nspoof\\u0007');
+        expect(rebaseLine).not.toContain('\x1b');
+        expect(rebaseLine).not.toContain('\x07');
+        expect(rebaseLine!.slice(0, -1)).not.toContain('\n');
+        expect(canonicalPeer.sent.filter((m) => m.method === 'sim/resyncRequired')).toHaveLength(1);
+      } finally {
+        delete engine.store.state.globals.exploding;
+      }
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  function bootWriteProbeEngine() {
+    const engine = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    engine.dispatcher.registerVerb('write-global', (action, world) => {
+      const mode = action.parameters?.mode;
+      if (mode === 'nan') {
+        world.globals.bad = Number.NaN;
+      } else if (mode === 'fn') {
+        world.globals.bad = (() => 1) as unknown as number;
+      } else if (mode === 'canonical') {
+        world.globals['caf\u00e9'] = 1;
+      }
+      return [{ id: '', tick: action.issuedAtTick, type: 'probe.write', actorId: 'hero', payload: {} }];
+    });
+    return engine;
+  }
+
+  it('always-on rule (NON_FINITE_NUMBER): narrow collections write of globals.bad = NaN is refused, rolled back, and peer advance/snapshot/save stay valid', async () => {
+    const engine = bootWriteProbeEngine();
+    const peers: SidecarServer[] = [];
+    const narrow = attachSession(engine, peers);
+    const fullPeer = attachSession(engine, peers);
+
+    await narrow.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await fullPeer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await narrow.client.snapshot({ collections: ['entities', 'zones', 'meta'] });
+    await fullPeer.client.snapshot();
+
+    await expect(
+      narrow.client.request(METHODS.SUBMIT_ACTION, { verb: 'write-global', parameters: { mode: 'nan' } }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    const errData = (narrow.sent.at(-1)?.error as { data?: { code?: string } }).data;
+    expect(errData?.code).toBe('NON_FINITE_NUMBER');
+
+    expect('bad' in engine.world.globals).toBe(false);
+    await expect(fullPeer.client.advance(1)).resolves.toBeDefined();
+    await expect(fullPeer.client.snapshot()).resolves.toBeDefined();
+    const saved = await fullPeer.client.save();
+    const parsed = JSON.parse(saved.serialized) as {
+      world: { state: { globals: Record<string, unknown> } };
+    };
+    expect('bad' in parsed.world.state.globals).toBe(false);
+  });
+
+  it('always-on rule (UNSUPPORTED_VALUE_TYPE): narrow collections write of globals.bad = function is refused, rolled back, and peer advance/snapshot/save stay valid', async () => {
+    const engine = bootWriteProbeEngine();
+    const peers: SidecarServer[] = [];
+    const narrow = attachSession(engine, peers);
+    const fullPeer = attachSession(engine, peers);
+
+    await narrow.client.initialize({ notifications: true, hashes: true, canonicalHashes: false, writes: true });
+    await fullPeer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await narrow.client.snapshot({ collections: ['entities', 'zones', 'meta'] });
+    await fullPeer.client.snapshot();
+
+    await expect(
+      narrow.client.request(METHODS.SUBMIT_ACTION, { verb: 'write-global', parameters: { mode: 'fn' } }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
+    const errData = (narrow.sent.at(-1)?.error as { data?: { code?: string } }).data;
+    expect(errData?.code).toBe('UNSUPPORTED_VALUE_TYPE');
+
+    expect('bad' in engine.world.globals).toBe(false);
+    await expect(fullPeer.client.advance(1)).resolves.toBeDefined();
+    await expect(fullPeer.client.snapshot()).resolves.toBeDefined();
+    const saved = await fullPeer.client.save();
+    const parsed = JSON.parse(saved.serialized) as {
+      world: { state: { globals: Record<string, unknown> } };
+    };
+    expect('bad' in parsed.world.state.globals).toBe(false);
+  });
+
+  it('per-session canonical scope: canonical-only violation outside a narrow session view still does not refuse that session write', async () => {
+    const engine = bootWriteProbeEngine();
+    const peers: SidecarServer[] = [];
+    const narrow = attachSession(engine, peers);
+
+    await narrow.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await narrow.client.snapshot({ collections: ['entities', 'zones', 'meta'] });
+
+    const res = (await narrow.client.request(METHODS.SUBMIT_ACTION, {
+      verb: 'write-global',
+      parameters: { mode: 'canonical' },
+    })) as SubmitActionResult;
+    expect(res.canonicalHash).toMatch(/^[0-9a-f]{32}$/);
+    expect(engine.world.globals['caf\u00e9']).toBe(1);
+  });
+
+  it('rebaseAfterLoad() returns { ok: false } for StateDigestError and rethrows unexpected errors with nothing half-changed', async () => {
+    const engine = bootScopedEngine();
+    const peers: SidecarServer[] = [];
+    const writer = attachSession(engine, peers);
+    const canonPeer = attachSession(engine, peers);
+
+    await writer.client.initialize({ notifications: true, hashes: true, canonicalHashes: false, writes: true });
+    await canonPeer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await writer.client.snapshot();
+    const snapBefore = await canonPeer.client.snapshot();
+
+    const stderrLines: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderrLines.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      // 1. Plain TypeError thrown inside prepareRebase must rethrow with zero half-changes.
+      Object.defineProperty(engine.store.state.globals, 'brokenTrap', {
+        enumerable: true,
+        configurable: true,
+        get() {
+          throw new TypeError('unexpected type failure inside rebase');
+        },
+      });
+      try {
+        expect(() => canonPeer.server.rebaseAfterLoad()).toThrow(TypeError);
+        expect(stderrLines).toEqual([]);
+        expect(canonPeer.sent.filter((m) => m.method === NOTIFICATIONS.RESYNC_REQUIRED)).toHaveLength(0);
+      } finally {
+        delete engine.store.state.globals.brokenTrap;
+      }
+
+      // Baseline remained valid (not invalidated, sequence untouched) -> normal write still works at snapBefore.snapshotSeq.
+      const cleanWrite = (await canonPeer.client.request(METHODS.SUBMIT_ACTION, {
+        verb: 'brand',
+      })) as SubmitActionResult;
+      expect(cleanWrite.snapshotSeq).toBe(snapBefore.snapshotSeq);
+
+      // 2. StateDigestError returns structured { ok: false, code, snapshotSeq, error }, logs, and invalidates baseline.
+      engine.store.state.globals['caf\u00e9'] = 1;
+      const digestRes = canonPeer.server.rebaseAfterLoad();
+      expect(digestRes).toMatchObject({
+        ok: false,
+        snapshotSeq: snapBefore.snapshotSeq + 1,
+        code: 'NON_ASCII_KEY',
+      });
+      expect(stderrLines.some((l) => l.startsWith('[sidecar] peer rebase skipped:'))).toBe(true);
+      expect(canonPeer.sent.filter((m) => m.method === NOTIFICATIONS.RESYNC_REQUIRED)).toHaveLength(1);
+      await expect(
+        canonPeer.client.request(METHODS.SUBMIT_ACTION, { verb: 'brand' }),
+      ).rejects.toMatchObject({ code: ERROR_CODES.STATE_DIGEST_INVALID });
     } finally {
       stderrSpy.mockRestore();
     }

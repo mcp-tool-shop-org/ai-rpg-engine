@@ -23,6 +23,7 @@ import {
   type LoadResult,
   type ReplayParams,
   type ReplayResult,
+  type ResyncRequiredNotification,
   type SaveResult,
   type SnapshotParams,
   type SnapshotResult,
@@ -73,6 +74,11 @@ export type SidecarClientOptions = {
    */
   onStale?: (report: StalenessReport) => void;
   /**
+   * Called when the server skipped a tick or load-time rebase for this session.
+   * Hosts must call `snapshot()` to resync their mirror.
+   */
+  onResyncRequired?: (notice: ResyncRequiredNotification) => void;
+  /**
    * Called when the client emits a diagnostic warning (e.g. digest spec
    * version mismatch). Defaults to writing one line to stderr.
    */
@@ -94,6 +100,7 @@ export class SidecarClient {
   private state: unknown = {};
   private readonly ticks: TickNotification[] = [];
   private readonly staleness: StalenessReport[] = [];
+  private readonly resyncNotices: ResyncRequiredNotification[] = [];
   private readonly warnings: string[] = [];
   private serverInfo?: InitializeResult;
   private closed = false;
@@ -110,6 +117,7 @@ export class SidecarClient {
   private readonly hashState: ((state: unknown) => string) | undefined;
   private readonly hashCanonical: ((state: unknown) => string) | undefined;
   private readonly onStale?: (report: StalenessReport) => void;
+  private readonly onResyncRequired?: (notice: ResyncRequiredNotification) => void;
   private readonly onWarning?: (warning: string) => void;
   private readonly requestTimeoutMs: number;
 
@@ -123,6 +131,7 @@ export class SidecarClient {
       this.hashState = hashStateOrOptions;
       this.hashCanonical = defaultCanonicalHashState;
       this.onStale = options?.onStale;
+      this.onResyncRequired = options?.onResyncRequired;
       this.onWarning = options?.onWarning;
       this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     } else {
@@ -130,6 +139,7 @@ export class SidecarClient {
       this.hashCanonical = defaultCanonicalHashState;
       const opts = hashStateOrOptions ?? options ?? {};
       this.onStale = opts.onStale;
+      this.onResyncRequired = opts.onResyncRequired;
       this.onWarning = opts.onWarning;
       this.requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     }
@@ -161,6 +171,13 @@ export class SidecarClient {
     if (method === NOTIFICATIONS.CLOSING) {
       this.closed = true;
       this.failPending(sessionClosedError());
+      return;
+    }
+    if (method === NOTIFICATIONS.RESYNC_REQUIRED) {
+      if (!this.notificationsEnabled) return;
+      const notice = params as unknown as ResyncRequiredNotification;
+      this.resyncNotices.push(notice);
+      this.onResyncRequired?.(notice);
       return;
     }
     if (method !== NOTIFICATIONS.TICK) {
@@ -338,6 +355,10 @@ export class SidecarClient {
 
   get stalenessReports(): readonly StalenessReport[] {
     return this.staleness;
+  }
+
+  get resyncRequiredNotices(): readonly ResyncRequiredNotification[] {
+    return this.resyncNotices;
   }
 
   get server(): InitializeResult | undefined {

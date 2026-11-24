@@ -36,7 +36,10 @@ import {
   type MethodName,
   type PackIntakeSummary,
   type PreviewResult,
+  type RebaseAfterLoadResult,
   type ReplayResult,
+  type ResyncRequiredNotification,
+  type ResyncRequiredReason,
   type SaveResult,
   type ServerCapabilities,
   type SessionRole,
@@ -229,6 +232,8 @@ export class SidecarServer {
   private snapshotSeq = 0;
   /** Withhold `sim/tick` until this session has served SNAPSHOT. */
   private hasSnapshotted = false;
+  /** True after an incompatible load skipped rebase until the client calls SNAPSHOT. */
+  private rebaseInvalidated = false;
   /** Projection SNAPSHOT and later diffs share, so omitted keys stay omitted. */
   private snapshotView: SnapshotView = {};
   /** Observer sessions cannot SUBMIT_ACTION / ADVANCE / SHUTDOWN / SAVE / LOAD. */
@@ -433,6 +438,7 @@ export class SidecarServer {
         for (const eid of nextEventIds) this.emitted.add(eid);
         this.snapshotSeq = nextSnapshotSeq;
         this.hasSnapshotted = true;
+        this.rebaseInvalidated = false;
         const result: SnapshotResult = {
           tick: this.engine.store.tick,
           hash: digest.hash,
@@ -448,6 +454,7 @@ export class SidecarServer {
 
       case METHODS.SUBMIT_ACTION: {
         if (this.refuseWrites(id, hasId, METHODS.SUBMIT_ACTION)) return;
+        if (this.refuseInvalidatedWrite(id, hasId)) return;
         const parsed = this.parseActionParams(params);
         if (!parsed.ok) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
@@ -471,6 +478,7 @@ export class SidecarServer {
 
       case METHODS.ADVANCE: {
         if (this.refuseWrites(id, hasId, METHODS.ADVANCE)) return;
+        if (this.refuseInvalidatedWrite(id, hasId)) return;
         if (Object.hasOwn(params, 'rounds') && !isSafeInteger(params.rounds)) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"rounds" must be a safe integer when present.');
           return;
@@ -609,7 +617,6 @@ export class SidecarServer {
         >;
         try {
           loaded = this.deserializeCandidate(params.serialized);
-          validateDigestState(loaded.store.state, '$', { canonical: includeCanonical });
           selfDigest = this.prepareRebase(loaded.world as WorldState, loaded.store.tick);
           peerPlans = [];
           for (const peer of this.gate.servers) {
@@ -649,7 +656,7 @@ export class SidecarServer {
             plan.peer.applyPreparedRebase(plan.prepared);
           } else {
             process.stderr.write(`[sidecar] peer rebase skipped: ${sanitizeDiagnosticMessage(plan.err.message, 256)}\n`);
-            plan.peer.invalidateIncompatibleRebase();
+            plan.peer.invalidateIncompatibleRebase('rebase_skipped', plan.err);
           }
         }
         const result: LoadResult = {
@@ -907,10 +914,25 @@ export class SidecarServer {
     return true;
   }
 
-  /** Execute a world mutation atomically with digest validation and commit rollback. */
+  private refuseInvalidatedWrite(id: unknown, hasId: boolean): boolean {
+    if (!this.rebaseInvalidated) return false;
+    if (hasId) {
+      this.fail(
+        id,
+        ERROR_CODES.STATE_DIGEST_INVALID,
+        'session baseline was invalidated by load; call snapshot before submitting writes.',
+        { code: 'RESYNC_REQUIRED' },
+      );
+    }
+    return true;
+  }
+
+  /** Execute a world mutation atomically with whole-world always-on JSON check, projection-scoped canonical validation, and rollback. */
   private runWorldMutation(mutate: () => readonly ResolvedEvent[]): SubmitActionResult {
     const includeCanonical = this.clientCapabilities.canonicalHashes === true;
-    validateDigestState(this.engine.world, '$', { canonical: includeCanonical });
+    validateDigestState(projectState(this.engine.world as WorldState, this.snapshotView), '$', {
+      canonical: includeCanonical,
+    });
     const state = this.engine.store.state as unknown as Record<string, unknown>;
     const preWorld = structuredClone(state);
     const rng = this.engine.store?.rng;
@@ -920,7 +942,7 @@ export class SidecarServer {
     const preActionLogLen = Array.isArray(engineWithLog.actionLog) ? engineWithLog.actionLog.length : -1;
     try {
       const direct = mutate();
-      validateDigestState(this.engine.world, '$', { canonical: includeCanonical });
+      validateDigestState(this.engine.world as WorldState, '$', { canonical: false });
       return this.commit(direct);
     } catch (err) {
       for (const key of Object.keys(state)) {
@@ -1080,36 +1102,68 @@ export class SidecarServer {
     for (const id of prepared.nextEmitted) this.emitted.add(id);
     this.lastState = prepared.nextLastState;
     this.snapshotSeq = prepared.nextSnapshotSeq;
+    this.rebaseInvalidated = false;
     this.packIntake = undefined;
     if (prepared.tickResult) {
       this.pushTick(prepared.tickResult);
     }
   }
 
-  private invalidateIncompatibleRebase(): void {
+  private notifyResyncRequired(reason: ResyncRequiredReason, err: unknown): void {
+    if (this.closed || this.gate.closed || !this.initialized) return;
+    if (this.clientCapabilities.notifications === false) return;
+    const detail = err instanceof Error ? err.message : String(err);
+    const notice: ResyncRequiredNotification = {
+      tick: this.engine.store.tick,
+      snapshotSeq: this.snapshotSeq,
+      reason,
+      ...(err instanceof StateDigestError ? { code: err.code } : {}),
+      message: sanitizeDiagnosticMessage(detail, 256),
+    };
+    this.outbound({ jsonrpc: '2.0', method: NOTIFICATIONS.RESYNC_REQUIRED, params: notice });
+  }
+
+  private invalidateIncompatibleRebase(
+    reason?: ResyncRequiredReason,
+    err?: unknown,
+  ): void {
     this.emitted.clear();
     this.snapshotSeq += 1;
     this.hasSnapshotted = false;
+    this.rebaseInvalidated = true;
     this.packIntake = undefined;
+    if (reason) {
+      this.notifyResyncRequired(reason, err);
+    }
   }
 
   /**
    * After LOAD: rebuild emitted, lastState, bump snapshotSeq, and push a
    * snapshot-shaped baseline so every live mirror rebases (including omitEventLog).
    * Validates and hashes projected state before updating session bookkeeping.
-   * Also drops this session's packIntake (F-9bb888dc, composes F-7d41ae63):
-   * unlike packId/playerId/locationId, which are read live off
-   * `this.engine.world` at every initialize, packIntake is boot-time-captured
-   * constructor state describing the pack that produced the PRE-load world.
-   * A LOAD can swap in a save from an unrelated (or absent) content pack, so
-   * that summary must not survive to describe a world it never described.
-   * This runs for every peer sharing the gate, including
-   * one that has not yet called initialize — closing the hole for a session
-   * still mid-connect at LOAD time, not only for the LOAD-issuing session.
+   * Returns `{ ok: false, … }` only on `StateDigestError` (invalidating this
+   * session's baseline and notifying it to re-snapshot); rethrows any other error
+   * before mutating session state.
    */
-  rebaseAfterLoad(): void {
-    const prepared = this.prepareRebase(this.engine.world as WorldState, this.engine.store.tick);
+  rebaseAfterLoad(): RebaseAfterLoadResult {
+    const world = this.engine.world as WorldState;
+    let prepared: PreparedRebase;
+    try {
+      prepared = this.prepareRebase(world, this.engine.store.tick);
+    } catch (err) {
+      if (!(err instanceof StateDigestError)) throw err;
+      const message = sanitizeDiagnosticMessage(err.message, 256);
+      process.stderr.write(`[sidecar] peer rebase skipped: ${message}\n`);
+      this.invalidateIncompatibleRebase('rebase_skipped', err);
+      return {
+        ok: false,
+        snapshotSeq: this.snapshotSeq,
+        code: err.code,
+        error: message,
+      };
+    }
     this.applyPreparedRebase(prepared);
+    return { ok: true, snapshotSeq: this.snapshotSeq };
   }
 
   /**
@@ -1193,6 +1247,7 @@ export class SidecarServer {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[sidecar] peer tick skipped: ${sanitizeDiagnosticMessage(detail, 256)}\n`);
+      this.notifyResyncRequired('tick_skipped', err);
     }
   }
 
