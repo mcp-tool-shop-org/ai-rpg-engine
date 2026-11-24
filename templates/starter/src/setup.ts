@@ -14,7 +14,8 @@ import {
     traversalCore,
     statusCore,
     buildCombatStack,
-    aggressiveProfile,
+    BUILTIN_INTENT_PROFILES,
+    getRegisteredIntentProfiles,
 } from '@ai-rpg-engine/modules';
 import type { IntentProfile } from '@ai-rpg-engine/modules';
 import { applyContentPack } from '@ai-rpg-engine/content-schema';
@@ -53,12 +54,14 @@ function createTensionPressure(): EngineModule {
 // matching profile in this list: cognition builds its profile map from
 // `cognition.profiles`, and with an empty map no enemy ever selects an
 // intent — they stand still forever. Built-ins from @ai-rpg-engine/modules:
-// aggressiveProfile ('aggressive': attack visible hostiles, flee at low
-// morale) and cautiousProfile ('cautious': observe first, strike when
-// confident). Add your own IntentProfile objects here for custom brains.
+// aggressive ('aggressive': attack visible hostiles, flee at low morale),
+// cautious ('cautious': observe first, strike when confident), territorial
+// ('territorial': hold zone and engage intruders), and calculating
+// ('calculating': exploit debuffs and withdraw at low morale). Add your own
+// IntentProfile objects here for custom brains.
 // ═══════════════════════════════════════════════════════════════════
 
-export const myIntentProfiles: IntentProfile[] = [aggressiveProfile];
+export const myIntentProfiles: IntentProfile[] = [...BUILTIN_INTENT_PROFILES];
 
 // ═══════════════════════════════════════════════════════════════════
 // GAME FACTORY
@@ -169,7 +172,7 @@ export function createGame(seed?: number): Engine {
     // apply copies EntityBlueprint relations/custom/resistances/faction/
     // ruleProfileId and resolves aiProfile against cognition profiles +
     // pack.entityAi.
-    const applied = applyContentPack(engine, pack, { profiles: myIntentProfiles });
+    const applied = applyContentPack(engine, pack, { profiles: getRegisteredIntentProfiles(engine), unresolvedAiProfile: 'fail' });
     if (!applied.ok) {
         const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
         throw new Error(`applyContentPack failed:\n${detail}`);

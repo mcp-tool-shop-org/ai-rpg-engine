@@ -13,8 +13,18 @@
 
 import * as fs from 'node:fs';
 import { startStdioServer, startSocketServer, type PackIntakeSummary } from '@ai-rpg-engine/sidecar';
-import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
-import { createStandardChannels, modifyDistrictMetric, emitZoneEnteredForPlacement } from '@ai-rpg-engine/modules';
+import {
+  applyContentPack,
+  loadContentFromFile,
+  sanitizeDiagnosticText,
+  type GateContext,
+} from '@ai-rpg-engine/content-schema';
+import {
+  createStandardChannels,
+  getRegisteredIntentProfiles,
+  modifyDistrictMetric,
+  emitZoneEnteredForPlacement,
+} from '@ai-rpg-engine/modules';
 import { allPacks } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
@@ -100,11 +110,15 @@ function printSidecarHelp(error: (msg: string) => void): void {
   error('                   closures, event wiring — and this supplies the declarative');
   error('                   content, which is the boot contract C1 settled.');
   error('');
-  error('                   The four-check load gate runs BEFORE any mutation, so a bad');
-  error('                   engine-version range, an unknown module id, an unknown');
-  error('                   top-level key or a failed content hash is refused rather');
-  error('                   than half-applied. Applied counts, dropped fields and');
-  error('                   advisories are all reported to stderr — nothing is eaten.');
+  error('                   The four-check load gate and unresolved-AI-profile check');
+  error('                   (against the host engine\'s registered cognition profiles) run');
+  error('                   BEFORE any mutation, so a bad engine-version range, an unknown');
+  error('                   module id, an unknown top-level key, a failed content hash, or');
+  error('                   an unresolved aiProfile / entityAi profileId is refused');
+  error('                   (SIDECAR_CONTENT_REFUSED, exit 1) rather than half-applied.');
+  error('                   Applied counts, dropped fields and advisories are reported to');
+  error('                   stderr — nothing is eaten. Because the CLI enforces fail');
+  error('                   policy, it exits 1 rather than relaying packIntake.warnings.');
   error('                   --manifest is required: without it the version, module-id,');
   error('                   and content-hash checks cannot run.');
   error('');
@@ -139,7 +153,7 @@ function printSidecarHelp(error: (msg: string) => void): void {
  * and `replay --pack` do (F-dda90fe8).
  */
 export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): Promise<number | null> {
-  const { error } = deps;
+  const error = (msg: string) => deps.error(sanitizeDiagnosticText(msg, 1024));
 
   if (args.includes('--help') || args.includes('-h')) {
     printSidecarHelp(error);
@@ -313,6 +327,8 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
 
     const applied = applyContentPack(engine, load.pack, {
       channels: createStandardChannels(),
+      profiles: getRegisteredIntentProfiles(engine),
+      unresolvedAiProfile: 'fail',
       gate: {
         engineVersion: ENGINE_VERSION,
         registeredModuleIds: engine.moduleManager.getModules().map((m) => m.id),

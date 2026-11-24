@@ -208,7 +208,7 @@ export function createGame(seed?: number): Engine {
   // content-schema. This factory still wires named catalogs at construction;
   // apply copies EntityBlueprint.relations/custom/resistances/faction/ruleProfileId
   // (F-cf3fc257) and resolves aiProfile from pack.entityAi / options.profiles.
-  const applied = applyContentPack(engine, pack, { profiles: fantasyIntentProfiles });
+  const applied = applyContentPack(engine, pack, { profiles: fantasyIntentProfiles, unresolvedAiProfile: 'fail' });
   if (!applied.ok) {
     const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
     throw new Error(`applyContentPack failed:\n${detail}`);

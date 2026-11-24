@@ -400,7 +400,12 @@ export class SidecarServer {
         if (typeof world.locationId === 'string' && world.locationId.length > 0) {
           result.locationId = world.locationId;
         }
-        if (this.packIntake && (this.packIntake.dropped.length > 0 || this.packIntake.advisories.length > 0)) {
+        if (
+          this.packIntake &&
+          (this.packIntake.dropped.length > 0 ||
+            this.packIntake.advisories.length > 0 ||
+            (this.packIntake.warnings?.length ?? 0) > 0)
+        ) {
           result.packIntake = this.packIntake;
         }
         if (hasId) this.reply(id, result);

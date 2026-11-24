@@ -1050,6 +1050,55 @@ describe('F-9b3f6d21 — packIntake surfaces gate dropped/advisories on initiali
     const result = sent[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
     expect(result?.packIntake).toBeUndefined();
   });
+
+  it('options carrying warnings in packIntake surfaces them on initialize', () => {
+    const engine = createTestEngine({
+      modules: [],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const packIntake: PackIntakeSummary = {
+      dropped: [],
+      advisories: [],
+      warnings: [
+        {
+          code: 'UNRESOLVED_AI_PROFILE',
+          path: 'entities[0](grunt).aiProfile',
+          entityId: 'grunt',
+          profileId: 'missing-profile',
+          message: 'unresolved aiProfile "missing-profile"',
+        },
+      ],
+    };
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test', packIntake }, (m) => sent.push(m));
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const result = sent[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(result?.packIntake).toEqual(packIntake);
+
+    const sentEmpty: RpcMessage[] = [];
+    const emptyServer = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test', packIntake: { dropped: [], advisories: [], warnings: [] } },
+      (m) => sentEmpty.push(m),
+    );
+    emptyServer.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const emptyResult = sentEmpty[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(emptyResult?.packIntake).toBeUndefined();
+  });
 });
 
 describe('F-9bb888dc — LOAD invalidates packIntake (composes F-7d41ae63)', () => {

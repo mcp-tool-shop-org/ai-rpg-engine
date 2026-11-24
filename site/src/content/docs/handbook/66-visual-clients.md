@@ -38,7 +38,7 @@ Canonical pre-images scale every finite number by `1e6` (rounded half away from 
 `audio` negotiation ships from **v3.12.0**. A host that does not ask for it sees the same
 bytes it saw before, which is the point of an additive capability.
 
-A `--content` sidecar boot still needs `--manifest` (`SIDECAR_MANIFEST_REQUIRED`).
+A `--content` sidecar boot still needs `--manifest` (`SIDECAR_MANIFEST_REQUIRED`) and runs both the four-check load gate and the unresolved AI profile check (`aiProfile` / `entityAi` against the host engine's registered cognition profiles) before any mutation, exiting `1` with `SIDECAR_CONTENT_REFUSED` on a mismatch. Because the CLI enforces `'fail'` policy, `packIntake.warnings` on `initialize` is never relayed by the CLI — it applies only to custom hosts embedding `SidecarServer` with `unresolvedAiProfile: 'warn'`.
 
 ## The Godot client (ai-rpg-stage)
 

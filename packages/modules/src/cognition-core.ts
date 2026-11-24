@@ -108,6 +108,9 @@ export type CognitionCoreConfig = {
   moraleFleeThresholds?: Record<string, number>;
 };
 
+/** Formula id publishing this engine's registered intent profiles at construction. */
+export const COGNITION_PROFILES_FORMULA = 'cognition-core:profiles';
+
 const DEFAULT_DECAY: BeliefDecayConfig = {
   baseRate: 0.02,
   pruneThreshold: 0.05,
@@ -130,6 +133,7 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
   for (const p of config.profiles ?? []) {
     profileMap.set(p.id, p);
   }
+  const registeredProfiles: readonly IntentProfile[] = [...profileMap.values()];
 
   const decayConfig: BeliefDecayConfig = { ...DEFAULT_DECAY, ...config.decay };
   const moraleFleeThresholds = config.moraleFleeThresholds ?? {};
@@ -142,6 +146,7 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
       ctx.persistence.registerNamespace('cognition-core', {
         entityCognition: {} as Record<string, CognitionState>,
       });
+      ctx.formulas.register(COGNITION_PROFILES_FORMULA, () => registeredProfiles);
 
       // Per-tick defeat morale budget (cap at -20 per entity per tick).
       // Tick-stamped rather than cleared on a 'tick.start' event: the engine
@@ -958,6 +963,20 @@ export const BUILTIN_INTENT_PROFILES: readonly IntentProfile[] = [
   territorialProfile,
   calculatingProfile,
 ];
+
+/**
+ * Return the intent profiles registered on `engine` by cognition-core,
+ * falling back to `BUILTIN_INTENT_PROFILES` when cognition-core is absent.
+ */
+export function getRegisteredIntentProfiles(
+  engine: { formulas: { has: (id: string) => boolean; get: (id: string) => () => unknown } },
+): IntentProfile[] {
+  if (engine.formulas.has(COGNITION_PROFILES_FORMULA)) {
+    const registered = engine.formulas.get(COGNITION_PROFILES_FORMULA)();
+    if (Array.isArray(registered)) return [...(registered as IntentProfile[])];
+  }
+  return [...BUILTIN_INTENT_PROFILES];
+}
 
 /**
  * Resolve an intent profile by id. Caller-supplied `extraProfiles` win over

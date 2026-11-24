@@ -39,7 +39,7 @@ import {
 } from '@ai-rpg-engine/modules';
 import type { Engine } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
-import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { FIXTURE_PACK_PATH, fixtureProfilesFor } from './c0/fixture-path.js';
 import { openAllGates } from './c3/open-gates.js';
 
 const SEED = 71;
@@ -66,6 +66,8 @@ function bootWithExport(): Engine {
   const r = applyContentPack(engine, fixturePack(), {
     channels: createStandardChannels(),
     prevalidated: true,
+    profiles: fixtureProfilesFor(engine),
+    unresolvedAiProfile: 'fail',
   });
   if (!r.ok) throw new Error(`intake failed: ${JSON.stringify(r.errors)}`);
   openAllGates(engine);
@@ -206,7 +208,10 @@ describe('C3/P3 — the forge export carries typed hazards into a running world'
     const engine = hostPack().createGame(SEED);
     const r = applyContentPack(engine, pack as unknown as ContentPack, {
       channels: createStandardChannels(),
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
     });
+    expect(r.ok).toBe(true);
     const drop = r.dropped.find((d) => d.detail.includes('hazard-does-not-exist'));
     expect(drop, 'a dangling hazardRef must be named').toBeDefined();
   });

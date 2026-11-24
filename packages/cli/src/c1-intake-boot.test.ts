@@ -34,7 +34,7 @@ import type { Engine, ZoneState } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { playerHalfRound } from './packs-opportunity-reachability.test.js';
-import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { FIXTURE_PACK_PATH, fixtureProfilesFor } from './c0/fixture-path.js';
 import { openAllGates } from './c3/open-gates.js';
 
 // --- Pins (PIN_PER_STEP) — C0's, unchanged, so the two cycles are comparable --
@@ -92,6 +92,8 @@ function convertedSessionFingerprint(mutate?: (engine: Engine) => void): Fingerp
   const result = applyContentPack(engine, fixturePack(), {
     channels: createStandardChannels(),
     prevalidated: true,
+    profiles: fixtureProfilesFor(engine),
+    unresolvedAiProfile: 'fail',
   });
   if (!result.ok) throw new Error(`intake failed: ${JSON.stringify(result.errors)}`);
 
@@ -116,6 +118,7 @@ function convertedSessionFingerprint(mutate?: (engine: Engine) => void): Fingerp
   // (yard ↔ undervault ↔ gantry) rather than the host pack's own rooms.
   const player = engine.store.getEntity(engine.world.playerId);
   if (!player) throw new Error('host pack has no player entity');
+  const fullHp = player.resources.hp ?? 0;
   engine.store.addEntity({ ...player, zoneId: CONVERTED_ZONE_IDS[0] });
 
   if (mutate) mutate(engine);
@@ -123,6 +126,8 @@ function convertedSessionFingerprint(mutate?: (engine: Engine) => void): Fingerp
   const loaded = { meta: pack.meta, createGame: pack.createGame };
   const visits = new Map<string, number>();
   for (let round = 0; round < C1_ROUNDS; round++) {
+    const living = engine.world.entities[engine.world.playerId];
+    if (living && fullHp > 0) living.resources.hp = fullHp;
     playerHalfRound(engine, round, 'engaged', visits);
     runHostileRound(engine, loaded as never, { log: () => {} });
   }
@@ -187,7 +192,12 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
     const engine = pack.createGame(C1_SEED);
     const before = Object.keys(engine.world.zones).length;
 
-    const r = applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    const r = applyContentPack(engine, fixturePack(), {
+      channels: createStandardChannels(),
+      prevalidated: true,
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
+    });
 
     expect(r.ok).toBe(true);
     expect(r.applied.zones).toBe(3);
@@ -204,7 +214,13 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
 
   it('CLOSES a wire gap: districts reach district-core state, not a slot nothing reads', () => {
     const engine = pack.createGame(C1_SEED);
-    const r = applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    const r = applyContentPack(engine, fixturePack(), {
+      channels: createStandardChannels(),
+      prevalidated: true,
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
+    });
+    expect(r.ok).toBe(true);
 
     expect(r.applied.districts).toBe(2);
     const state = engine.world.modules['district-core'] as {
@@ -221,7 +237,13 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
 
   it('reports the two session-scoped keys instead of pretending it applied them', () => {
     const engine = pack.createGame(C1_SEED);
-    const r = applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    const r = applyContentPack(engine, fixturePack(), {
+      channels: createStandardChannels(),
+      prevalidated: true,
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
+    });
+    expect(r.ok).toBe(true);
     const scoped = r.dropped.filter((d) => d.reason === 'session-scoped').map((d) => d.path).sort();
     expect(scoped).toEqual(['pack.buildCatalog', 'pack.progressionTrees']);
   });
@@ -236,7 +258,13 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
     // dependent measurement below meaningless. This is the same class of error
     // C0's ledger entry 1 records: the probe that drove no player.
     const engine = hostPack().createGame(C1_SEED);
-    applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    const applied = applyContentPack(engine, fixturePack(), {
+      channels: createStandardChannels(),
+      prevalidated: true,
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
+    });
+    expect(applied.ok).toBe(true);
     // ⚠ C3/P2: this session builds its own engine, so it needs the gates opened
     // too. Without it the player never leaves `zone-surface-yard` — the vault's
     // HARD gate refuses, correctly, and this probe's subject is traversal rather
@@ -246,11 +274,14 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
       throw new Error('expected the fixture to author entry gates — none found to open');
     }
     const player = engine.store.getEntity(engine.world.playerId)!;
+    const fullHp = player.resources.hp ?? 0;
     engine.store.addEntity({ ...player, zoneId: CONVERTED_ZONE_IDS[0] });
 
     const loaded = { meta: hostPack().meta, createGame: hostPack().createGame };
     const visits = new Map<string, number>();
     for (let round = 0; round < C1_ROUNDS; round++) {
+      const living = engine.world.entities[engine.world.playerId];
+      if (living && fullHp > 0) living.resources.hp = fullHp;
       playerHalfRound(engine, round, 'engaged', visits);
       runHostileRound(engine, loaded as never, { log: () => {} });
     }
@@ -278,34 +309,13 @@ describe('C1/P1 — the alive-as-rules fields fire on CONVERTED content', () => 
   // question C0 could not answer was whether a zone that arrived through the
   // export lane would carry the same weight. It does, and this measures it.
 
-  it('light — MEASURED INERT on converted content (and my hypothesis was refuted)', () => {
-    // ⚠ This assertion is the opposite of what I wrote first, and chasing it was
-    // the most useful hour of the phase.
-    //
-    // C0 measured `light` alive in 12 of 12 worlds, so I asserted 'simulation'
-    // and got 'none'. I then hypothesised the cause: `light`'s reader
-    // (runPerceptionCheck, perception-filter.ts:323) reads `observer.zoneId`,
-    // and the exported pack's entities carry NO zoneId at all — verified
-    // directly on the fixture, all three entities lack the field, because
-    // EntityBlueprint has no location field (C0 REPORT §2). So, I reasoned,
-    // nobody stands in a converted zone and nobody's light is ever read.
-    //
-    // THAT HYPOTHESIS IS REFUTED. Placing an AI observer in a converted zone
-    // does not make light alive; neither does a CONTROLLED placement that
-    // re-pins the observer to the player's zone every round for all 40 rounds
-    // (the sim relocates NPCs, so a one-shot placement is not a placement — that
-    // was the second wrong version). Both measured 'none'.
-    //
-    // What is MEASURED, and all this test claims: on this converted subgraph the
-    // field is inert, across every variant tried. The reader is reached only
-    // through perception layers this content never triggers — the session emits
-    // zero perception events start to finish. Carrying a field is necessary and
-    // not sufficient: a rule needs the REST of its inputs present, and the
-    // exported vocabulary supplies none of them (no placement, no AI profiles,
-    // no perception-layer config). That is a C3 finding, stated as measured
-    // rather than dressed up as a wire success.
+  it('light — ALIVE on converted content once placements and AI profiles are both resolved', () => {
+    // Previously `light` measured 'none' because neither entity placements nor
+    // AI profiles were populated on the converted subgraph. With both wired at
+    // intake, placed AI entities run perception checks against zone light, so
+    // darkening the converted zones diverges the simulation.
     const v = classify(BASELINE, convertedSessionFingerprint(mutateConvertedZones((z) => { z.light = 0; })));
-    expect(v).toBe('none');
+    expect(v).toBe('simulation');
   });
 
   it('CONTROL for the above: the fingerprint machinery CAN see light', () => {
@@ -420,9 +430,22 @@ describe('C1/P1 — intake is deterministic', () => {
 
   it('applying the same pack twice is idempotent in world state', () => {
     const engine = hostPack().createGame(C1_SEED);
-    applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    const profiles = fixtureProfilesFor(engine);
+    const r1 = applyContentPack(engine, fixturePack(), {
+      channels: createStandardChannels(),
+      prevalidated: true,
+      profiles,
+      unresolvedAiProfile: 'fail',
+    });
+    expect(r1.ok).toBe(true);
     const once = stableStringify(engine.world.zones);
-    applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    const r2 = applyContentPack(engine, fixturePack(), {
+      channels: createStandardChannels(),
+      prevalidated: true,
+      profiles,
+      unresolvedAiProfile: 'fail',
+    });
+    expect(r2.ok).toBe(true);
     expect(stableStringify(engine.world.zones)).toBe(once);
   });
 });

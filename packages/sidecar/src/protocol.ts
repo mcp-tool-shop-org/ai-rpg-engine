@@ -231,6 +231,19 @@ export type PackIntakeDrop = {
 export type PackIntakeNote = { path: string; message: string };
 
 /**
+ * One structured intake warning surfaced alongside dropped/advisories (for programmatic hosts
+ * calling `applyContentPack` with `unresolvedAiProfile: 'warn'`; the CLI uses `'fail'` and refuses
+ * instead of relaying `warnings`).
+ */
+export type PackIntakeWarning = {
+  code: string;
+  path: string;
+  entityId?: string;
+  profileId?: string;
+  message: string;
+};
+
+/**
  * What the content-pack gate (`runLoadGate` / `applyContentPack`, both in
  * content-schema) dropped or advised while this world was built. Carried on
  * `SidecarServerOptions` and stamped onto `initialize`'s result only when
@@ -249,6 +262,7 @@ export type PackIntakeNote = { path: string; message: string };
 export type PackIntakeSummary = {
   dropped: PackIntakeDrop[];
   advisories: PackIntakeNote[];
+  warnings?: PackIntakeWarning[];
 };
 
 export type InitializeResult = {

@@ -157,7 +157,7 @@
       "confidence": "full",
       "highWater": 0.796067,
       "name": "cli",
-      "qualifyingSourceCommits": 115,
+      "qualifyingSourceCommits": 117,
       "rebaseline": null
     },
     {
@@ -192,7 +192,7 @@
       "confidence": "full",
       "highWater": 1,
       "name": "content-schema",
-      "qualifyingSourceCommits": 31,
+      "qualifyingSourceCommits": 33,
       "rebaseline": null
     },
     {
@@ -235,7 +235,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "core",
-      "qualifyingSourceCommits": 25,
+      "qualifyingSourceCommits": 24,
       "rebaseline": null
     },
     {
@@ -320,7 +320,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "fixtures",
-      "qualifyingSourceCommits": 2,
+      "qualifyingSourceCommits": 1,
       "rebaseline": null
     },
     {
@@ -390,7 +390,7 @@
       "confidence": "full",
       "highWater": 0.8125,
       "name": "modules",
-      "qualifyingSourceCommits": 111,
+      "qualifyingSourceCommits": 112,
       "rebaseline": null
     },
     {
@@ -526,7 +526,7 @@
       "confidence": "low",
       "highWater": 1,
       "name": "sidecar",
-      "qualifyingSourceCommits": 26,
+      "qualifyingSourceCommits": 27,
       "rebaseline": null
     },
     {
@@ -581,7 +581,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter",
-      "qualifyingSourceCommits": 12,
+      "qualifyingSourceCommits": 13,
       "rebaseline": null
     },
     {
@@ -692,7 +692,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-fantasy",
-      "qualifyingSourceCommits": 26,
+      "qualifyingSourceCommits": 27,
       "rebaseline": null
     },
     {
@@ -886,8 +886,8 @@
         "path": ".gitattributes"
       },
       {
-        "commits": 31,
-        "lines": 655,
+        "commits": 30,
+        "lines": 649,
         "path": ".github/workflows/ci.yml"
       },
       {
@@ -916,8 +916,8 @@
         "path": ".signalfire/save.json"
       },
       {
-        "commits": 51,
-        "lines": 2337,
+        "commits": 52,
+        "lines": 2336,
         "path": "CHANGELOG.md"
       },
       {
@@ -986,8 +986,8 @@
         "path": "SHIP_GATE.md"
       },
       {
-        "commits": 12,
-        "lines": 568,
+        "commits": 11,
+        "lines": 541,
         "path": "atlas/README.md"
       },
       {
@@ -996,18 +996,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 12,
-        "lines": 5186,
+        "commits": 11,
+        "lines": 5052,
         "path": "atlas/page.json"
       },
       {
-        "commits": 12,
-        "lines": 43689,
+        "commits": 11,
+        "lines": 43702,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 12,
-        "lines": 105726,
+        "commits": 11,
+        "lines": 105668,
         "path": "atlas/structure.json"
       },
       {
@@ -1071,8 +1071,8 @@
         "path": "docs/composition-model.md"
       },
       {
-        "commits": 4,
-        "lines": 828,
+        "commits": 5,
+        "lines": 806,
         "path": "docs/contract-v1/CONTRACT.md"
       },
       {
@@ -1261,8 +1261,8 @@
         "path": "docs/handbook/65-consequences-that-leave-marks.md"
       },
       {
-        "commits": 8,
-        "lines": 146,
+        "commits": 9,
+        "lines": 148,
         "path": "docs/handbook/66-visual-clients.md"
       },
       {
@@ -1366,13 +1366,13 @@
         "path": "dogfood/roadmap/swarm-1788226678-0c6b.json"
       },
       {
-        "commits": 2,
+        "commits": 1,
         "lines": 26,
         "path": "fixtures/state_digest_vectors.jsonl"
       },
       {
-        "commits": 2,
-        "lines": 209,
+        "commits": 1,
+        "lines": 234,
         "path": "fixtures/verify_state_digest_vectors.gd"
       },
       {
@@ -1821,8 +1821,8 @@
         "path": "packages/cli/src/c0-version-skew.test.ts"
       },
       {
-        "commits": 2,
-        "lines": 76,
+        "commits": 3,
+        "lines": 94,
         "path": "packages/cli/src/c0/fixture-path.ts"
       },
       {
@@ -1831,13 +1831,13 @@
         "path": "packages/cli/src/c1-conformance.test.ts"
       },
       {
-        "commits": 9,
-        "lines": 1254,
+        "commits": 11,
+        "lines": 1362,
         "path": "packages/cli/src/c1-gate.test.ts"
       },
       {
-        "commits": 7,
-        "lines": 862,
+        "commits": 8,
+        "lines": 953,
         "path": "packages/cli/src/c1-intake-boot.test.ts"
       },
       {
@@ -1851,23 +1851,23 @@
         "path": "packages/cli/src/c1-sidecar.test.ts"
       },
       {
-        "commits": 5,
-        "lines": 786,
+        "commits": 6,
+        "lines": 793,
         "path": "packages/cli/src/c3-entry-gates.test.ts"
       },
       {
-        "commits": 3,
-        "lines": 832,
+        "commits": 4,
+        "lines": 842,
         "path": "packages/cli/src/c3-placement-spawn.test.ts"
       },
       {
-        "commits": 2,
-        "lines": 948,
+        "commits": 3,
+        "lines": 955,
         "path": "packages/cli/src/c3-typed-hazards.test.ts"
       },
       {
-        "commits": 2,
-        "lines": 590,
+        "commits": 3,
+        "lines": 594,
         "path": "packages/cli/src/c3-zone-state.test.ts"
       },
       {
@@ -1876,8 +1876,8 @@
         "path": "packages/cli/src/c3/open-gates.ts"
       },
       {
-        "commits": 9,
-        "lines": 1125,
+        "commits": 11,
+        "lines": 1282,
         "path": "packages/cli/src/c4-content-intake.test.ts"
       },
       {
@@ -1901,8 +1901,8 @@
         "path": "packages/cli/src/cli.test.ts"
       },
       {
-        "commits": 3,
-        "lines": 505,
+        "commits": 4,
+        "lines": 507,
         "path": "packages/cli/src/consumer-surface-seen.test.ts"
       },
       {
@@ -2096,8 +2096,8 @@
         "path": "packages/cli/src/session-narration.test.ts"
       },
       {
-        "commits": 17,
-        "lines": 1384,
+        "commits": 19,
+        "lines": 1416,
         "path": "packages/cli/src/sidecar-command.ts"
       },
       {
@@ -2116,13 +2116,13 @@
         "path": "packages/cli/src/turns.ts"
       },
       {
-        "commits": 5,
-        "lines": 248,
+        "commits": 6,
+        "lines": 314,
         "path": "packages/cli/src/validate.test.ts"
       },
       {
-        "commits": 7,
-        "lines": 459,
+        "commits": 8,
+        "lines": 510,
         "path": "packages/cli/src/validate.ts"
       },
       {
@@ -2221,13 +2221,13 @@
         "path": "packages/content-schema/src/index.ts"
       },
       {
-        "commits": 26,
-        "lines": 2985,
+        "commits": 28,
+        "lines": 3447,
         "path": "packages/content-schema/src/intake.test.ts"
       },
       {
-        "commits": 31,
-        "lines": 3615,
+        "commits": 33,
+        "lines": 4089,
         "path": "packages/content-schema/src/intake.ts"
       },
       {
@@ -2296,8 +2296,8 @@
         "path": "packages/content-schema/src/validate.test.ts"
       },
       {
-        "commits": 22,
-        "lines": 909,
+        "commits": 23,
+        "lines": 911,
         "path": "packages/content-schema/src/validate.ts"
       },
       {
@@ -2422,7 +2422,7 @@
       },
       {
         "commits": 1,
-        "lines": 305,
+        "lines": 345,
         "path": "packages/core/src/state-digest.ts"
       },
       {
@@ -3006,13 +3006,13 @@
         "path": "packages/modules/src/belief-provenance.ts"
       },
       {
-        "commits": 9,
-        "lines": 893,
+        "commits": 10,
+        "lines": 918,
         "path": "packages/modules/src/cognition-core.test.ts"
       },
       {
-        "commits": 8,
-        "lines": 716,
+        "commits": 9,
+        "lines": 735,
         "path": "packages/modules/src/cognition-core.ts"
       },
       {
@@ -3291,8 +3291,8 @@
         "path": "packages/modules/src/hazard-interpreter.ts"
       },
       {
-        "commits": 67,
-        "lines": 690,
+        "commits": 68,
+        "lines": 692,
         "path": "packages/modules/src/index.ts"
       },
       {
@@ -4461,7 +4461,7 @@
         "path": "packages/sidecar/LICENSE"
       },
       {
-        "commits": 16,
+        "commits": 17,
         "lines": 395,
         "path": "packages/sidecar/README.md"
       },
@@ -4476,8 +4476,8 @@
         "path": "packages/sidecar/gdscript/framing.gd"
       },
       {
-        "commits": 8,
-        "lines": 1100,
+        "commits": 7,
+        "lines": 1144,
         "path": "packages/sidecar/gdscript/sidecar_client.gd"
       },
       {
@@ -4491,7 +4491,7 @@
         "path": "packages/sidecar/src/client.test.ts"
       },
       {
-        "commits": 12,
+        "commits": 11,
         "lines": 932,
         "path": "packages/sidecar/src/client.ts"
       },
@@ -4516,8 +4516,8 @@
         "path": "packages/sidecar/src/framing.ts"
       },
       {
-        "commits": 6,
-        "lines": 182,
+        "commits": 5,
+        "lines": 177,
         "path": "packages/sidecar/src/gdscript-kit.test.ts"
       },
       {
@@ -4526,28 +4526,28 @@
         "path": "packages/sidecar/src/index.ts"
       },
       {
-        "commits": 20,
-        "lines": 1038,
+        "commits": 22,
+        "lines": 1060,
         "path": "packages/sidecar/src/protocol.ts"
       },
       {
-        "commits": 7,
-        "lines": 430,
+        "commits": 6,
+        "lines": 446,
         "path": "packages/sidecar/src/serializer.test.ts"
       },
       {
-        "commits": 13,
-        "lines": 1031,
+        "commits": 12,
+        "lines": 796,
         "path": "packages/sidecar/src/serializer.ts"
       },
       {
         "commits": 28,
-        "lines": 2904,
+        "lines": 3258,
         "path": "packages/sidecar/src/server.test.ts"
       },
       {
         "commits": 29,
-        "lines": 2922,
+        "lines": 2961,
         "path": "packages/sidecar/src/server.ts"
       },
       {
@@ -4561,8 +4561,8 @@
         "path": "packages/sidecar/src/socket.ts"
       },
       {
-        "commits": 2,
-        "lines": 119,
+        "commits": 1,
+        "lines": 95,
         "path": "packages/sidecar/src/state-digest-vectors.test.ts"
       },
       {
@@ -5081,8 +5081,8 @@
         "path": "packages/starter-fantasy/src/intent-profiles.test.ts"
       },
       {
-        "commits": 2,
-        "lines": 426,
+        "commits": 3,
+        "lines": 428,
         "path": "packages/starter-fantasy/src/json-boot-recipe.test.ts"
       },
       {
@@ -5111,8 +5111,8 @@
         "path": "packages/starter-fantasy/src/setup.test.ts"
       },
       {
-        "commits": 32,
-        "lines": 639,
+        "commits": 33,
+        "lines": 641,
         "path": "packages/starter-fantasy/src/setup.ts"
       },
       {
@@ -6126,8 +6126,8 @@
         "path": "site/src/content/docs/handbook/65-consequences-that-leave-marks.md"
       },
       {
-        "commits": 8,
-        "lines": 156,
+        "commits": 9,
+        "lines": 158,
         "path": "site/src/content/docs/handbook/66-visual-clients.md"
       },
       {
@@ -6151,8 +6151,8 @@
         "path": "templates/starter/LICENSE"
       },
       {
-        "commits": 7,
-        "lines": 130,
+        "commits": 8,
+        "lines": 143,
         "path": "templates/starter/README.md"
       },
       {
@@ -6181,8 +6181,8 @@
         "path": "templates/starter/src/index.ts"
       },
       {
-        "commits": 24,
-        "lines": 444,
+        "commits": 25,
+        "lines": 446,
         "path": "templates/starter/src/setup.ts"
       },
       {
@@ -6216,17 +6216,17 @@
     "level": "full",
     "reason": "at least 30 qualifying commits, and at least 20 source files reach 10 revisions"
   },
-  "generatedAt": "2026-11-24T11:46:59.864Z",
+  "generatedAt": "2026-11-24T12:35:45.809Z",
   "generatedFrom": {
-    "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1"
+    "commit": "c44ca4db94a580b633aa80d9121fec2fce5acbab"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
       "b": "package.json",
-      "either": 27,
+      "either": 28,
       "shared": 14,
-      "strength": 0.518519
+      "strength": 0.5
     },
     {
       "a": "README.es.md",
@@ -7853,18 +7853,11 @@
       "strength": 0.777778
     },
     {
-      "a": "packages/content-schema/src/gate.ts",
-      "b": "packages/content-schema/src/intake.ts",
-      "either": 21,
-      "shared": 11,
-      "strength": 0.52381
-    },
-    {
       "a": "packages/content-schema/src/intake.test.ts",
       "b": "packages/content-schema/src/intake.ts",
-      "either": 22,
-      "shared": 14,
-      "strength": 0.636364
+      "either": 24,
+      "shared": 16,
+      "strength": 0.666667
     },
     {
       "a": "packages/core/package.json",
@@ -8863,16 +8856,16 @@
     {
       "a": "packages/sidecar/src/protocol.ts",
       "b": "packages/sidecar/src/server.test.ts",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
+      "either": 20,
+      "shared": 11,
+      "strength": 0.55
     },
     {
       "a": "packages/sidecar/src/protocol.ts",
       "b": "packages/sidecar/src/server.ts",
-      "either": 18,
-      "shared": 10,
-      "strength": 0.555556
+      "either": 19,
+      "shared": 11,
+      "strength": 0.578947
     },
     {
       "a": "packages/sidecar/src/server.test.ts",
@@ -9452,16 +9445,16 @@
     "floor": "strong",
     "floorHeld": false,
     "floorTrigger": null,
-    "headDate": "2026-11-24T05:54:07-05:00",
+    "headDate": "2026-11-24T07:31:19-05:00",
     "inScopeFiles": 1395,
     "pinnedStart": null,
     "priorFloor": "strong",
-    "qualifyingCommits": 432,
+    "qualifyingCommits": 433,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 10,
-    "since": "2026-05-28T10:54:07.000Z",
+    "since": "2026-05-28T12:31:19.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",

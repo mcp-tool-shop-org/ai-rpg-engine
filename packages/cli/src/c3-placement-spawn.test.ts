@@ -34,7 +34,7 @@ import {
 } from '@ai-rpg-engine/modules';
 import type { Engine } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
-import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { FIXTURE_PACK_PATH, fixtureProfilesFor } from './c0/fixture-path.js';
 import { openAllGates } from './c3/open-gates.js';
 
 // --- Pins (PIN_PER_STEP) — C0's and C1's, unchanged ------------------------
@@ -95,6 +95,8 @@ function bootWithExport(seed = SEED): { engine: Engine; applied: Record<string, 
   const r = applyContentPack(engine, fixturePack(), {
     channels: createStandardChannels(),
     prevalidated: true,
+    profiles: fixtureProfilesFor(engine),
+    unresolvedAiProfile: 'fail',
   });
   if (!r.ok) throw new Error(`intake failed: ${JSON.stringify(r.errors)}`);
   // Asserted, not assumed: a helper that silently removed nothing would let
@@ -188,6 +190,8 @@ describe('C3/P1 — CLOSES C0 §2: an exported pack can say where its NPCs stand
     const r = applyContentPack(engine2, pack as ContentPack, {
       channels: createStandardChannels(),
       prevalidated: true,
+      profiles: fixtureProfilesFor(engine2),
+      unresolvedAiProfile: 'fail',
     });
     expect(r.ok).toBe(true);
     openAllGates(engine2);
@@ -303,6 +307,8 @@ describe('C3/P1 — an authored spawn set produces real spawns', () => {
       const r = applyContentPack(engine, pack, {
         channels: createStandardChannels(),
         prevalidated: true,
+        profiles: fixtureProfilesFor(engine),
+        unresolvedAiProfile: 'fail',
       });
       expect(r.ok).toBe(true);
       openAllGates(engine);
@@ -329,6 +335,8 @@ describe('C3/P1 — an authored spawn set produces real spawns', () => {
     const r = applyContentPack(engine, pack as ContentPack, {
       channels: createStandardChannels(),
       prevalidated: true,
+      profiles: fixtureProfilesFor(engine),
+      unresolvedAiProfile: 'fail',
     });
     expect(r.ok).toBe(true);
     openAllGates(engine);

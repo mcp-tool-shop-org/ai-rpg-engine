@@ -21,6 +21,8 @@ import {
   runLoadGate,
   zoneDefinitionToState,
   entityBlueprintToState,
+  checkUnresolvedAiProfiles,
+  sanitizeDiagnosticText,
   extractSessionContent,
   seedWorldFactionsFromMembership,
   MODULE_INTAKE_KEYS,
@@ -370,10 +372,18 @@ describe('C1/P1 — applyContentPack routes content into a booted world', () => 
     // Declared, validated, real content — and still unrouted at this rung.
     expect(paths).toContain('pack.quests');
     expect(paths).toContain('pack.verbs');
-    // Unresolved aiProfile is named in dropped[] (F-035ac806). Overlay packs
-    // without profiles still load (sidecar --content / C3 fixture).
+    // Unresolved aiProfile is named in dropped[] and emitted as a structured
+    // warning under default 'warn' mode.
     expect(r.ok).toBe(true);
     expect(r.dropped.some((d) => d.path.includes('aiProfile'))).toBe(true);
+    expect(r.warnings).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[0](e).aiProfile',
+        entityId: 'e',
+        profileId: 'cautious',
+      }),
+    ]);
   });
 
   it('CLOSED BY C3/P1: the placement hole is a channel now, not an advisory', () => {
@@ -855,14 +865,18 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     expect(r.applied.entityAi).toBe(1);
   });
 
-  it('writes EntityState.ai from ContentPack.entityAi (goals/fears survive)', () => {
+  it('writes EntityState.ai from ContentPack.entityAi when profileId is registered (goals/fears survive)', () => {
     const engine = bootEngine();
-    const r = applyContentPack(engine, {
-      entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'aggressive' }],
-      entityAi: {
-        grunt: { profileId: 'aggressive', goals: ['guard-zone'], fears: ['fire'], alertLevel: 2, knowledge: { seen: true } },
+    const r = applyContentPack(
+      engine,
+      {
+        entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'aggressive' }],
+        entityAi: {
+          grunt: { profileId: 'aggressive', goals: ['guard-zone'], fears: ['fire'], alertLevel: 2, knowledge: { seen: true } },
+        },
       },
-    });
+      { profiles: [{ id: 'aggressive' }], unresolvedAiProfile: 'fail' },
+    );
     expect(r.ok).toBe(true);
     expect(engine.world.entities['grunt'].ai).toEqual({
       profileId: 'aggressive',
@@ -873,16 +887,398 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     });
   });
 
-  it('unresolved aiProfile is a structured error, not a silent stand-still', () => {
+  it('pack.entityAi cannot bypass registered profile checks under fail or warn', () => {
+    const pack: ContentPack = {
+      entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'aggressive' }],
+      entityAi: {
+        grunt: { profileId: 'ghost-brain', goals: ['guard-zone'] },
+      },
+    };
+    const failEngine = bootEngine();
+    const failRes = applyContentPack(failEngine, pack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'fail',
+    });
+    expect(failRes.ok).toBe(false);
+    expect(failRes.warnings).toEqual([]);
+    expect(failRes.errors).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entityAi.grunt.profileId',
+        entityId: 'grunt',
+        profileId: 'ghost-brain',
+      }),
+    ]);
+    expect(failEngine.world.entities['grunt']).toBeUndefined();
+
+    const warnEngine = bootEngine();
+    const warnRes = applyContentPack(warnEngine, pack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+    });
+    expect(warnRes.ok).toBe(true);
+    expect(warnRes.errors).toEqual([]);
+    expect(warnRes.warnings).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entityAi.grunt.profileId',
+        entityId: 'grunt',
+        profileId: 'ghost-brain',
+      }),
+    ]);
+    expect(warnEngine.world.entities['grunt'].ai).toBeUndefined();
+
+    const orphanPack: ContentPack = {
+      entityAi: { orphan: { profileId: 'ghost-brain' } },
+    };
+    const orphanFail = applyContentPack(bootEngine(), orphanPack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'fail',
+    });
+    expect(orphanFail.ok).toBe(false);
+    expect(orphanFail.errors).toEqual([
+      expect.objectContaining({ code: 'UNRESOLVED_AI_PROFILE', entityId: 'orphan', profileId: 'ghost-brain' }),
+    ]);
+
+    const orphanWarn = applyContentPack(bootEngine(), orphanPack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+    });
+    expect(orphanWarn.ok).toBe(true);
+    expect(orphanWarn.warnings).toEqual([
+      expect.objectContaining({ code: 'UNRESOLVED_AI_PROFILE', entityId: 'orphan', profileId: 'ghost-brain' }),
+    ]);
+  });
+
+  it('profiles map form checks target profileId against registered profiles under fail and warn', () => {
+    const mapProfiles = {
+      brutal: { profileId: 'aggressive', goals: ['rush'] },
+      phantom: { profileId: 'ghost-brain', goals: ['ambush'] },
+    };
+    const goodRes = applyContentPack(
+      bootEngine(),
+      { entities: [{ id: 'raider', type: 'enemy', name: 'Raider', aiProfile: 'brutal' }] },
+      {
+        profiles: mapProfiles,
+        registeredProfiles: [{ id: 'aggressive' }],
+        unresolvedAiProfile: 'fail',
+      },
+    );
+    expect(goodRes.ok).toBe(true);
+
+    const badPack: ContentPack = {
+      entities: [{ id: 'stalker', type: 'enemy', name: 'Stalker', aiProfile: 'phantom' }],
+    };
+    const failEngine = bootEngine();
+    const failRes = applyContentPack(failEngine, badPack, {
+      profiles: mapProfiles,
+      registeredProfiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'fail',
+    });
+    expect(failRes.ok).toBe(false);
+    expect(failRes.errors).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[0](stalker).aiProfile',
+        entityId: 'stalker',
+        profileId: 'ghost-brain',
+      }),
+    ]);
+    expect(failEngine.world.entities['stalker']).toBeUndefined();
+
+    const warnEngine = bootEngine();
+    const warnRes = applyContentPack(warnEngine, badPack, {
+      profiles: mapProfiles,
+      unresolvedAiProfile: 'warn',
+    });
+    expect(warnRes.ok).toBe(true);
+    expect(warnRes.warnings).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        entityId: 'stalker',
+        profileId: 'ghost-brain',
+      }),
+    ]);
+    expect(warnEngine.world.entities['stalker'].ai).toBeUndefined();
+
+    const unmappedRes = applyContentPack(
+      bootEngine(),
+      { entities: [{ id: 'scout', type: 'npc', name: 'Scout', aiProfile: 'unlisted' }] },
+      { profiles: mapProfiles, registeredProfiles: [{ id: 'aggressive' }], unresolvedAiProfile: 'fail' },
+    );
+    expect(unmappedRes.ok).toBe(false);
+    expect(unmappedRes.errors).toEqual([
+      expect.objectContaining({ code: 'UNRESOLVED_AI_PROFILE', entityId: 'scout', profileId: 'unlisted' }),
+    ]);
+  });
+
+  it('unresolved aiProfile emits a structured warning by default and under warn policy', () => {
+    const engine = bootEngine();
+    const pack: ContentPack = {
+      entities: [
+        { id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' },
+        { id: 'stalker', type: 'enemy', name: 'Stalker', aiProfile: 'shadow-mind' },
+      ],
+    };
+    const r = applyContentPack(engine, pack, { profiles: [{ id: 'aggressive' }] });
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toHaveLength(2);
+    expect(r.warnings).toEqual([
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[0](grunt).aiProfile',
+        entityId: 'grunt',
+        profileId: 'ghost-brain',
+      }),
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        path: 'entities[1](stalker).aiProfile',
+        entityId: 'stalker',
+        profileId: 'shadow-mind',
+      }),
+    ]);
+    expect(r.dropped.some((d) => d.path.includes('aiProfile') && d.detail?.includes('ghost-brain'))).toBe(true);
+    expect(engine.world.entities['grunt'].ai).toBeUndefined();
+    expect(engine.world.entities['stalker'].ai).toBeUndefined();
+
+    const engineExplicitWarn = bootEngine();
+    const explicit = applyContentPack(engineExplicitWarn, pack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+    });
+    expect(explicit.ok).toBe(true);
+    expect(explicit.warnings).toHaveLength(2);
+  });
+
+  it('unresolvedAiProfile: fail collects structured errors for every entity+profile before any mutation', () => {
+    const engine = bootEngine();
+    const zonesBefore = Object.keys(engine.world.zones).length;
+    const entitiesBefore = Object.keys(engine.world.entities).length;
+
+    const errors: Array<{ path: string; message: string; code?: string; entityId?: string; profileId?: string }> = [];
+    const warnings: Array<{ code: string }> = [];
+    const directState = entityBlueprintToState(
+      { id: 'probe', type: 'npc', name: 'Probe', aiProfile: 'missing-direct' },
+      [],
+      'entities[0](probe)',
+      { profiles: [{ id: 'aggressive' }] },
+      errors,
+      warnings as never,
+      'fail',
+    );
+    expect(directState.ai).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].code).toBe('UNRESOLVED_AI_PROFILE');
+    expect(errors[0].entityId).toBe('probe');
+    expect(errors[0].profileId).toBe('missing-direct');
+    expect(errors[0].message).toContain('missing-direct');
+    expect(warnings).toEqual([]);
+
+    const r = applyContentPack(
+      engine,
+      {
+        zones: [{ id: 'staged-zone', name: 'Staged Zone' }],
+        entities: [
+          { id: 'ok-guard', type: 'npc', name: 'OK Guard', aiProfile: 'aggressive' },
+          { id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' },
+          { id: 'stalker', type: 'enemy', name: 'Stalker', aiProfile: 'feral-mind' },
+        ],
+      },
+      {
+        profiles: [{ id: 'aggressive' }],
+        unresolvedAiProfile: 'fail',
+      },
+    );
+
+    expect(r.ok).toBe(false);
+    expect(r.warnings).toEqual([]);
+    expect(r.errors).toHaveLength(2);
+    expect(r.errors[0]).toMatchObject({
+      code: 'UNRESOLVED_AI_PROFILE',
+      path: 'entities[1](grunt).aiProfile',
+      entityId: 'grunt',
+      profileId: 'ghost-brain',
+    });
+    expect(r.errors[1]).toMatchObject({
+      code: 'UNRESOLVED_AI_PROFILE',
+      path: 'entities[2](stalker).aiProfile',
+      entityId: 'stalker',
+      profileId: 'feral-mind',
+    });
+    expect(r.applied).toEqual({});
+    expect(Object.keys(engine.world.zones).length).toBe(zonesBefore);
+    expect(Object.keys(engine.world.entities).length).toBe(entitiesBefore);
+    expect(engine.world.zones['staged-zone']).toBeUndefined();
+    expect(engine.world.entities['ok-guard']).toBeUndefined();
+    expect(engine.world.entities['grunt']).toBeUndefined();
+  });
+
+  it('entities refused by validation or the load gate still report their unresolved profiles', () => {
+    const invalidEntityPack = {
+      entities: [{ id: 'bad-entity', type: 'npc', name: '', aiProfile: 'ghost-brain' }],
+    } as unknown as ContentPack;
+
+    const failInvalid = applyContentPack(bootEngine(), invalidEntityPack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'fail',
+    });
+    expect(failInvalid.ok).toBe(false);
+    expect(failInvalid.errors.some((e) => e.path.includes('.name'))).toBe(true);
+    expect(failInvalid.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        entityId: 'bad-entity',
+        profileId: 'ghost-brain',
+      }),
+    );
+
+    const warnInvalid = applyContentPack(bootEngine(), invalidEntityPack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+    });
+    expect(warnInvalid.ok).toBe(false);
+    expect(warnInvalid.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        entityId: 'bad-entity',
+        profileId: 'ghost-brain',
+      }),
+    );
+
+    const gateRefusedPack = {
+      unknownTopLevelKey: true,
+      entities: [{ id: 'gated-npc', type: 'npc', name: 'Gated', aiProfile: 'ghost-brain' }],
+    } as unknown as ContentPack;
+    const failGated = applyContentPack(bootEngine(), gateRefusedPack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'fail',
+      gate: { engineVersion: '3.12.2' },
+    });
+    expect(failGated.ok).toBe(false);
+    expect(failGated.gate?.ok).toBe(false);
+    expect(failGated.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        entityId: 'gated-npc',
+        profileId: 'ghost-brain',
+      }),
+    );
+
+    const warnGated = applyContentPack(bootEngine(), gateRefusedPack, {
+      profiles: [{ id: 'aggressive' }],
+      unresolvedAiProfile: 'warn',
+      gate: { engineVersion: '3.12.2' },
+    });
+    expect(warnGated.ok).toBe(false);
+    expect(warnGated.gate?.ok).toBe(false);
+    expect(warnGated.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'UNRESOLVED_AI_PROFILE',
+        entityId: 'gated-npc',
+        profileId: 'ghost-brain',
+      }),
+    );
+  });
+
+  it('preserves raw entityId/profileId on structured errors and warnings while escaping/capping rendered output', () => {
+    const longId = `\x1b[31mevil\nline\x07\u202e_${'x'.repeat(120)}`;
+    const badProfile = `\x1b[2Jbad\r\t_${'p'.repeat(120)}`;
+    const pack: ContentPack = {
+      entities: [{ id: longId, type: 'npc', name: 'Evil', aiProfile: badProfile }],
+    };
+
+    const failRes = applyContentPack(bootEngine(), pack, { unresolvedAiProfile: 'fail' });
+    expect(failRes.ok).toBe(false);
+    const err = failRes.errors[0];
+    expect(longId.length).toBeGreaterThan(64);
+    expect(badProfile.length).toBeGreaterThan(64);
+    expect(err.entityId).toBe(longId);
+    expect(err.profileId).toBe(badProfile);
+    expect(err.path).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    expect(err.message).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    expect(err.message).toContain('\\x1b[31m');
+    expect(err.message).toContain('...');
+
+    const warnEngine = bootEngine();
+    const warnRes = applyContentPack(warnEngine, pack, { unresolvedAiProfile: 'warn' });
+    expect(warnRes.ok).toBe(true);
+    expect(warnRes.warnings[0].entityId).toBe(longId);
+    expect(warnRes.warnings[0].profileId).toBe(badProfile);
+    expect(warnRes.warnings[0].message).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    expect(warnRes.dropped[0].detail).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    expect(checkUnresolvedAiProfiles(pack)).toEqual(warnRes.warnings);
+  });
+
+  it('skips non-string aiProfile (null and array) in resolveEntityAi without throwing, keeps world untouched under fail, and coerces String(raw) in sanitizeDiagnosticText', () => {
+    expect(sanitizeDiagnosticText(null)).toBe('null');
+    expect(sanitizeDiagnosticText(['x'])).toBe('x');
+
+    for (const badAiProfile of [null, ['x']] as const) {
+      const pack = {
+        zones: [{ id: 'staged-zone', name: 'Staged Zone' }],
+        entities: [
+          { id: 'ok-npc', type: 'npc', name: 'Ok', aiProfile: 'aggressive' },
+          { id: 'bad', type: 'npc', name: 'Bad', aiProfile: badAiProfile },
+        ],
+      } as unknown as ContentPack;
+
+      const failEngine = bootEngine();
+      let failRes!: ReturnType<typeof applyContentPack>;
+      expect(() => {
+        failRes = applyContentPack(failEngine, pack, {
+          profiles: [{ id: 'aggressive' }],
+          unresolvedAiProfile: 'fail',
+        });
+      }).not.toThrow();
+      expect(failRes.ok).toBe(false);
+      expect(failRes.warnings).toEqual([]);
+      expect(failRes.applied).toEqual({});
+      expect(failRes.errors).toContainEqual(
+        expect.objectContaining({
+          path: 'entities[1](bad).aiProfile',
+          message: expect.stringMatching(/must be a string/),
+        }),
+      );
+      expect(failEngine.world.zones['staged-zone']).toBeUndefined();
+      expect(failEngine.world.entities['ok-npc']).toBeUndefined();
+
+      const warnEngine = bootEngine();
+      let warnRes!: ReturnType<typeof applyContentPack>;
+      expect(() => {
+        warnRes = applyContentPack(warnEngine, pack, {
+          profiles: [{ id: 'aggressive' }],
+          unresolvedAiProfile: 'warn',
+        });
+      }).not.toThrow();
+      expect(warnRes.ok).toBe(false);
+      expect(warnRes.warnings).toEqual([]);
+      expect(warnRes.errors).toContainEqual(
+        expect.objectContaining({
+          path: 'entities[1](bad).aiProfile',
+          message: expect.stringMatching(/must be a string/),
+        }),
+      );
+      expect(warnEngine.world.entities['bad']).toBeUndefined();
+    }
+  });
+
+  it('unresolvedAiProfile: fail succeeds with empty warnings when every profile resolves', () => {
     const engine = bootEngine();
     const r = applyContentPack(
       engine,
-      { entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' }] },
-      { profiles: [{ id: 'aggressive' }] },
+      {
+        entities: [{ id: 'guard', type: 'npc', name: 'Guard', aiProfile: 'aggressive' }],
+      },
+      {
+        profiles: [{ id: 'aggressive' }],
+        unresolvedAiProfile: 'fail',
+      },
     );
     expect(r.ok).toBe(true);
-    expect(r.dropped.some((d) => d.path.includes('aiProfile') && d.detail?.includes('ghost-brain'))).toBe(true);
-    expect(engine.world.entities['grunt'].ai).toBeUndefined();
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([]);
+    expect(engine.world.entities['guard'].ai?.profileId).toBe('aggressive');
   });
 
   it('F-cf3fc257: unknown resistance names stay dropped[] only — do not flip ok', () => {
