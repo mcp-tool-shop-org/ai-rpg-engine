@@ -31,6 +31,7 @@ import type {
 export type ValidationError = {
   path: string;
   message: string;
+  code?: string;
 };
 
 export type ValidationResult = {

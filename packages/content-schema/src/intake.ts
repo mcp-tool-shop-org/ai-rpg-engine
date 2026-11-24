@@ -29,7 +29,15 @@
 // module's state shape lives with that module; the stable wire mechanism lives
 // here.
 
-import type { AIState, Engine, EntityState, ResistanceLevel, ZoneState } from '@ai-rpg-engine/core';
+import {
+  StateDigestError,
+  validateDigestState,
+  type AIState,
+  type Engine,
+  type EntityState,
+  type ResistanceLevel,
+  type ZoneState,
+} from '@ai-rpg-engine/core';
 import type {
   AuthoredFactionMembership,
   ContentPack,
@@ -1031,7 +1039,25 @@ export function applyContentPack(
     applied[key] = report.applied;
   }
 
-  if (channelThrew && preApply !== undefined && isRecord(preApply)) {
+  let digestRefused = false;
+  if (!channelThrew) {
+    try {
+      validateDigestState(engine.store.state);
+    } catch (err) {
+      if (err instanceof StateDigestError) {
+        digestRefused = true;
+        errors.push({
+          path: err.path,
+          code: err.code,
+          message: err.message,
+        });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if ((channelThrew || digestRefused) && preApply !== undefined && isRecord(preApply)) {
     const state = engine.store.state as unknown as Record<string, unknown>;
     const restored = structuredClone(preApply) as Record<string, unknown>;
     for (const key of Object.keys(state)) {

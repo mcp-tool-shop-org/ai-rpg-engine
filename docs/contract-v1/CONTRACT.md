@@ -292,17 +292,27 @@ Every tick notification carries a state hash. Clients detect staleness and
 boundary are quantized so the process boundary cannot introduce float drift
 (Overwatch, charter §3.2).
 
-**Cross-language canonical digest v2 addendum:** When `canonicalHashes` is
-negotiated, `initialize` returns `digest_spec_version` (`2`). Both the authority
-(`@ai-rpg-engine/sidecar`) and GDScript client (`sidecar_client.gd`) build the
-canonical pre-image by retaining `null` object keys, sorting ASCII keys
-lexicographically, escaping control characters and quotes/backslashes consistently
-(ECMA-262 / RFC 8785), and scaling every finite number by `1e6` rounded half
-away from zero to plain decimal integer digits (`-0` writes as `0`, bypassing
-float-to-text formatting). The authority rejects non-finite numbers, scaled
-values beyond `2^53 - 1`, and non-ASCII object keys with `StateDigestError`.
-In `@ai-rpg-engine/core`, the full-world helper is named `worldStateHash`
-(`stateHash` alias) while `canonicalStateHash` remains a deprecated re-export.
+**Cross-language canonical digest v2 addendum:** `initialize` always returns
+`digest_spec_version` (`2`), regardless of whether `canonicalHashes` is
+requested; clients requesting `canonicalHashes` verify that `digest_spec_version`
+matches `2` and disable canonical hash checking with a single warning on mismatch
+rather than reporting stale on every tick. The authority (`@ai-rpg-engine/sidecar`)
+computes `canonicalStateHash(quantize(projected))` so the hash matches exact
+wire values, and both authority and GDScript client (`sidecar_client.gd`) build
+the canonical pre-image by retaining `null` object keys, looping arrays by
+index (mapping sparse holes to `null`), sorting ASCII keys lexicographically,
+escaping control characters and quotes/backslashes consistently (ECMA-262 / RFC 8785),
+and scaling every finite number by `1e6` rounded half away from zero to plain
+decimal integer digits (`-0` writes as `0`, bypassing float-to-text formatting).
+`validateDigestState` enforces these bounds at state-accepting entry points
+(`snapshot`, `submitAction`, `advance`, `load`, and `applyContentPack`), refusing
+non-finite numbers, scaled values beyond `2^53 - 1`, non-ASCII object keys,
+`U+0000`, lone surrogates, and non-JSON runtime values (`function`, `symbol`,
+`bigint`) with `StateDigestError` before mutating session bookkeeping or world
+state, with echoed key/path/value text escaped and capped.
+In `@ai-rpg-engine/core`, the full-world helper is named `stateHash` (with
+`worldStateHash` as an alias for `stateHash`), while `canonicalStateHash` remains
+a `@deprecated` re-export of `stateHash`.
 
 ---
 

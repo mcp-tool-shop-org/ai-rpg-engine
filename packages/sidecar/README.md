@@ -130,7 +130,7 @@ the renderer.
 
 | Method | Purpose |
 |---|---|
-| `initialize` | Capability handshake. Required first. Returns `digest_spec_version`, `packId` / `playerId` / `locationId` additively, plus `packIntake` (the pack gate's `dropped[]`/`advisories`) when there is something to report — cleared on `load`. |
+| `initialize` | Capability handshake. Required first. Always returns `digest_spec_version` (`2`), `packId` / `playerId` / `locationId` additively, plus `packIntake` (the pack gate's `dropped[]`/`advisories`) when there is something to report — cleared on `load`. |
 | `snapshot` | The whole world, as a delta from empty. Optional `omitEventLog` / `collections` window the resync. |
 | `submitAction` | Submit a player intent. Optional `actorId` (else `world.playerId`). Observers (`writes: false`) are refused. |
 | `advance` | Advance the world without a player action. Observers refused. |
@@ -143,7 +143,7 @@ the renderer.
 
 Notifications: `sim/tick` (events + delta + hash + `snapshotSeq`; `canonicalHash` when negotiated; `felt` when `audio` is on), `sim/closing`. Writers play `felt` from the submit/advance result and ignore `sim/tick.felt` so overlay stings do not double. Observers never get those RPC results; they play the tick.
 
-`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second cross-language hash over integer-scaled `1e6` half-away-from-zero numbers, retained `null` keys, and ASCII object keys matching `digest_spec_version`, verified against GDScript via `fixtures/state_digest_vectors.jsonl`; never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`), `listActions`, `presentation` (tick/replay events are `engine.presentAll`; hidden events dropped), `audio` (submit/advance/tick carry a `felt` payload of cue-ids, an optional spoken line, and UI effects — presentation-only, never hashed). Incremental ticks are withheld until that session has served `snapshot`. Two `writes: true` sessions serialize mutations by session-order then JSON-RPC id.
+`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second cross-language hash `canonicalStateHash(quantize(projected))` over integer-scaled `1e6` half-away-from-zero numbers, retained `null` keys, and ASCII object keys matching `digest_spec_version`; both JS and GDScript clients disable canonical checks with one warning on `digest_spec_version` mismatch, verified against GDScript via `fixtures/state_digest_vectors.jsonl`; never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`), `listActions`, `presentation` (tick/replay events are `engine.presentAll`; hidden events dropped), `audio` (submit/advance/tick carry a `felt` payload of cue-ids, an optional spoken line, and UI effects — presentation-only, never hashed). Incremental ticks are withheld until that session has served `snapshot`. Two `writes: true` sessions serialize mutations by session-order then JSON-RPC id.
 
 ## License
 

@@ -208,80 +208,30 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 3,
-      "changed": 27,
+      "added": 1,
+      "changed": 20,
       "moved": 0,
       "parts": 8,
       "removed": 0
     },
     "items": [
       {
-        "kind": "door",
-        "sentence": "CI's push trigger now also names `fixtures/**`.",
-        "subjects": [
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "CI runs 1 more file than before.",
-        "subjects": [
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "Release runs 1 more file than before.",
-        "subjects": [
-          ".github/workflows/release.yml"
-        ]
-      },
-      {
         "kind": "landing",
-        "sentence": "fixtures/state_digest_vectors.jsonl is now read by .github/workflows/ci.yml and packages/sidecar/src/state-digest-vectors.test.ts.",
-        "subjects": [
-          "fixtures/state_digest_vectors.jsonl",
-          ".github/workflows/ci.yml",
-          "packages/sidecar/src/state-digest-vectors.test.ts"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "fixtures/verify_state_digest_vectors.gd is now read by .github/workflows/ci.yml.",
+        "sentence": "fixtures/verify_state_digest_vectors.gd is now also read by packages/sidecar/src/gdscript-kit.test.ts.",
         "subjects": [
           "fixtures/verify_state_digest_vectors.gd",
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "packages/sidecar/gdscript/framing.gd is now also read by .github/workflows/ci.yml.",
-        "subjects": [
-          "packages/sidecar/gdscript/framing.gd",
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "And 1 more new writer or reader of a place.",
-        "subjects": []
-      },
-      {
-        "kind": "part",
-        "sentence": "fixtures is a new part, drawn from `fixtures/**`.",
-        "subjects": [
-          "fixtures"
+          "packages/sidecar/src/gdscript-kit.test.ts"
         ]
       },
       {
         "kind": "counts",
-        "sentence": "3 files added and 27 changed content, across 8 parts.",
+        "sentence": "1 file added and 20 changed content, across 8 parts.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "ae7219349365109436077f8df2e2e94dceb65289",
-      "generatedAt": "2026-11-21T12:04:43.452Z"
+      "commit": "03342f55fd4d3ba01f40e8277eb27d6b5bdf1d24",
+      "generatedAt": "2026-11-24T08:38:52.842Z"
     },
     "unchanged": false
   },
@@ -363,13 +313,13 @@
     }
   ],
   "changesTogetherNote": [
-    "11 files changed together with their own tests, as expected.",
+    "12 files changed together with their own tests, as expected.",
     "Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
   ],
-  "changesTogetherWithTests": 11,
-  "commit": "03342f55fd4d3ba01f40e8277eb27d6b5bdf1d24",
+  "changesTogetherWithTests": 12,
+  "commit": "faade5449afc222ecea8ffbb028df996e25d55da",
   "defaultBranch": "main",
-  "derived": "40 parts, mostly TypeScript (798 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
+  "derived": "40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
     {
       "builds": [
@@ -439,7 +389,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 31
+          "files": 32
         },
         {
           "boundary": "docs",
@@ -818,7 +768,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 31
+          "files": 32
         },
         {
           "boundary": "docs",
@@ -1216,7 +1166,7 @@
         {
           "boundary": "core",
           "depth": 1,
-          "files": 14
+          "files": 15
         },
         {
           "boundary": "equipment",
@@ -1372,7 +1322,7 @@
         {
           "boundary": "core",
           "depth": 4,
-          "files": 14
+          "files": 15
         },
         {
           "boundary": "character-profile",
@@ -1616,9 +1566,9 @@
       ]
     }
   ],
-  "generatedAt": "2026-11-24T08:38:52.842Z",
+  "generatedAt": "2026-11-24T10:50:57.357Z",
   "limits": [
-    "4 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; and 1 more.",
+    "5 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://framing.gd`; `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; and 2 more.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
     "1 write goes to places this repository does not track, so it is not listed as generated.",
     "7 writes and 112 reads go to a path their caller passes, not to this repository.",

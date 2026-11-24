@@ -11,59 +11,30 @@
 
 import { createHash } from 'node:crypto';
 import type { SnapshotView, StatePatch, WireEvent } from './protocol.js';
-import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
+import {
+  assertAsciiKey,
+  assertValidDigestString,
+  DIGEST_SCALE,
+  escapeDiagnosticText,
+  roundHalfAwayFromZero,
+  scaleDigestNumber,
+  StateDigestError,
+  validateDigestState,
+  WIRE_PRECISION,
+  type ResolvedEvent,
+  type StateDigestErrorCode,
+  type WorldState,
+} from '@ai-rpg-engine/core';
 
-/**
- * Decimal places kept for a non-integer crossing the wire.
- *
- * The sim's own arithmetic is untouched — this is the WIRE's precision, and it
- * exists so two clients on different platforms cannot render subtly different
- * numbers from the same tick. Integers (which is nearly everything: this engine's
- * doctrine is small-integer damage) pass through exactly.
- */
-export const WIRE_PRECISION = 6;
-export const DIGEST_SCALE = 10 ** WIRE_PRECISION;
-
-export type StateDigestErrorCode =
-  | 'NON_FINITE_NUMBER'
-  | 'UNSAFE_SCALED_INTEGER'
-  | 'NON_ASCII_KEY';
-
-export class StateDigestError extends Error {
-  readonly code: StateDigestErrorCode;
-  readonly path: string;
-  readonly detail: Record<string, unknown>;
-
-  constructor(
-    code: StateDigestErrorCode,
-    path: string,
-    message: string,
-    detail: Record<string, unknown> = {},
-  ) {
-    super(message);
-    this.name = 'StateDigestError';
-    this.code = code;
-    this.path = path;
-    this.detail = detail;
-  }
-
-  toJSON(): Record<string, unknown> {
-    return {
-      error: this.name,
-      code: this.code,
-      path: this.path,
-      message: this.message,
-      ...this.detail,
-    };
-  }
-}
-
-/** Round `s` half away from zero and normalize `-0` to `0`. */
-function roundHalfAwayFromZero(scaled: number): number {
-  if (scaled === 0) return 0;
-  const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled));
-  return rounded === 0 ? 0 : rounded;
-}
+export {
+  WIRE_PRECISION,
+  DIGEST_SCALE,
+  StateDigestError,
+  validateDigestState,
+  escapeDiagnosticText,
+  roundHalfAwayFromZero,
+  type StateDigestErrorCode,
+};
 
 /** Quantize one value for the wire. Recursive over plain objects and arrays. */
 export function quantize(value: unknown): unknown {
@@ -72,7 +43,14 @@ export function quantize(value: unknown): unknown {
     if (Number.isInteger(value)) return Object.is(value, -0) ? 0 : value;
     return roundHalfAwayFromZero(value * DIGEST_SCALE) / DIGEST_SCALE;
   }
-  if (Array.isArray(value)) return value.map(quantize);
+  if (Array.isArray(value)) {
+    const out: unknown[] = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const elem = value[i];
+      out[i] = elem === undefined ? null : quantize(elem);
+    }
+    return out;
+  }
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const k of Object.keys(value as Record<string, unknown>).sort()) {
@@ -278,84 +256,14 @@ export function stateHash(state: WorldState | unknown): string {
 }
 
 /**
- * Authority validator for canonical state hashing:
- * - rejects non-finite numbers and values whose `v * 1e6` exceeds IEEE-754 safe integer magnitude;
- * - rejects object keys outside 7-bit ASCII (code unit > 0x7f).
- */
-export function validateDigestState(value: unknown, path = '$'): void {
-  if (value === null || value === undefined || typeof value === 'boolean' || typeof value === 'string') {
-    return;
-  }
-  if (typeof value === 'number') {
-    scaleDigestInteger(value, path);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-      validateDigestState(value[i], `${path}[${i}]`);
-    }
-    return;
-  }
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    for (const k of Object.keys(obj)) {
-      assertAsciiKey(k, path);
-      const v = obj[k];
-      if (v === undefined) continue;
-      validateDigestState(v, `${path}.${k}`);
-    }
-  }
-}
-
-function assertAsciiKey(key: string, path: string): void {
-  for (let i = 0; i < key.length; i++) {
-    const code = key.charCodeAt(i);
-    if (code > 0x7f) {
-      throw new StateDigestError(
-        'NON_ASCII_KEY',
-        `${path}.${key}`,
-        `object key "${key}" at ${path} contains non-ASCII character U+${code.toString(16).toUpperCase().padStart(4, '0')}`,
-        { key, codePoint: code },
-      );
-    }
-  }
-}
-
-function scaleDigestInteger(value: number, path: string): number {
-  if (!Number.isFinite(value)) {
-    throw new StateDigestError(
-      'NON_FINITE_NUMBER',
-      path,
-      `non-finite number (${String(value)}) at ${path} is not valid in canonical digest state`,
-      { value: String(value) },
-    );
-  }
-  // Multiply by 1e6 first so IEEE-754 binary64 arithmetic matches GDScript `float(v) * 1e6`.
-  const scaled = value * DIGEST_SCALE;
-  const rounded = roundHalfAwayFromZero(scaled);
-  if (
-    !Number.isFinite(scaled) ||
-    Math.abs(scaled) > Number.MAX_SAFE_INTEGER ||
-    Math.abs(rounded) > Number.MAX_SAFE_INTEGER
-  ) {
-    throw new StateDigestError(
-      'UNSAFE_SCALED_INTEGER',
-      path,
-      `scaled number ${value} * 1e6 = ${scaled} at ${path} exceeds safe integer bound (2^53 - 1)`,
-      { value, scaled, rounded },
-    );
-  }
-  return rounded;
-}
-
-/**
  * Canonical pre-image JSON for cross-language state digests (v2).
  *
  * Every number is scaled by 1e6 in IEEE-754 binary64, rounded half away from
  * zero, and formatted as plain decimal integer digits (`-0` writes as `0`),
  * bypassing float-to-text formatting in every language. Object keys must be
- * ASCII, `null` keys are retained, and keys are sorted lexicographically by
- * code unit order.
+ * ASCII, `null` keys are retained, arrays walk by index (mapping holes to
+ * `null`), NUL / lone surrogates and non-JSON runtime types are refused, and
+ * keys are sorted lexicographically by code unit order.
  */
 export function canonicalJson(value: unknown): string {
   return writeCanonical(value, '$');
@@ -365,12 +273,29 @@ function writeCanonical(value: unknown, path: string): string {
   if (value === null || value === undefined) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
-  if (typeof value === 'number') {
-    return String(scaleDigestInteger(value, path));
+  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+    const kind = typeof value;
+    throw new StateDigestError(
+      'UNSUPPORTED_VALUE_TYPE',
+      path,
+      `unsupported non-JSON value of type ${kind} at ${escapeDiagnosticText(path, 96)}`,
+      { valueType: kind },
+    );
   }
-  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number') {
+    return String(scaleDigestNumber(value, path));
+  }
+  if (typeof value === 'string') {
+    assertValidDigestString(value, path);
+    return JSON.stringify(value);
+  }
   if (Array.isArray(value)) {
-    return `[${value.map((item, idx) => writeCanonical(item === undefined ? null : item, `${path}[${idx}]`)).join(',')}]`;
+    const items: string[] = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const elem = value[i];
+      items[i] = elem === undefined ? 'null' : writeCanonical(elem, `${path}[${i}]`);
+    }
+    return `[${items.join(',')}]`;
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;

@@ -1485,3 +1485,30 @@ describe('Step 1 Route E — 13 world-forge C4 keys declared, dropped as evaluat
   });
 });
 
+describe('applyContentPack — canonical digest state validation', () => {
+  it('refuses a non-ASCII object key in content state with NON_ASCII_KEY and rolls back applied writes', () => {
+    const engine = bootEngine();
+    let result!: ReturnType<typeof applyContentPack>;
+    expect(() => {
+      result = applyContentPack(engine, {
+        zones: [{ id: 'clean-zone', name: 'Clean' }],
+        entities: [
+          {
+            id: 'npc-bad',
+            type: 'npc',
+            name: 'Npc',
+            custom: { ['caf\u00e9']: 1 },
+          },
+        ],
+      } as unknown as ContentPack);
+    }).not.toThrow();
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === 'NON_ASCII_KEY')).toBe(true);
+    expect(engine.world.zones['clean-zone']).toBeUndefined();
+    expect(engine.world.entities['npc-bad']).toBeUndefined();
+    expect(result.applied.zones).toBeUndefined();
+    expect(result.applied.entities).toBeUndefined();
+  });
+});
+

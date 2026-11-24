@@ -1,22 +1,15 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-24 from commit 03342f5 by Atlas 1.26.0.
+Mapped at 2026-11-24 from commit faade54 by Atlas 1.26.0.
 
 ## What this is
 
-40 parts, mostly TypeScript (798 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
+40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-11-21 (ae72193)
+## What changed since 2026-11-24 (03342f5)
 
-- CI's push trigger now also names `fixtures/**`.
-- CI runs 1 more file than before.
-- Release runs 1 more file than before.
-- fixtures/state_digest_vectors.jsonl is now read by .github/workflows/ci.yml and packages/sidecar/src/state-digest-vectors.test.ts.
-- fixtures/verify_state_digest_vectors.gd is now read by .github/workflows/ci.yml.
-- packages/sidecar/gdscript/framing.gd is now also read by .github/workflows/ci.yml.
-- And 1 more new writer or reader of a place.
-- fixtures is a new part, drawn from `fixtures/**`.
-- 3 files added and 27 changed content, across 8 parts.
+- fixtures/verify_state_digest_vectors.gd is now also read by packages/sidecar/src/gdscript-kit.test.ts.
+- 1 file added and 20 changed content, across 8 parts.
 
 ## What comes in
 
@@ -83,7 +76,7 @@ Mapped at 2026-11-24 from commit 03342f5 by Atlas 1.26.0.
 - **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.test.ts** changed together in 10 of 16 commits, inside the ledger-adapter part.
 - **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/index.ts** changed together in 10 of 17 commits, inside the ollama part.
 
-11 files changed together with their own tests, as expected.
+12 files changed together with their own tests, as expected.
 
 Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
 
@@ -134,7 +127,7 @@ Read those in order to follow one pull request end to end.
 
 ## What this map cannot see
 
-- 4 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; and 1 more.
+- 5 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://framing.gd`; `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; and 2 more.
 - 21 writes and 34 reads use paths built at run time and are not named here.
 - 1 write goes to places this repository does not track, so it is not listed as generated.
 - 7 writes and 112 reads go to a path their caller passes, not to this repository.

@@ -1,11 +1,14 @@
-## verify_state_digest_vectors.gd — cross-language state digest vector runner.
+## verify_state_digest_vectors.gd — cross-language state digest vector and client behavior runner.
 ##
-## Loads res://sidecar_client.gd and res://state_digest_vectors.jsonl inside
-## an imported Godot project containing sidecar_client.gd + framing.gd, then
-## verifies canonical_json() and canonical_state_hash() on every vector.
+## Loads res://sidecar_client.gd, res://framing.gd, and res://state_digest_vectors.jsonl inside
+## an imported Godot project, verifies canonical_json() and canonical_state_hash() on every vector,
+## and exercises SidecarAttachClient digest_spec_version enforcement and staleness detection.
 extends SceneTree
 
 const SidecarClient := preload("res://sidecar_client.gd")
+const Framing := preload("res://framing.gd")
+
+const NATIVE_CHECK_COUNT := 4
 
 
 func _init() -> void:
@@ -24,10 +27,12 @@ func _init() -> void:
 
 	var passed := 0
 	var failed := 0
+	var non_blank_lines := 0
 	for i in range(lines.size()):
 		var raw_line := lines[i].strip_edges()
 		if raw_line.is_empty():
 			continue
+		non_blank_lines += 1
 		var parsed: Variant = JSON.parse_string(raw_line)
 		if typeof(parsed) != TYPE_DICTIONARY:
 			printerr("FAIL line=%d invalid JSON" % [i + 1])
@@ -36,6 +41,30 @@ func _init() -> void:
 
 		var rec := parsed as Dictionary
 		var vec_id := str(rec.get("id", "line_%d" % [i + 1]))
+		if rec.has("expected_error"):
+			var expected_error := str(rec["expected_error"])
+			var raw_literal := str(rec.get("raw_json_literal", ""))
+			if expected_error == "NUL_CHARACTER":
+				# Godot 4 C++ String replaces U+0000 with U+FFFD, which is why the authority must refuse U+0000.
+				var literal_parsed: Variant = JSON.parse_string(raw_literal)
+				if typeof(literal_parsed) != TYPE_DICTIONARY or str(literal_parsed.get("s", "")).unicode_at(1) != 0xFFFD:
+					printerr("FAIL id=%s expected NUL->U+FFFD substitution proof" % vec_id)
+					failed += 1
+				else:
+					passed += 1
+			elif expected_error == "LONE_SURROGATE":
+				# RFC 8785 §3.2.2.2: Godot's JSON parser rejects lone UTF-16 surrogates.
+				var jp := JSON.new()
+				if jp.parse(raw_literal) == OK:
+					printerr("FAIL id=%s expected JSON parser to reject lone surrogate" % vec_id)
+					failed += 1
+				else:
+					passed += 1
+			else:
+				printerr("FAIL id=%s unknown expected_error=%s" % [vec_id, expected_error])
+				failed += 1
+			continue
+
 		var input_val: Variant = rec.get("input", null)
 		var expected_preimage := str(rec.get("expected_preimage", ""))
 		var expected_hash := str(rec.get("expected_hash", ""))
@@ -52,8 +81,7 @@ func _init() -> void:
 		else:
 			passed += 1
 
-	# Native Godot type checks that JSON parsing can coalesce: int(5) vs float(5.0)
-	# and IEEE-754 negative zero float (-1.0 * 0.0).
+	# Native check 1: int(5) vs float(5.0) Dictionary typing parity.
 	var five_int_pre: String = SidecarClient.canonical_json({ "n": 5 })
 	var five_float_pre: String = SidecarClient.canonical_json({ "n": 5.0 })
 	if five_int_pre != "{\"n\":5000000}" or five_float_pre != five_int_pre:
@@ -62,6 +90,7 @@ func _init() -> void:
 	else:
 		passed += 1
 
+	# Native check 2: IEEE-754 negative zero float (-1.0 * 0.0).
 	var neg_zero_native: float = -1.0 * 0.0
 	var nz_pre: String = SidecarClient.canonical_json(neg_zero_native)
 	if nz_pre != "0":
@@ -70,8 +99,93 @@ func _init() -> void:
 	else:
 		passed += 1
 
-	if failed > 0:
-		printerr("DIGEST_VECTORS_FAIL passed=%d failed=%d" % [passed, failed])
+	# Native check 3: matching digest_spec_version enables canonical check and emits stale on drift.
+	var framing := Framing.new()
+	var client_ok := SidecarClient.new()
+	var stale_ok: Array = []
+	client_ok.stale.connect(func(report: Dictionary) -> void: stale_ok.append(report))
+	var ok_init_id := client_ok.initialize({ "notifications": true, "hashes": true, "canonicalHashes": true })
+	client_ok.push_bytes(framing.encode_message({
+		"jsonrpc": "2.0",
+		"id": ok_init_id,
+		"result": { "digest_spec_version": SidecarClient.DIGEST_SPEC_VERSION },
+	}))
+	var ok_snap_id := client_ok.snapshot()
+	var snap_body := '{"jsonrpc":"2.0","id":%d,"result":{"tick":0,"hash":"h0","snapshotSeq":1,"canonicalHash":"cb05cdc726f0d6e0169879bd5eca3b4e","delta":[{"op":"set","path":["big"],"value":-4364405106.016257}]}}' % ok_snap_id
+	var snap_bytes := snap_body.to_utf8_buffer()
+	var snap_frame := ("Content-Length: %d\r\n\r\n" % snap_bytes.size()).to_utf8_buffer()
+	snap_frame.append_array(snap_bytes)
+	client_ok.push_bytes(snap_frame)
+	var snap_ok := (
+		client_ok.has_baseline
+		and stale_ok.is_empty()
+		and client_ok.canonical_hashes
+		and client_ok.digest_version_warnings.is_empty()
+		and typeof(client_ok.mirrored_state) == TYPE_DICTIONARY
+		and (client_ok.mirrored_state as Dictionary).has("big")
+	)
+	client_ok.push_bytes(framing.encode_message({
+		"jsonrpc": "2.0",
+		"method": "sim/tick",
+		"params": {
+			"tick": 1,
+			"hash": "h1",
+			"snapshotSeq": 1,
+			"canonicalHash": "00000000000000000000000000000000",
+			"delta": [],
+		},
+	}))
+	if not snap_ok or stale_ok.size() != 1 or str(stale_ok[0].get("kind", "")) != "canonical":
+		printerr("FAIL native_canonical_client_behavior snap_ok=%s stale=%s" % [str(snap_ok), str(stale_ok)])
+		failed += 1
+	else:
+		passed += 1
+
+	# Native check 4: mismatched digest_spec_version disables canonical check with 1 warning and 0 stale reports.
+	var client_mismatch := SidecarClient.new()
+	var stale_mismatch: Array = []
+	client_mismatch.stale.connect(func(report: Dictionary) -> void: stale_mismatch.append(report))
+	var mm_init_id := client_mismatch.initialize({ "notifications": true, "hashes": true, "canonicalHashes": true })
+	client_mismatch.push_bytes(framing.encode_message({
+		"jsonrpc": "2.0",
+		"id": mm_init_id,
+		"result": { "digest_spec_version": 999 },
+	}))
+	var mm_snap_id := client_mismatch.snapshot()
+	client_mismatch.push_bytes(framing.encode_message({
+		"jsonrpc": "2.0",
+		"id": mm_snap_id,
+		"result": {
+			"tick": 0,
+			"hash": "h0",
+			"snapshotSeq": 1,
+			"canonicalHash": "deadbeefdeadbeefdeadbeefdeadbeef",
+			"delta": [{ "op": "set", "path": ["big"], "value": 1 }],
+		},
+	}))
+	client_mismatch.push_bytes(framing.encode_message({
+		"jsonrpc": "2.0",
+		"method": "sim/tick",
+		"params": {
+			"tick": 1,
+			"hash": "h1",
+			"snapshotSeq": 1,
+			"canonicalHash": "cafebabecafebabecafebabecafebabe",
+			"delta": [],
+		},
+	}))
+	if not client_mismatch.has_baseline or client_mismatch.canonical_hashes or client_mismatch.digest_version_warnings.size() != 1 or not stale_mismatch.is_empty():
+		printerr(
+			"FAIL native_version_mismatch_behavior canonical=%s warnings=%d stale=%s"
+			% [str(client_mismatch.canonical_hashes), client_mismatch.digest_version_warnings.size(), str(stale_mismatch)]
+		)
+		failed += 1
+	else:
+		passed += 1
+
+	var expected_total := non_blank_lines + NATIVE_CHECK_COUNT
+	if failed > 0 or passed != expected_total:
+		printerr("DIGEST_VECTORS_FAIL passed=%d expected=%d failed=%d" % [passed, expected_total, failed])
 		quit(1)
 		return
 

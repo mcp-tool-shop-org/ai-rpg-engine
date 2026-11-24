@@ -16,7 +16,7 @@ import {
   type RpcMessage,
 } from './protocol.js';
 import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
-import { applyPatches, canonicalStateHash, stateHash } from './serializer.js';
+import { applyPatches, canonicalStateHash, quantize, stateHash } from './serializer.js';
 import type { StatePatch } from './protocol.js';
 
 function brandModule(): EngineModule {
@@ -1294,6 +1294,327 @@ describe('felt audio capability — additive, never hashed', () => {
     expect(writerTick?.felt).toBeUndefined();
     expect(observerTick?.felt).toBeDefined();
     expect(Array.isArray(observerTick?.felt?.audio)).toBe(true);
+  });
+});
+
+describe('authority hashes quantized wire state across snapshot, tick, load, and rebase', () => {
+  it('globals.big = -4364405106.016256 with canonicalHashes: true matches client mirror after snapshot and tick with zero staleness', async () => {
+    const { a, b, engine } = dualLoopback(true);
+    engine.store.state.globals.big = -4364405106.016256;
+
+    // Transport fidelity helper: verify quantize(projected) matches canonicalStateHash(mirroredState).
+    await a.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+
+    const snap = await a.client.snapshot();
+    await b.client.snapshot();
+    expect(snap.canonicalHash).toBe(canonicalStateHash(quantize(engine.world)));
+    expect(snap.canonicalHash).toBe(canonicalStateHash(a.client.mirroredState));
+    expect(snap.canonicalHash).not.toBe(canonicalStateHash(engine.world));
+    expect(a.client.stalenessReports).toEqual([]);
+    expect(b.client.stalenessReports).toEqual([]);
+
+    const step = (await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' })) as {
+      canonicalHash?: string;
+    };
+    expect(step.canonicalHash).toBe(canonicalStateHash(quantize(engine.world)));
+    expect(step.canonicalHash).toBe(canonicalStateHash(a.client.mirroredState));
+    expect(a.client.stalenessReports).toEqual([]);
+    expect(b.client.stalenessReports).toEqual([]);
+  });
+});
+
+describe('refusal before bookkeeping across snapshot, submitAction, advance, load, and replicatePeerCommit', () => {
+  function countVerbModule(): EngineModule {
+    return {
+      id: 'count-taint',
+      version: '1.0.0',
+      register(ctx) {
+        ctx.actions.registerVerb('taint-and-count', (action, world) => {
+          world.globals.count = Number(world.globals.count ?? 0) + 1;
+          if (action.parameters?.taint === true) {
+            world.globals['caf\u00e9'] = 1;
+          }
+          return [
+            {
+              id: '',
+              tick: action.issuedAtTick,
+              type: 'probe.count',
+              actorId: 'hero',
+              payload: { count: world.globals.count },
+            },
+          ];
+        });
+      },
+    };
+  }
+
+  function attachedPair() {
+    const servers: SidecarServer[] = [];
+    const engine = createTestEngine({
+      modules: [countVerbModule(), brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+
+    const mkSession = () => {
+      const sent: RpcMessage[] = [];
+      const sRef: { server?: SidecarServer; client?: SidecarClient } = {};
+      sRef.server = new SidecarServer(
+        {
+          engine,
+          engineVersion: '3.8.0-test',
+          onWorldCommitted: () => {
+            for (const peer of servers) {
+              if (peer !== sRef.server) peer.replicatePeerCommit();
+            }
+          },
+        },
+        (msg) => {
+          const wire = JSON.parse(JSON.stringify(msg)) as RpcMessage;
+          sent.push(wire);
+          sRef.client!.handle(wire);
+        },
+      );
+      sRef.client = new SidecarClient((msg) => sRef.server!.handle(msg));
+      servers.push(sRef.server);
+      return { server: sRef.server, client: sRef.client, sent };
+    };
+
+    const writer = mkSession();
+    const observer = mkSession();
+    return { engine, writer, observer, mkSession };
+  }
+
+  it('SNAPSHOT refuses invalid state before mutating snapshotSeq or hasSnapshotted, and recovers once cleaned', async () => {
+    const { engine, writer, observer } = attachedPair();
+    await writer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await observer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await writer.client.snapshot();
+
+    engine.store.state.globals['caf\u00e9'] = 1;
+    await expect(observer.client.snapshot()).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+
+    const snapReplies = observer.sent.filter((m) => m.id === 2);
+    expect(snapReplies).toHaveLength(1);
+    expect((snapReplies[0].error as { data?: { code?: string } }).data?.code).toBe('NON_ASCII_KEY');
+
+    delete engine.store.state.globals['caf\u00e9'];
+    // If failed snapshot had flipped hasSnapshotted, this tick would push before baseline; it must stay withheld until clean snapshot.
+    await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: false } });
+    expect(observer.client.mirroredState).toEqual({});
+
+    await observer.client.snapshot();
+    expect((observer.client.mirroredState as WorldState).globals.count).toBe(1);
+    expect(observer.client.stalenessReports).toEqual([]);
+  });
+
+  it('SUBMIT_ACTION rolls back verb-created invalid state so a retry never double-applies and observer loses no delta', async () => {
+    const { engine, writer, observer } = attachedPair();
+    await writer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await observer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await writer.client.snapshot();
+    await observer.client.snapshot();
+
+    await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: false } });
+    expect(engine.world.globals.count).toBe(1);
+    const tickBefore = engine.store.tick;
+    const actionsBefore = engine.getActionLog().length;
+    const observerTicksBefore = observer.client.receivedTicks.length;
+
+    await expect(
+      writer.client.request(METHODS.SUBMIT_ACTION, {
+        verb: 'taint-and-count',
+        parameters: { ['bad\u00e9']: true },
+      }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+    expect(engine.world.globals.count).toBe(1);
+
+    const reqId = 5;
+    await expect(
+      writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: true } }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+
+    const repliesForId = writer.sent.filter((m) => m.id === reqId);
+    expect(repliesForId).toHaveLength(1);
+    expect((repliesForId[0].error as { data?: { code?: string } }).data?.code).toBe('NON_ASCII_KEY');
+    expect(engine.world.globals.count).toBe(1);
+    expect(engine.world.globals['caf\u00e9']).toBeUndefined();
+    expect(engine.store.tick).toBe(tickBefore);
+    expect(engine.getActionLog()).toHaveLength(actionsBefore);
+    expect(observer.client.receivedTicks).toHaveLength(observerTicksBefore);
+
+    await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: false } });
+    expect(engine.world.globals.count).toBe(2);
+    expect((observer.client.mirroredState as WorldState).globals.count).toBe(2);
+    expect(observer.client.stalenessReports).toEqual([]);
+  });
+
+  it('ADVANCE refuses pre-existing invalid state before stepping rounds and recovers cleanly without lost observer delta', async () => {
+    const { engine, writer, observer } = attachedPair();
+    await writer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await observer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await writer.client.snapshot();
+    await observer.client.snapshot();
+
+    engine.store.state.globals['caf\u00e9'] = 1;
+    const tickBefore = engine.store.tick;
+    const advId = 3;
+    await expect(writer.client.advance(2)).rejects.toMatchObject({ code: ERROR_CODES.INTERNAL_ERROR });
+
+    expect(writer.sent.filter((m) => m.id === advId)).toHaveLength(1);
+    expect(engine.store.tick).toBe(tickBefore);
+    expect(observer.client.receivedTicks).toHaveLength(0);
+
+    delete engine.store.state.globals['caf\u00e9'];
+    await writer.client.advance(2);
+    expect(engine.store.tick).toBe(tickBefore + 2);
+    expect((observer.client.mirroredState as WorldState).meta.tick).toBe(tickBefore + 2);
+    expect(observer.client.stalenessReports).toEqual([]);
+  });
+
+  it('replicatePeerCommit isolates a bad peer without double-answering the writer, blocking healthy peers, or losing delta', async () => {
+    const servers: SidecarServer[] = [];
+    const engine = createTestEngine({
+      modules: [countVerbModule(), brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+
+    const writerSent: RpcMessage[] = [];
+    let injectOnWriterTick = false;
+    const wBox: { server?: SidecarServer } = {};
+    const writerClient = new SidecarClient((m) => wBox.server!.handle(m));
+    wBox.server = new SidecarServer(
+      {
+        engine,
+        engineVersion: '3.8.0-test',
+        onWorldCommitted: () => {
+          for (const peer of servers) {
+            if (peer !== wBox.server) peer.replicatePeerCommit();
+          }
+        },
+      },
+      (msg) => {
+        const wire = JSON.parse(JSON.stringify(msg)) as RpcMessage;
+        writerSent.push(wire);
+        if (injectOnWriterTick && wire.method === NOTIFICATIONS.TICK) {
+          injectOnWriterTick = false;
+          // Reach state immediately after writer committed its tick, before peer fan-out runs.
+          engine.store.state.globals['caf\u00e9'] = 1;
+        }
+        writerClient.handle(wire);
+      },
+    );
+    servers.push(wBox.server);
+
+    const badBox: { server?: SidecarServer } = {};
+    const badObserverClient = new SidecarClient((m) => badBox.server!.handle(m));
+    badBox.server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test' },
+      (msg) => badObserverClient.handle(JSON.parse(JSON.stringify(msg)) as RpcMessage),
+    );
+    servers.push(badBox.server);
+
+    const goodBox: { server?: SidecarServer } = {};
+    const goodObserverClient = new SidecarClient((m) => goodBox.server!.handle(m));
+    goodBox.server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test' },
+      (msg) => goodObserverClient.handle(JSON.parse(JSON.stringify(msg)) as RpcMessage),
+    );
+    servers.push(goodBox.server);
+
+    await writerClient.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await badObserverClient.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await goodObserverClient.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await writerClient.snapshot({ collections: ['entities', 'globals', 'meta', 'eventLog'] });
+    await badObserverClient.snapshot();
+    await goodObserverClient.snapshot({ collections: ['entities', 'meta'] });
+
+    injectOnWriterTick = true;
+    const actionId = 3;
+    const res = await writerClient.request(METHODS.SUBMIT_ACTION, {
+      verb: 'taint-and-count',
+      parameters: { taint: false },
+    });
+    expect((res as { tick: number }).tick).toBe(1);
+    expect(writerSent.filter((m) => m.id === actionId)).toHaveLength(1);
+    expect((goodObserverClient.mirroredState as WorldState).meta.tick).toBe(1);
+    expect(badObserverClient.receivedTicks).toHaveLength(0);
+
+    delete engine.store.state.globals['caf\u00e9'];
+    await writerClient.request(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+    expect((badObserverClient.mirroredState as WorldState).globals.count).toBe(1);
+    expect((badObserverClient.mirroredState as WorldState).entities.hero.tags).toContain('previewed');
+    expect(badObserverClient.stalenessReports).toEqual([]);
+  });
+
+  it('LOAD refuses invalid save state whole before mutating engine or rebasing any peer session', async () => {
+    const { engine, writer, observer } = attachedPair();
+    await writer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: true });
+    await observer.client.initialize({ notifications: true, hashes: true, canonicalHashes: true, writes: false });
+    await writer.client.snapshot();
+    await observer.client.snapshot();
+
+    const cleanSave = await writer.client.save();
+    const tampered = JSON.parse(cleanSave.serialized) as {
+      world: { state: { globals: Record<string, unknown> }; rngState: number };
+      actionLog: unknown[];
+    };
+    tampered.world.state.globals['caf\u00e9'] = 1;
+
+    await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: false } });
+    expect(engine.world.globals.count).toBe(1);
+    const writerSeqBefore = writer.client.receivedTicks.at(-1)?.snapshotSeq;
+    const observerSeqBefore = observer.client.receivedTicks.at(-1)?.snapshotSeq;
+
+    const loadId = 5;
+    await expect(writer.client.load(JSON.stringify(tampered))).rejects.toMatchObject({
+      code: ERROR_CODES.INVALID_PARAMS,
+    });
+
+    const loadReplies = writer.sent.filter((m) => m.id === loadId);
+    expect(loadReplies).toHaveLength(1);
+    expect((loadReplies[0].error as { data?: { code?: string } }).data?.code).toBe('NON_ASCII_KEY');
+    expect(engine.world.globals.count).toBe(1);
+    expect(engine.world.globals['caf\u00e9']).toBeUndefined();
+    expect((writer.client.mirroredState as WorldState).globals.count).toBe(1);
+    expect((observer.client.mirroredState as WorldState).globals.count).toBe(1);
+    expect(writer.client.receivedTicks.at(-1)?.snapshotSeq).toBe(writerSeqBefore);
+    expect(observer.client.receivedTicks.at(-1)?.snapshotSeq).toBe(observerSeqBefore);
+
+    await writer.client.request(METHODS.SUBMIT_ACTION, { verb: 'taint-and-count', parameters: { taint: false } });
+    expect(engine.world.globals.count).toBe(2);
+    expect((observer.client.mirroredState as WorldState).globals.count).toBe(2);
+    expect(observer.client.stalenessReports).toEqual([]);
   });
 });
 

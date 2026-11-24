@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { MessageReader, type FramingError, type RpcMessage } from './framing.js';
+import { DIGEST_SPEC_VERSION } from './protocol.js';
 
 const fixturePath = join(fileURLToPath(dirname(import.meta.url)), '..', 'gdscript', 'fixtures', 'split-frames.json');
 
@@ -26,17 +27,24 @@ const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as FixtureFile;
 
 describe('F-31094245 — GDScript framing fixture matches Node MessageReader', () => {
   it('ships the Godot attach kit next to the JS client', () => {
-    const kitDir = join(fileURLToPath(dirname(import.meta.url)), '..', 'gdscript');
+    const repoRoot = join(fileURLToPath(dirname(import.meta.url)), '..', '..', '..');
+    const kitDir = join(repoRoot, 'packages', 'sidecar', 'gdscript');
+    const gdClient = readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8');
+    const vectorRunner = readFileSync(join(repoRoot, 'fixtures', 'verify_state_digest_vectors.gd'), 'utf8');
+
     expect(readFileSync(join(kitDir, 'framing.gd'), 'utf8')).toMatch(/Content-Length/);
     expect(readFileSync(join(kitDir, 'framing.gd'), 'utf8')).toMatch(/MAX_MESSAGE_BYTES/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/SidecarAttachClient/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/apply_patches/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/canonical_state_hash/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/DIGEST_SPEC_VERSION\s*:=\s*2/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/server_digest_spec_version/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/_escape_json_string/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).not.toMatch(/%\.\*f/);
-    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/connect_to_host/);
+    expect(gdClient).toMatch(/SidecarAttachClient/);
+    expect(gdClient).toMatch(/apply_patches/);
+    expect(gdClient).toMatch(/canonical_state_hash/);
+    expect(gdClient).toMatch(new RegExp(`const DIGEST_SPEC_VERSION := ${DIGEST_SPEC_VERSION}\\b`));
+    expect(gdClient).not.toMatch(/%\.\*f/);
+    expect(gdClient).not.toMatch(/\b_quantize\b/);
+    expect(gdClient).toMatch(/connect_to_host/);
+
+    // Behavioral parity checks live in fixtures/verify_state_digest_vectors.gd (executed by Godot CI).
+    expect(vectorRunner).toContain('SidecarClient.new()');
+    expect(vectorRunner).toContain('digest_version_warnings');
   });
 
   for (const c of fixture.cases) {

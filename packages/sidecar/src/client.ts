@@ -13,6 +13,7 @@
 import type { WorldState } from '@ai-rpg-engine/core';
 import type { RpcMessage } from './framing.js';
 import {
+  DIGEST_SPEC_VERSION,
   ERROR_CODES,
   METHODS,
   NOTIFICATIONS,
@@ -72,6 +73,11 @@ export type SidecarClientOptions = {
    */
   onStale?: (report: StalenessReport) => void;
   /**
+   * Called when the client emits a diagnostic warning (e.g. digest spec
+   * version mismatch). Defaults to writing one line to stderr.
+   */
+  onWarning?: (warning: string) => void;
+  /**
    * Reject a request that gets no reply within this many milliseconds.
    * Default 30_000 so a quiet socket cannot stall the renderer forever.
    * Pass 0 to wait indefinitely.
@@ -88,6 +94,7 @@ export class SidecarClient {
   private state: unknown = {};
   private readonly ticks: TickNotification[] = [];
   private readonly staleness: StalenessReport[] = [];
+  private readonly warnings: string[] = [];
   private serverInfo?: InitializeResult;
   private closed = false;
   private hashesEnabled = true;
@@ -103,6 +110,7 @@ export class SidecarClient {
   private readonly hashState: ((state: unknown) => string) | undefined;
   private readonly hashCanonical: ((state: unknown) => string) | undefined;
   private readonly onStale?: (report: StalenessReport) => void;
+  private readonly onWarning?: (warning: string) => void;
   private readonly requestTimeoutMs: number;
 
   constructor(
@@ -115,12 +123,14 @@ export class SidecarClient {
       this.hashState = hashStateOrOptions;
       this.hashCanonical = defaultCanonicalHashState;
       this.onStale = options?.onStale;
+      this.onWarning = options?.onWarning;
       this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     } else {
       this.hashState = defaultHashState;
       this.hashCanonical = defaultCanonicalHashState;
       const opts = hashStateOrOptions ?? options ?? {};
       this.onStale = opts.onStale;
+      this.onWarning = opts.onWarning;
       this.requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     }
   }
@@ -231,13 +241,26 @@ export class SidecarClient {
   async initialize(capabilities: ClientCapabilities = { notifications: true, hashes: true }): Promise<InitializeResult> {
     this.hashesEnabled = capabilities.hashes !== false;
     this.notificationsEnabled = capabilities.notifications !== false;
-    this.canonicalHashesEnabled = capabilities.canonicalHashes === true;
+    const requestedCanonical = capabilities.canonicalHashes === true;
     const result = await this.request<InitializeResult>(METHODS.INITIALIZE, {
       clientName: '@ai-rpg-engine/sidecar client',
       clientVersion: '1.0.0',
       capabilities,
     });
     this.serverInfo = result;
+    const serverVer =
+      typeof result?.digest_spec_version === 'number' && Number.isInteger(result.digest_spec_version)
+        ? result.digest_spec_version
+        : null;
+    if (requestedCanonical && serverVer !== DIGEST_SPEC_VERSION) {
+      this.canonicalHashesEnabled = false;
+      this.emitWarning(
+        `digest_spec_version mismatch (client=${DIGEST_SPEC_VERSION}, server=${serverVer ?? 'missing'}); ` +
+          'disabling canonicalHashes verification.',
+      );
+    } else {
+      this.canonicalHashesEnabled = requestedCanonical;
+    }
     return result;
   }
 
@@ -291,6 +314,15 @@ export class SidecarClient {
     }
   }
 
+  private emitWarning(warning: string): void {
+    this.warnings.push(warning);
+    if (this.onWarning) {
+      this.onWarning(warning);
+    } else {
+      process.stderr.write(`[sidecar] ${warning}\n`);
+    }
+  }
+
   get mirroredState(): unknown {
     return this.state;
   }
@@ -314,6 +346,14 @@ export class SidecarClient {
 
   get digestSpecVersion(): number | undefined {
     return this.serverInfo?.digest_spec_version;
+  }
+
+  get canonicalHashesActive(): boolean {
+    return this.canonicalHashesEnabled;
+  }
+
+  get warningMessages(): readonly string[] {
+    return this.warnings;
   }
 
   get isClosed(): boolean {

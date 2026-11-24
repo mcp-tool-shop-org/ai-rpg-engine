@@ -12,7 +12,6 @@ extends RefCounted
 class_name SidecarAttachClient
 
 const MAX_MESSAGE_BYTES := 16 * 1024 * 1024
-const WIRE_PRECISION := 6
 const DIGEST_SPEC_VERSION := 2
 
 const METHOD_INITIALIZE := "initialize"
@@ -42,6 +41,7 @@ var last_tick: int = -1
 var last_hash: String = ""
 var canonical_hashes: bool = false
 var server_digest_spec_version: int = 0
+var digest_version_warnings: Array[String] = []
 var writes: bool = true
 ## Reject in-flight RPCs after this many ms. 0 = wait indefinitely (JS default 30000).
 var request_timeout_ms: int = 30000
@@ -166,8 +166,16 @@ func _on_framing_error(kind: String, detail: String) -> void:
 	push_warning("[sidecar] framing error: %s: %s" % [kind, detail])
 
 
+func _normalize_rpc_id(id: Variant) -> Variant:
+	if typeof(id) == TYPE_FLOAT:
+		var f := float(id)
+		if f == floor(f):
+			return int(f)
+	return id
+
+
 func _pending_method(id: Variant) -> String:
-	var rec: Variant = _pending.get(id, null)
+	var rec: Variant = _pending.get(_normalize_rpc_id(id), null)
 	if typeof(rec) == TYPE_DICTIONARY:
 		return str(rec.get("method", ""))
 	return str(rec) if rec != null else ""
@@ -217,7 +225,7 @@ func _on_message(msg: Dictionary) -> void:
 	if msg.has("method"):
 		_handle_notification(str(msg["method"]), msg.get("params", {}))
 		return
-	var id: Variant = msg.get("id", null)
+	var id: Variant = _normalize_rpc_id(msg.get("id", null))
 	var method: String = _pending_method(id)
 	_pending.erase(id)
 	if msg.has("error"):
@@ -229,8 +237,22 @@ func _on_message(msg: Dictionary) -> void:
 		return
 	var result: Variant = msg.get("result", {})
 	if method == METHOD_INITIALIZE:
-		if typeof(result) == TYPE_DICTIONARY:
-			server_digest_spec_version = int(result.get("digest_spec_version", 0))
+		var has_ver := false
+		if typeof(result) == TYPE_DICTIONARY and result.has("digest_spec_version"):
+			var raw_ver: Variant = result["digest_spec_version"]
+			if typeof(raw_ver) == TYPE_INT or typeof(raw_ver) == TYPE_FLOAT:
+				var ver_f := float(raw_ver)
+				if ver_f == floor(ver_f):
+					has_ver = true
+					server_digest_spec_version = int(ver_f)
+		if not has_ver:
+			server_digest_spec_version = 0
+		if canonical_hashes and (not has_ver or server_digest_spec_version != DIGEST_SPEC_VERSION):
+			canonical_hashes = false
+			var got_label := str(server_digest_spec_version) if has_ver else "missing"
+			var warn_msg := "SidecarAttachClient: digest_spec_version mismatch (client=%d, server=%s); disabling canonicalHashes verification" % [DIGEST_SPEC_VERSION, got_label]
+			digest_version_warnings.append(warn_msg)
+			push_warning(warn_msg)
 	elif method == METHOD_SNAPSHOT:
 		_apply_snapshot(result)
 	elif method == METHOD_SUBMIT_ACTION or method == METHOD_ADVANCE or method == METHOD_LOAD:
@@ -402,45 +424,13 @@ static func _escape_json_string(s: String) -> String:
 			_:
 				if cp < 0x20:
 					out += "\\u%04x" % cp
+				elif cp >= 0xD800 and cp <= 0xDFFF:
+					push_error("SidecarAttachClient: lone surrogate U+%04X is invalid in canonical JSON" % cp)
+					return ""
 				else:
 					out += char(cp)
 	out += "\""
 	return out
-
-
-static func _quantize(value: Variant) -> Variant:
-	match typeof(value):
-		TYPE_INT:
-			return int(value)
-		TYPE_FLOAT:
-			var factor := pow(10.0, WIRE_PRECISION)
-			var scaled: float = float(value) * factor
-			var rounded: int = int(round(scaled))
-			if rounded == 0:
-				return 0
-			var quantized: float = float(rounded) / factor
-			if quantized == floor(quantized):
-				return int(quantized)
-			return quantized
-		TYPE_ARRAY:
-			var out: Array = []
-			for item in value:
-				out.append(_quantize(item))
-			return out
-		TYPE_DICTIONARY:
-			var pairs: Array = []
-			for k in (value as Dictionary).keys():
-				pairs.append([str(k), k])
-			pairs.sort_custom(func(a: Array, b: Array) -> bool: return String(a[0]) < String(b[0]))
-			var out := {}
-			for pair in pairs:
-				var k_str: String = pair[0]
-				var orig_k: Variant = pair[1]
-				var v: Variant = (value as Dictionary)[orig_k]
-				out[k_str] = _quantize(v)
-			return out
-		_:
-			return value
 
 
 static func _write_canonical(value: Variant) -> String:

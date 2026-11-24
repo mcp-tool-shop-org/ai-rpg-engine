@@ -7,6 +7,7 @@ import {
   canonicalJson,
   canonicalStateHash,
   diffState,
+  escapeDiagnosticText,
   projectState,
   quantize,
   snapshotDelta,
@@ -55,14 +56,142 @@ describe('canonicalStateHash — digest formatting, validation, and JS stateHash
     expect(canonicalJson([undefined, null, -0.0000005, 0.0078125, -0.0078125])).toBe(
       '[null,null,-1,7813,-7813]',
     );
-    expect(canonicalJson(() => 1)).toBe('null');
     expect(() => validateDigestState({ nested: [1, { keep: 'ok', skip: undefined }] })).not.toThrow();
-    expect(canonicalJson({ ctrl: '\u0000\u0001\b\t\n\u000b\f\r\x7f' })).toBe(
-      '{"ctrl":"\\u0000\\u0001\\b\\t\\n\\u000b\\f\\r\x7f"}',
+    expect(canonicalJson({ ctrl: '\u0001\b\t\n\u000b\f\r\x7f' })).toBe(
+      '{"ctrl":"\\u0001\\b\\t\\n\\u000b\\f\\r\x7f"}',
     );
     expect(quantize(-0.0000005)).toBe(-0.000001);
     expect(quantize(-0)).toBe(0);
     expect(Object.is(quantize(-0), -0)).toBe(false);
+  });
+
+  it('loops sparse arrays by index so canonicalJson and quantize match JSON.stringify on wire holes', () => {
+    const holey: unknown[] = [];
+    holey[1] = 1.5;
+    holey[3] = null;
+    expect(quantize(holey)).toEqual([null, 1.5, null, null]);
+    expect(canonicalJson(holey)).toBe('[null,1500000,null,null]');
+    expect(canonicalJson(holey)).toBe(canonicalJson(JSON.parse(JSON.stringify(holey))));
+    expect(() => validateDigestState(holey)).not.toThrow();
+
+    const holeyBad: unknown[] = [];
+    holeyBad[2] = Number.NaN;
+    try {
+      validateDigestState(holeyBad);
+      expect.unreachable('expected NON_FINITE_NUMBER on sparse array index');
+    } catch (err) {
+      expect(err).toBeInstanceOf(StateDigestError);
+      expect((err as StateDigestError).code).toBe('NON_FINITE_NUMBER');
+      expect((err as StateDigestError).path).toBe('$[2]');
+    }
+  });
+
+  it('refuses function, symbol, and bigint values in validateDigestState and canonicalJson', () => {
+    const fn = () => 1;
+    const sym = Symbol('tag');
+    const big = 42n;
+    for (const candidate of [
+      fn,
+      sym,
+      big,
+      { cb: fn },
+      { sym },
+      { big },
+      [1, fn],
+      [sym],
+      [big],
+    ]) {
+      try {
+        validateDigestState(candidate);
+        expect.unreachable('expected UNSUPPORTED_VALUE_TYPE from validateDigestState');
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        expect((err as StateDigestError).code).toBe('UNSUPPORTED_VALUE_TYPE');
+      }
+      try {
+        canonicalJson(candidate);
+        expect.unreachable('expected UNSUPPORTED_VALUE_TYPE from canonicalJson');
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        expect((err as StateDigestError).code).toBe('UNSUPPORTED_VALUE_TYPE');
+      }
+    }
+  });
+
+  it('refuses U+0000 and lone UTF-16 surrogates while allowing valid surrogate pairs', () => {
+    expect(() => validateDigestState({ msg: '😀⚔️🎲' })).not.toThrow();
+    expect(canonicalJson({ msg: '😀' })).toBe('{"msg":"😀"}');
+
+    for (const bad of [
+      { kind: 'NUL_CHARACTER' as const, state: { txt: `a${String.fromCharCode(0)}b` } },
+      { kind: 'NUL_CHARACTER' as const, state: { [`k${String.fromCharCode(0)}`]: 1 } },
+      { kind: 'LONE_SURROGATE' as const, state: { txt: String.fromCharCode(0xd800) } },
+      { kind: 'LONE_SURROGATE' as const, state: { txt: `x${String.fromCharCode(0xdfff)}y` } },
+    ]) {
+      try {
+        validateDigestState(bad.state);
+        expect.unreachable(`expected ${bad.kind} from validateDigestState`);
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        expect((err as StateDigestError).code).toBe(bad.kind);
+      }
+      try {
+        canonicalJson(bad.state);
+        expect.unreachable(`expected ${bad.kind} from canonicalJson`);
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        expect((err as StateDigestError).code).toBe(bad.kind);
+      }
+    }
+  });
+
+  it('escapes control and ANSI sequences and caps long keys in error diagnostics', () => {
+    const ansiNonAsciiKey = '\x1b[31mcaf\u00e9\x1b[0m';
+    try {
+      validateDigestState({ [ansiNonAsciiKey]: 1 });
+      expect.unreachable('expected NON_ASCII_KEY');
+    } catch (err) {
+      expect(err).toBeInstanceOf(StateDigestError);
+      const e = err as StateDigestError;
+      expect(e.code).toBe('NON_ASCII_KEY');
+      expect(e.message).not.toContain('\x1b');
+      expect(e.path).not.toContain('\x1b');
+      expect(e.message).toContain('\\u001b');
+      expect(e.path).toContain('\\u001b');
+      expect(JSON.stringify(e.toJSON())).not.toContain('\x1b');
+    }
+
+    try {
+      canonicalJson({ '\x1b[31mred\x1b[0m': Number.NaN });
+      expect.unreachable('expected NON_FINITE_NUMBER');
+    } catch (err) {
+      expect(err).toBeInstanceOf(StateDigestError);
+      const e = err as StateDigestError;
+      expect(e.code).toBe('NON_FINITE_NUMBER');
+      expect(e.message).not.toContain('\x1b');
+      expect(e.path).not.toContain('\x1b');
+      expect(e.message).toContain('\\u001b');
+      expect(e.path).toContain('\\u001b');
+    }
+
+    const hugeKey = `${'a'.repeat(200)}\u00e9`;
+    try {
+      validateDigestState({ [hugeKey]: 1 });
+      expect.unreachable('expected NON_ASCII_KEY for huge key');
+    } catch (err) {
+      const e = err as StateDigestError;
+      expect(e.path.length).toBeLessThanOrEqual(128);
+      expect(String(e.detail.key)).toContain('...');
+    }
+
+    expect(escapeDiagnosticText('a\b\f\r\t😀', 16)).toBe('a\\b\\f\\r\\t😀');
+    expect(escapeDiagnosticText('abcdef', 6)).toBe('abcdef');
+    const custom = new StateDigestError('NON_ASCII_KEY', '$.\x1b', 'bad\n\r\t😀msg' + 'x'.repeat(260), {
+      arr: [Symbol('s'), 1n, () => 1, { nested: 'deep\x1b' }],
+    });
+    expect(custom.message).toContain('\\n\\r\\t😀');
+    expect(custom.message).toMatch(/\.\.\.$/);
+    expect(JSON.stringify(custom.toJSON())).not.toContain('\x1b');
   });
 
   it('validateDigestState and canonicalJson refuse non-finite numbers with StateDigestError', () => {
@@ -70,6 +199,7 @@ describe('canonicalStateHash — digest formatting, validation, and JS stateHash
       expect(() => validateDigestState({ hp: bad })).toThrowError(StateDigestError);
       try {
         canonicalJson({ hp: bad });
+        expect.unreachable(`expected NON_FINITE_NUMBER for ${String(bad)}`);
       } catch (err) {
         expect(err).toBeInstanceOf(StateDigestError);
         const e = err as StateDigestError;

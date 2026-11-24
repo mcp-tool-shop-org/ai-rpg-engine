@@ -1,9 +1,10 @@
 # --- Measured CI cost (dogfood-swarm SKILL item 8) --------------------------
-# 8 billable min per push across 3 jobs (5.9 min actual wall time),
-# measured 2026-09-07 from run 34122798052. Most expensive jobs:
-#     4 min  build-and-test (22)  (3.0 min wall)
-#     2 min  build-and-test (24)  (1.9 min wall)
-#     2 min  Docker smoke (CLI image)  (1.0 min wall)
+# 12 billable min per push across 4 jobs (9.3 min actual wall time),
+# measured 2026-11-24 from run 45358053857:
+#     5 min  build-and-test (22)              (4.1 min wall)
+#     3 min  build-and-test (24)              (2.9 min wall)
+#     3 min  Docker smoke (CLI image)         (2.2 min wall)
+#     1 min  Godot 4.7.2 State Digest Vectors (0.2 min wall)
 # GitHub bills per JOB, rounded UP to the minute, x2 Windows / x10 macOS, so
 # billable minutes exceed wall time — many short jobs cost more than one long
 # one. This number is measured, never estimated; re-measure after any change:
@@ -240,6 +241,8 @@ jobs:
       GODOT_ARCHIVE_SHA256: 'cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install and verify Godot 4.7.2 (pinned sha256)
         run: |
@@ -263,7 +266,19 @@ jobs:
           mkdir -p "${PROJ}"
           printf 'config_version=5\n\n[application]\nconfig/name="state-digest-vectors"\n' > "${PROJ}/project.godot"
           cp packages/sidecar/gdscript/framing.gd packages/sidecar/gdscript/sidecar_client.gd fixtures/verify_state_digest_vectors.gd fixtures/state_digest_vectors.jsonl "${PROJ}/"
-          timeout 30s /tmp/godot-bin/godot --headless --path "${PROJ}" --import
+          set +e
+          timeout 30s /tmp/godot-bin/godot --headless --path "${PROJ}" --import 2>&1 | tee /tmp/godot-import.log
+          IMPORT_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "${IMPORT_EXIT}" -ne 0 ]; then
+            echo "::error::Headless Godot --import exited ${IMPORT_EXIT}"
+            exit 1
+          fi
+          if grep -Eq 'SCRIPT ERROR' /tmp/godot-import.log; then
+            echo "::error::Godot emitted SCRIPT ERROR during --import"
+            grep -En 'SCRIPT ERROR' /tmp/godot-import.log
+            exit 1
+          fi
           set +e
           timeout 60s /tmp/godot-bin/godot --headless --path "${PROJ}" -s res://verify_state_digest_vectors.gd 2>&1 | tee /tmp/godot-digest.log
           GODOT_EXIT=${PIPESTATUS[0]}
@@ -277,8 +292,10 @@ jobs:
             grep -En 'SCRIPT ERROR' /tmp/godot-digest.log
             exit 1
           fi
-          grep -Fq 'DIGEST_VECTORS_OK' /tmp/godot-digest.log || {
-            echo "::error::Missing DIGEST_VECTORS_OK verdict in Godot output"
+          VECTOR_LINES=$(grep -cve '^[[:space:]]*$' fixtures/state_digest_vectors.jsonl)
+          EXPECTED_COUNT=$((VECTOR_LINES + 4))
+          grep -Fq "DIGEST_VECTORS_OK count=${EXPECTED_COUNT}" /tmp/godot-digest.log || {
+            echo "::error::Missing DIGEST_VECTORS_OK count=${EXPECTED_COUNT} verdict in Godot output"
             exit 1
           }
 
