@@ -1,20 +1,25 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-24 from commit c44ca4d by Atlas 1.26.0.
+Mapped at 2026-11-24 from commit c678bc7 by Atlas 1.26.0.
 
 ## What this is
 
-40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
+40 parts, mostly TypeScript (801 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-11-24 (3c05846)
+## What changed since 2026-11-24 (c44ca4d)
 
-- packages/cli/src/__fixtures__/c1-forge-manifest.json is now also read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.
-- 33 files changed content, across 10 parts.
+- CI runs 1 more file than before.
+- Release runs 1 more file than before.
+- docs/handbook/appendix-a-event-vocabulary.md is now read by packages/core/src/event-vocabulary.test.ts.
+- package.json is now also read by .github/workflows/release.yml and scripts/gates.test.ts.
+- packages/ is now also read by packages/core/src/event-vocabulary.test.ts.
+- And 18 more new writers and readers of places.
+- 2 files added and 16 changed content, across 9 parts.
 
 ## What comes in
 
-1. **CI.** On a pull request; on a push touching 17 paths; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 391 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
-2. **Release.** When a release is published; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 390 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
+1. **CI.** On a pull request; on a push touching 17 paths; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 392 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
+2. **Release.** When a release is published; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 391 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
 3. **Deploy site to GitHub Pages.** On a pull request touching 2 paths; on a push to main touching 2 paths; or by hand. Runs site/astro.config.mjs and site/src/.
 4. **Docs Integrity.** On a pull request touching 5 paths; on a push touching 5 paths; or by hand. Runs docs/check-docs-integrity.mjs.
 5. **ai-rpg-engine** (a command people run). Runs packages/cli/src/bin.ts.
@@ -47,7 +52,7 @@ Mapped at 2026-11-24 from commit c44ca4d by Atlas 1.26.0.
 
 ## The other doors
 
-**Release** runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 390 more, builds docs/mixed-game-viability-proof.ts, checks templates/, docs/, eslint.config.js and 5 more, packs package-lock.json, package.json, packages/ and 1 more into an image, writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json, docs/c0-alignment/version-skew.json and docs/contract-v1/rng-audit.json, and publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false).
+**Release** runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 391 more, builds docs/mixed-game-viability-proof.ts, checks templates/, docs/, eslint.config.js and 5 more, packs package-lock.json, package.json, packages/ and 1 more into an image, writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json, docs/c0-alignment/version-skew.json and docs/contract-v1/rng-audit.json, and publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false).
 
 **Deploy site to GitHub Pages** runs site/astro.config.mjs and site/src/, and deploys the site on main.
 
@@ -74,11 +79,11 @@ Mapped at 2026-11-24 from commit c44ca4d by Atlas 1.26.0.
 - **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.ts** changed together in 11 of 16 commits, inside the ledger-adapter part.
 - **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/cli.ts** changed together in 11 of 16 commits, inside the ollama part.
 - **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.test.ts** changed together in 10 of 16 commits, inside the ledger-adapter part.
-- **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/index.ts** changed together in 10 of 17 commits, inside the ollama part.
+- **packages/sidecar/src/protocol.ts** and **packages/sidecar/src/server.ts** changed together in 11 of 18 commits, inside the sidecar part.
 
 12 files changed together with their own tests, as expected.
 
-Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
+Window: 180 days; a pair counts from 10 shared commits, since 52 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
 
 ## What no test touches
 
@@ -134,8 +139,8 @@ Read those in order to follow one pull request end to end.
 - 16 writes and 13 reads go to the directory the command is run in or a path their caller passes, not to this repository.
 - 12 writes and 9 reads go to the directory the command is run in, not to this repository.
 - 6 writes and 3 reads go to a temporary directory, not to this repository.
-- 2 commands are built at run time and not followed, 1 of them in tests.
-- CI runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435.
-- Release runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434.
+- 3 commands are built at run time and not followed, 2 of them in tests.
+- CI runs or checks 436 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 436.
+- Release runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435.
 
 Regenerate with `npx --yes @dogfood-lab/atlas map`.
