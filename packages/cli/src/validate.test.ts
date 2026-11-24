@@ -362,6 +362,9 @@ describe('runValidate', () => {
       const code = runValidate([file, ...badArgs], { log: () => {}, error: errOut.log });
       expect(code).toBe(1);
       expect(errOut.text()).toContain('VALIDATE_INVALID_UNRESOLVED_AI_PROFILE');
+      expect(errOut.text()).toContain('Usage: ai-rpg-engine validate <file.json>');
+      expect(errOut.text()).toContain('Options:');
+      expect(errOut.text()).toContain('Example:');
 
       const jsonOut = capture();
       const jsonCode = runValidate([file, '--json', ...badArgs], { log: jsonOut.log, error: () => {} });

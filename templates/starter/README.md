@@ -25,7 +25,7 @@ npx vitest run     # run the pack's tests
 | File | What to edit |
 |------|--------------|
 | `package.json` | name and description |
-| `src/content.ts` | `packMeta`, the `ContentPack` (`entities` / `zones` / `placements`), plus session catalogs (`buildCatalog`, `itemCatalog`, `districts`, `progressionTree`, `statusDefinitions`). Keep each enemy's `aiProfile` paired with a profile in `src/setup.ts`: `createGame()` throws on an unresolved profile, and `validate` / `sidecar --content` exit `1` (`SIDECAR_CONTENT_REFUSED`) when `src/content.json` names one not registered on the host. |
+| `src/content.ts` | `packMeta`, the `ContentPack` (`entities` / `zones` / `placements`), plus session catalogs (`buildCatalog`, `itemCatalog`, `districts`, `progressionTree`, `statusDefinitions`). Keep each enemy's `aiProfile` paired with a profile in `src/setup.ts`: `createGame()` throws on an unresolved profile, and `validate` / `sidecar --content` exit `1` (`SIDECAR_CONTENT_REFUSED`) when `src/content.json` names one not registered on the host unless `--unresolved-ai-profile warn` is passed. |
 | `src/ruleset.ts` | your stats, resources, verbs |
 | `src/setup.ts` | wire your modules alongside `buildCombatStack`; the intent profiles list lives here |
 | `src/starter.test.ts` | grows with your content — register dialogues/abilities in the integrity lists |
@@ -38,7 +38,7 @@ Two wiring rules worth knowing from day one:
   `territorial`, `calculating`, `passive`, `follower`; custom profiles require booting `sidecar <path>`
   against your built starter). `createGame()` runs with `unresolvedAiProfile: 'fail'`
   and throws on a mismatch, while `ai-rpg-engine validate` and `sidecar --content`
-  exit `1`.
+  exit `1` unless invoked with `--unresolved-ai-profile warn`.
 - **`buildCombatStack` owns the combat stack** (cognition, tactics, resources,
   intent, recovery, narration). Your custom modules go in the marked
   starter-owned section of `src/setup.ts`.

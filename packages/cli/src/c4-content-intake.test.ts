@@ -512,6 +512,9 @@ describe('sidecar --content', () => {
       expect(text).toContain('--unresolved-ai-profile');
       expect(text).toContain('fail');
       expect(text).toContain('warn');
+      expect(text).toContain('Usage: ai-rpg-engine sidecar <pack-id|path>');
+      expect(text).toContain('TRANSPORTS');
+      expect(text).toContain('CONTENT');
       expect(readyLine(text)).toBe(false);
     }
   });

@@ -454,15 +454,43 @@ function getPropertyExprMap(obj: ts.ObjectLiteralExpression): Map<string, ts.Exp
   return map;
 }
 
-const EXCLUDED_LITERAL_TYPE_NAMES = new Set(['WireEvent', 'Memory', 'TraceStep', 'DefeatEntry', 'ProgressionEvent']);
+function isAnonymousOrGenericRecordSymbol(sym: ts.Symbol | undefined): boolean {
+  if (!sym) return true;
+  const name = sym.getName();
+  return (
+    name === '__type' ||
+    name === '__object' ||
+    name === 'Record' ||
+    name === 'Object' ||
+    name === 'Partial' ||
+    name === 'Readonly'
+  );
+}
 
-function isExcludedContextType(checker: ts.TypeChecker, type: ts.Type | undefined): boolean {
+function isNamedNonEventType(checker: ts.TypeChecker, type: ts.Type | undefined): boolean {
   if (!type) return false;
-  const str = checker.typeToString(type);
-  for (const excluded of EXCLUDED_LITERAL_TYPE_NAMES) {
-    if (str === excluded || str.startsWith(`${excluded} `)) return true;
+  if (isResolvedOrPendingReturnType(checker, type)) return false;
+  if (type.isUnion()) {
+    const nonNullish = type.types.filter(
+      (branch) => (branch.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Void)) === 0,
+    );
+    return nonNullish.length > 0 && nonNullish.every((branch) => isNamedNonEventType(checker, branch));
   }
-  return false;
+  const sym = type.aliasSymbol ?? type.getSymbol();
+  if (isAnonymousOrGenericRecordSymbol(sym)) return false;
+  const text = checker.typeToString(type);
+  return !text.includes('ResolvedEvent') && !text.includes('PendingEffect');
+}
+
+function getExplicitTypeAssertion(checker: ts.TypeChecker, obj: ts.ObjectLiteralExpression): ts.Type | undefined {
+  if (
+    ts.isAsExpression(obj.parent) ||
+    ts.isTypeAssertionExpression(obj.parent) ||
+    ts.isSatisfiesExpression(obj.parent)
+  ) {
+    return checker.getTypeAtLocation(obj.parent);
+  }
+  return undefined;
 }
 
 function isEventObjectLiteral(
@@ -471,13 +499,13 @@ function isEventObjectLiteral(
   props: Map<string, ts.Expression>,
 ): boolean {
   if (!props.has('type')) return false;
-  const ctx = checker.getContextualType(obj);
-  if (isExcludedContextType(checker, ctx)) return false;
+  const ctx = checker.getContextualType(obj) ?? getExplicitTypeAssertion(checker, obj);
+  if (isNamedNonEventType(checker, ctx)) return false;
   if (isResolvedOrPendingReturnType(checker, ctx)) return true;
   for (const prop of obj.properties) {
     if (ts.isSpreadAssignment(prop)) {
       const spreadType = checker.getTypeAtLocation(prop.expression);
-      if (!isExcludedContextType(checker, spreadType) && isResolvedOrPendingReturnType(checker, spreadType)) {
+      if (!isNamedNonEventType(checker, spreadType) && isResolvedOrPendingReturnType(checker, spreadType)) {
         return true;
       }
     }
@@ -518,11 +546,90 @@ function enclosingFunctionTypeParamNames(
   return names;
 }
 
-function referencesAnyIdentifier(node: ts.Node, names: ReadonlySet<string>): boolean {
-  if (ts.isIdentifier(node) && names.has(node.text)) return true;
+function isStringOrTypeParamType(checker: ts.TypeChecker, type: ts.Type | undefined, fn: FunctionLike, sf: ts.SourceFile, explicitTypeNode?: ts.TypeNode): boolean {
+  if (type) {
+    const direct =
+      (type.flags & ts.TypeFlags.String) !== 0 ||
+      (type.flags & ts.TypeFlags.TypeParameter) !== 0 ||
+      (type.isUnion() &&
+        type.types.some(
+          (u) => (u.flags & ts.TypeFlags.String) !== 0 || (u.flags & ts.TypeFlags.TypeParameter) !== 0,
+        ));
+    if (direct) return true;
+  }
+  if (
+    explicitTypeNode !== undefined &&
+    (explicitTypeNode.kind === ts.SyntaxKind.StringKeyword ||
+      (ts.isTypeReferenceNode(explicitTypeNode) &&
+        fn.typeParameters?.some((tp) => tp.name.text === explicitTypeNode.getText(sf)) === true))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function collectCandidateTypeBindings(
+  checker: ts.TypeChecker,
+  fn: FunctionLike,
+  sf: ts.SourceFile,
+): { directNames: Set<string>; objectParamNames: Set<string> } {
+  const directNames = new Set<string>();
+  const objectParamNames = new Set<string>();
+
+  for (const param of fn.parameters) {
+    const paramType = checker.getTypeAtLocation(param);
+    if (ts.isIdentifier(param.name)) {
+      if (isStringOrTypeParamType(checker, paramType, fn, sf, param.type)) {
+        directNames.add(param.name.text);
+        continue;
+      }
+      if (!isResolvedOrPendingReturnType(checker, paramType)) {
+        const typeProp = paramType.getProperty('type');
+        if (typeProp) {
+          const propType = checker.getTypeOfSymbolAtLocation(typeProp, param);
+          if (isStringOrTypeParamType(checker, propType, fn, sf)) {
+            objectParamNames.add(param.name.text);
+          }
+        }
+      }
+    } else if (ts.isObjectBindingPattern(param.name) && !isResolvedOrPendingReturnType(checker, paramType)) {
+      for (const el of param.name.elements) {
+        if (!ts.isIdentifier(el.name)) continue;
+        const propName = el.propertyName
+          ? (ts.isIdentifier(el.propertyName) || ts.isStringLiteral(el.propertyName) ? el.propertyName.text : null)
+          : el.name.text;
+        if (propName !== 'type') continue;
+        const elType = checker.getTypeAtLocation(el);
+        if (isStringOrTypeParamType(checker, elType, fn, sf)) {
+          directNames.add(el.name.text);
+        }
+      }
+    }
+  }
+
+  return { directNames, objectParamNames };
+}
+
+function referencesCandidateTypeExpr(
+  checker: ts.TypeChecker,
+  node: ts.Node,
+  directNames: ReadonlySet<string>,
+  objectParamNames: ReadonlySet<string>,
+): boolean {
+  if (ts.isIdentifier(node) && directNames.has(node.text)) return true;
+  if (
+    ts.isExpression(node) &&
+    (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+    getAccessName(checker, node) === 'type'
+  ) {
+    const receiver = unwrapExpression(node.expression);
+    if (ts.isIdentifier(receiver) && objectParamNames.has(receiver.text)) {
+      return true;
+    }
+  }
   let hit = false;
   ts.forEachChild(node, (c) => {
-    if (referencesAnyIdentifier(c, names)) hit = true;
+    if (referencesCandidateTypeExpr(checker, c, directNames, objectParamNames)) hit = true;
   });
   return hit;
 }
@@ -589,28 +696,44 @@ function findUnregisteredEventSinks(
           );
 
         if (!alreadyRegistered && node.body) {
-          const candidateParamNames = new Set<string>();
-          for (const param of node.parameters) {
-            if (!ts.isIdentifier(param.name)) continue;
-            const pt = checker.getTypeAtLocation(param);
-            const hasStringOrTypeParam =
-              (pt.flags & ts.TypeFlags.String) !== 0 ||
-              (pt.flags & ts.TypeFlags.TypeParameter) !== 0 ||
-              (pt.isUnion() &&
-                pt.types.some(
-                  (u) => (u.flags & ts.TypeFlags.String) !== 0 || (u.flags & ts.TypeFlags.TypeParameter) !== 0,
-                ));
-            const explicitTypeParam =
-              param.type !== undefined &&
-              (param.type.kind === ts.SyntaxKind.StringKeyword ||
-                (ts.isTypeReferenceNode(param.type) &&
-                  node.typeParameters?.some((tp) => tp.name.text === param.type!.getText(sf)) === true));
-            if (hasStringOrTypeParam || explicitTypeParam) {
-              candidateParamNames.add(param.name.text);
-            }
-          }
+          const { directNames: candidateParamNames, objectParamNames: candidateObjParams } =
+            collectCandidateTypeBindings(checker, node, sf);
 
-          if (candidateParamNames.size > 0) {
+          if (candidateParamNames.size > 0 || candidateObjParams.size > 0) {
+            if (candidateObjParams.size > 0) {
+              const collectLocalAliases = (b: ts.Node): void => {
+                if (
+                  b !== node &&
+                  (ts.isFunctionDeclaration(b) ||
+                    ts.isMethodDeclaration(b) ||
+                    ts.isFunctionExpression(b) ||
+                    ts.isArrowFunction(b))
+                ) {
+                  return;
+                }
+                if (ts.isVariableDeclaration(b) && b.initializer) {
+                  const init = unwrapExpression(b.initializer);
+                  if (ts.isIdentifier(b.name) && referencesCandidateTypeExpr(checker, init, candidateParamNames, candidateObjParams)) {
+                    candidateParamNames.add(b.name.text);
+                  } else if (
+                    ts.isObjectBindingPattern(b.name) &&
+                    ts.isIdentifier(init) &&
+                    candidateObjParams.has(init.text)
+                  ) {
+                    for (const el of b.name.elements) {
+                      if (!ts.isIdentifier(el.name)) continue;
+                      const propName = el.propertyName
+                        ? (ts.isIdentifier(el.propertyName) || ts.isStringLiteral(el.propertyName) ? el.propertyName.text : null)
+                        : el.name.text;
+                      if (propName === 'type') candidateParamNames.add(el.name.text);
+                    }
+                  }
+                }
+                ts.forEachChild(b, collectLocalAliases);
+              };
+              collectLocalAliases(node.body);
+            }
+
             const sig = checker.getSignatureFromDeclaration(node);
             const retType = sig ? checker.getReturnTypeOfSignature(sig) : undefined;
             let returnsEvent = isResolvedOrPendingReturnType(checker, retType);
@@ -632,7 +755,7 @@ function findUnregisteredEventSinks(
                 const props = getPropertyExprMap(b);
                 if (isEventObjectLiteral(checker, b, props)) {
                   const typeExpr = props.get('type')!;
-                  if (referencesAnyIdentifier(typeExpr, candidateParamNames)) {
+                  if (referencesCandidateTypeExpr(checker, typeExpr, candidateParamNames, candidateObjParams)) {
                     usesParamAsEventType = true;
                     const unwrappedParent = b.parent;
                     if (ts.isReturnStatement(unwrappedParent) || (ts.isArrowFunction(node) && node.body === b)) {
@@ -660,7 +783,11 @@ function findUnregisteredEventSinks(
                 }
 
                 const resolvedCall = resolveSinkCall(checker, b, registeredSinks);
-                if (resolvedCall && resolvedCall.typeArg && referencesAnyIdentifier(resolvedCall.typeArg, candidateParamNames)) {
+                if (
+                  resolvedCall &&
+                  resolvedCall.typeArg &&
+                  referencesCandidateTypeExpr(checker, resolvedCall.typeArg, candidateParamNames, candidateObjParams)
+                ) {
                   usesParamAsEventType = true;
                   emitsEvent = true;
                 }
@@ -981,7 +1108,7 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
     assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
     const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
-    expect(fxViolations).toEqual([expect.stringContaining('h')]);
+    expect(fxViolations).toEqual([expect.stringContaining('"h"')]);
   });
 
   it('catches fixture { ...ev, type: "lit" }: spread event literal overriding type statically', () => {
@@ -1014,7 +1141,7 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
     const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
     const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
-    expect(fxViolations).toEqual([expect.stringContaining('f')]);
+    expect(fxViolations).toEqual([expect.stringContaining('"f"')]);
     expect(fxScan.emittedTypes).toContain('aliased.lit');
   });
 
@@ -1058,6 +1185,51 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
     expect(fxViolations).toEqual([expect.stringContaining('forwardElem')]);
     expect(fxScan.emittedTypes).toContain('elem.lit');
+  });
+
+  it('derives non-event object exclusion from named types without a manual exclusion list', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/core/src/__fixture_non_event_type__.ts').replace(/\\/g, '/');
+    const code = `
+      export interface UnlistedAuditEntry {
+        id: string;
+        tick: number;
+        type: string;
+        payload: Record<string, unknown>;
+      }
+      export function makeAudit(kind: string): UnlistedAuditEntry {
+        return { id: 'audit-1', tick: 0, type: kind, payload: {} };
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
+    const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
+    expect(fxViolations).toEqual([]);
+    expect(fxScan.unresolvedDynamicCalls).toEqual([]);
+    expect([...fxScan.emittedTypes]).toEqual([]);
+  });
+
+  it('catches object-typed { type: string } and destructured parameter forwarders as unregistered sinks', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/cli/src/__fixture_obj_forwarder__.ts').replace(/\\/g, '/');
+    const code = `
+      import type { ActionIntent } from '@ai-rpg-engine/core';
+      import { makeEvent } from '@ai-rpg-engine/modules';
+      export function forwardObj(action: ActionIntent, spec: { type: string }) {
+        return makeEvent(action, spec.type, {});
+      }
+      export function forwardDestructured(action: ActionIntent, { type }: { type: string }) {
+        return makeEvent(action, type, {});
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
+    expect(fxViolations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('"forwardObj"'),
+        expect.stringContaining('"forwardDestructured"'),
+      ]),
+    );
   });
 
   it('expands new union members automatically via TypeChecker and fails on unresolved non-finite dynamic expressions unless registered as a pattern', () => {

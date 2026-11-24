@@ -26,9 +26,11 @@ const METHOD_LOAD := "load"
 const METHOD_SHUTDOWN := "shutdown"
 const NOTIFY_TICK := "sim/tick"
 const NOTIFY_CLOSING := "sim/closing"
+const NOTIFY_RESYNC_REQUIRED := "sim/resyncRequired"
 
 signal tick(notification: Dictionary)
 signal closing()
+signal resync_required(notice: Dictionary)
 signal stale(report: Dictionary)
 signal rpc_error(code: int, message: String, data: Variant)
 signal completed(id: int, result: Variant)
@@ -265,6 +267,10 @@ func _on_message(msg: Dictionary) -> void:
 func _handle_notification(method: String, params: Variant) -> void:
 	if method == NOTIFY_CLOSING:
 		_fail_transport("sim/closing")
+		return
+	if method == NOTIFY_RESYNC_REQUIRED:
+		var notice: Dictionary = params if typeof(params) == TYPE_DICTIONARY else {}
+		resync_required.emit(notice)
 		return
 	if method != NOTIFY_TICK:
 		return

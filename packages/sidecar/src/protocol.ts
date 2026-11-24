@@ -130,7 +130,22 @@ export const NOTIFICATIONS = {
   TICK: 'sim/tick',
   /** The server is going away. */
   CLOSING: 'sim/closing',
+  /**
+   * Peer tick or load-time rebase was skipped for this session; the client's
+   * mirror is now stale until it calls `snapshot`.
+   */
+  RESYNC_REQUIRED: 'sim/resyncRequired',
 } as const;
+
+export type ResyncRequiredReason = 'tick_skipped' | 'rebase_skipped';
+
+export type ResyncRequiredNotification = {
+  tick: number;
+  snapshotSeq: number;
+  reason: ResyncRequiredReason;
+  code?: string;
+  message: string;
+};
 
 export type NotificationName = (typeof NOTIFICATIONS)[keyof typeof NOTIFICATIONS];
 
@@ -529,3 +544,7 @@ export type LoadResult = {
   canonicalHash?: string;
   snapshotSeq: number;
 };
+
+export type RebaseAfterLoadResult =
+  | { ok: true; snapshotSeq: number }
+  | { ok: false; snapshotSeq: number; code?: string; error: string };

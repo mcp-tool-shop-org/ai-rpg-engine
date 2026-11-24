@@ -240,6 +240,8 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
         `✗ [SIDECAR_INVALID_UNRESOLVED_AI_PROFILE] --unresolved-ai-profile must be "fail" or "warn", got "${rawPolicy ?? '(missing)'}".`,
       );
       error('  Hint: pass --unresolved-ai-profile fail (default) or --unresolved-ai-profile warn.');
+      error('');
+      printSidecarHelp(error);
       return 1;
     }
     unresolvedAiProfilePolicy = rawPolicy;

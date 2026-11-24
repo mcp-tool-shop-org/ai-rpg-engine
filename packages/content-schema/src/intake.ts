@@ -930,6 +930,17 @@ export function applyContentPack(
     };
   }
 
+  const rollbackWorldState = (): void => {
+    const state = engine.store.state as unknown as Record<string, unknown>;
+    const restored = structuredClone(preApply) as Record<string, unknown>;
+    for (const key of Object.keys(state)) {
+      if (!(key in restored)) delete state[key];
+    }
+    Object.assign(state, restored);
+    for (const key of CORE_INTAKE_KEYS) delete applied[key];
+    for (const key of MODULE_INTAKE_KEYS) delete applied[key];
+  };
+
   // --- zones (core-only) ---
   const zones = pack.zones ?? [];
   if (!Array.isArray(zones)) {
@@ -965,7 +976,8 @@ export function applyContentPack(
       const bp = entities[i];
       if (isRecord(bp) && typeof bp.id === 'string' && bp.id.length > 0) seenEntityIds.add(bp.id);
       const label = `entities[${i}](${idOf(bp)})`;
-      if (!options.prevalidated) {
+      const bpHasNonStringAi = isRecord(bp) && bp.aiProfile !== undefined && typeof bp.aiProfile !== 'string';
+      if (!options.prevalidated || bpHasNonStringAi) {
         const r = validateEntityBlueprint(bp, label);
         if (r.errors.length > 0) {
           errors.push(...r.errors);
@@ -1021,7 +1033,7 @@ export function applyContentPack(
         const issue = makeUnresolvedAiIssue(
           `entityAi.${sanitizeDiagnosticText(entityId)}.profileId`,
           entityId,
-          ai.profileId || '(empty)',
+          ai.profileId,
         );
         dropped.push({ path: issue.path, reason: 'needs-module-vocabulary', detail: issue.message });
         warnings.push(issue);
@@ -1378,20 +1390,14 @@ export function applyContentPack(
           message: err.message,
         });
       } else {
+        rollbackWorldState();
         throw err;
       }
     }
   }
 
   if (channelThrew || digestRefused) {
-    const state = engine.store.state as unknown as Record<string, unknown>;
-    const restored = structuredClone(preApply) as Record<string, unknown>;
-    for (const key of Object.keys(state)) {
-      if (!(key in restored)) delete state[key];
-    }
-    Object.assign(state, restored);
-    for (const key of CORE_INTAKE_KEYS) delete applied[key];
-    for (const key of MODULE_INTAKE_KEYS) delete applied[key];
+    rollbackWorldState();
   }
 
   // Any channel supplied for a key the pack does not carry is worth saying —

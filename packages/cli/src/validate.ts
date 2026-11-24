@@ -139,6 +139,8 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
         `✗ [VALIDATE_INVALID_UNRESOLVED_AI_PROFILE] --unresolved-ai-profile must be "fail" or "warn", got "${rawPolicy ?? '(missing)'}".`,
       );
       error('  Hint: pass --unresolved-ai-profile fail (default) or --unresolved-ai-profile warn.');
+      error('');
+      printValidateHelp(error);
       return 1;
     }
     unresolvedAiProfilePolicy = rawPolicy;
