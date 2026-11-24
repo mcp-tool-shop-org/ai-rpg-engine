@@ -148,14 +148,14 @@ describe('starter template — cross-reference integrity', () => {
 // declared profileId resolvable as you add content.
 // ═══════════════════════════════════════════════════════════════════
 describe('starter template — intent profile wiring', () => {
-    it('provides all four built-in intent profiles matching the README', () => {
+    it('provides all five built-in intent profiles matching the README', () => {
         expect(myIntentProfiles.length).toBeGreaterThan(0);
         for (const profile of myIntentProfiles) {
             expect(typeof profile.id).toBe('string');
             expect(typeof profile.evaluate).toBe('function');
         }
         const registeredIds = getRegisteredIntentProfiles(createGame(1)).map((p) => p.id);
-        for (const id of ['aggressive', 'cautious', 'territorial', 'calculating']) {
+        for (const id of ['aggressive', 'cautious', 'territorial', 'calculating', 'passive']) {
             expect(myIntentProfiles.map((p) => p.id)).toContain(id);
             expect(registeredIds).toContain(id);
         }
@@ -168,6 +168,7 @@ describe('starter template — intent profile wiring', () => {
                     { id: 'probe-cautious', type: 'npc', name: 'Probe Cautious', aiProfile: 'cautious' },
                     { id: 'probe-territorial', type: 'npc', name: 'Probe Territorial', aiProfile: 'territorial' },
                     { id: 'probe-calc', type: 'npc', name: 'Probe Calc', aiProfile: 'calculating' },
+                    { id: 'probe-passive', type: 'npc', name: 'Probe Passive', aiProfile: 'passive' },
                 ],
             },
             { profiles: getRegisteredIntentProfiles(engine), unresolvedAiProfile: 'fail' },

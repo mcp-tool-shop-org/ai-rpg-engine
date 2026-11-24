@@ -231,9 +231,9 @@ export type PackIntakeDrop = {
 export type PackIntakeNote = { path: string; message: string };
 
 /**
- * One structured intake warning surfaced alongside dropped/advisories (for programmatic hosts
- * calling `applyContentPack` with `unresolvedAiProfile: 'warn'`; the CLI uses `'fail'` and refuses
- * instead of relaying `warnings`).
+ * One structured intake warning surfaced alongside dropped/advisories (for hosts calling
+ * `applyContentPack` with `unresolvedAiProfile: 'warn'`, including `ai-rpg-engine sidecar --unresolved-ai-profile warn`;
+ * the CLI defaults to `'fail'` and refuses instead of relaying `warnings`).
  */
 export type PackIntakeWarning = {
   code: string;

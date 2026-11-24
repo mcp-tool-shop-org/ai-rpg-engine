@@ -82,7 +82,8 @@ function looksLikePath(token: string): boolean {
 function printSidecarHelp(error: (msg: string) => void): void {
   error(
     'Usage: ai-rpg-engine sidecar <pack-id|path> [--seed <n>] [--listen <port>] [--host <addr>]'
-    + ' [--content <pack.json>] [--start <zone-id>] [--manifest <manifest.json>]',
+    + ' [--content <pack.json>] [--start <zone-id>] [--manifest <manifest.json>]'
+    + ' [--unresolved-ai-profile fail|warn]',
   );
   error('');
   error('Runs the simulation as a JSON-RPC server. One authoritative sim, N rendering');
@@ -113,14 +114,19 @@ function printSidecarHelp(error: (msg: string) => void): void {
   error('                   The four-check load gate and unresolved-AI-profile check');
   error('                   (against the host engine\'s registered cognition profiles) run');
   error('                   BEFORE any mutation, so a bad engine-version range, an unknown');
-  error('                   module id, an unknown top-level key, a failed content hash, or');
-  error('                   an unresolved aiProfile / entityAi profileId is refused');
-  error('                   (SIDECAR_CONTENT_REFUSED, exit 1) rather than half-applied.');
-  error('                   Applied counts, dropped fields and advisories are reported to');
-  error('                   stderr — nothing is eaten. Because the CLI enforces fail');
-  error('                   policy, it exits 1 rather than relaying packIntake.warnings.');
+  error('                   module id, an unknown top-level key, or a failed content hash is');
+  error('                   always refused (SIDECAR_CONTENT_REFUSED, exit 1). By default');
+  error('                   (`--unresolved-ai-profile fail`), an unresolved aiProfile or');
+  error('                   entityAi profileId also refuses with exit 1; under `warn`, the');
+  error('                   pack loads, each warning is written to stderr on one line, and');
+  error('                   `packIntake.warnings` is relayed to the client. Applied counts,');
+  error('                   dropped fields and advisories are reported to stderr too.');
   error('                   --manifest is required: without it the version, module-id,');
   error('                   and content-hash checks cannot run.');
+  error('');
+  error('  --unresolved-ai-profile fail|warn');
+  error('                   Policy for unresolved entity aiProfile / entityAi profileId');
+  error('                   entries (default: fail). Accepts space or equals form.');
   error('');
   error('  --manifest <manifest.json>');
   error('                   The exporter\'s sibling manifest (engineVersion, modules,');
@@ -171,8 +177,9 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
   const start = readFlag(args, '--start');
   const shock = readFlag(args, '--shock');
   const manifest = readFlag(args, '--manifest');
+  const unresolvedAiProfile = readFlag(args, '--unresolved-ai-profile');
   const valueIndices = new Set<number>();
-  for (const read of [seed, listen, host, content, start, shock, manifest]) {
+  for (const read of [seed, listen, host, content, start, shock, manifest, unresolvedAiProfile]) {
     if (read.valueSlot >= 0) valueIndices.add(read.valueSlot);
   }
 
@@ -223,6 +230,19 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
   if (hostRaw !== undefined && port === undefined) {
     error('✗ [SIDECAR_HOST_WITHOUT_LISTEN] --host only applies to --listen; the stdio transport has no address.');
     return 1;
+  }
+
+  let unresolvedAiProfilePolicy: 'fail' | 'warn' = 'fail';
+  if (unresolvedAiProfile.present) {
+    const rawPolicy = unresolvedAiProfile.raw;
+    if (isMissingValue(unresolvedAiProfile) || (rawPolicy !== 'fail' && rawPolicy !== 'warn')) {
+      error(
+        `✗ [SIDECAR_INVALID_UNRESOLVED_AI_PROFILE] --unresolved-ai-profile must be "fail" or "warn", got "${rawPolicy ?? '(missing)'}".`,
+      );
+      error('  Hint: pass --unresolved-ai-profile fail (default) or --unresolved-ai-profile warn.');
+      return 1;
+    }
+    unresolvedAiProfilePolicy = rawPolicy;
   }
 
   // Bundled id first (replay --pack <path|id> contract). A token that is not
@@ -328,7 +348,7 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
     const applied = applyContentPack(engine, load.pack, {
       channels: createStandardChannels(),
       profiles: getRegisteredIntentProfiles(engine),
-      unresolvedAiProfile: 'fail',
+      unresolvedAiProfile: unresolvedAiProfilePolicy,
       gate: {
         engineVersion: ENGINE_VERSION,
         registeredModuleIds: engine.moduleManager.getModules().map((m) => m.id),
@@ -354,18 +374,28 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
       .map(([k, n]) => `${k}=${n}`)
       .join(' ');
     error(`[sidecar] applied ${contentRaw}${counts ? ` (${counts})` : ''}`);
-    // Dropped fields are announced, every time, on a transport whose whole purpose is
-    // that a renderer can be trusted about what it received.
+    // Dropped fields, advisories, and warn-mode profile warnings are all announced on stderr.
     for (const d of applied.dropped) error(`[sidecar] dropped ${d.path}: ${d.reason} — ${d.detail}`);
     for (const a of applied.advisories) error(`[sidecar] advisory ${a.path}: ${a.message}`);
+    for (const w of applied.warnings) error(`[sidecar] warning [${w.code}] ${w.path}: ${w.message}`);
 
     // F-c6ff0f97: the same signal, structured, for a JSON-RPC client — 1:1
-    // field mapping off applied.dropped / applied.advisories, the exact
-    // arrays the stderr loop above just walked.
-    if (applied.dropped.length > 0 || applied.advisories.length > 0) {
+    // field mapping off applied.dropped / applied.advisories / applied.warnings.
+    if (applied.dropped.length > 0 || applied.advisories.length > 0 || applied.warnings.length > 0) {
       packIntakeSummary = {
         dropped: applied.dropped.map((d) => ({ path: d.path, reason: d.reason, detail: d.detail })),
         advisories: applied.advisories.map((a) => ({ path: a.path, message: a.message })),
+        ...(applied.warnings.length > 0
+          ? {
+              warnings: applied.warnings.map((w) => ({
+                code: w.code,
+                path: w.path,
+                ...(w.entityId !== undefined ? { entityId: w.entityId } : {}),
+                ...(w.profileId !== undefined ? { profileId: w.profileId } : {}),
+                message: w.message,
+              })),
+            }
+          : {}),
       };
     }
 

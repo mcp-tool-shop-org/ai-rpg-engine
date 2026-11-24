@@ -84,10 +84,10 @@ The `<name>` must be lowercase alphanumeric segments separated by single hyphens
 ## `validate`
 
 ```bash
-ai-rpg-engine validate <file.json>
+ai-rpg-engine validate <file.json> [--manifest <manifest.json>] [--unresolved-ai-profile fail|warn] [--no-gate] [--json]
 ```
 
-Loads a content-pack JSON file and validates it against the engine schemas (`loadContent` + `validateGameContent`). Output:
+Loads a content-pack JSON file, validates it against the engine schemas (`loadContent` + `validateGameContent`), and runs the load gate and unresolved-AI-profile check (`--unresolved-ai-profile fail|warn`, default `fail`; under `warn`, unresolved profile warnings print to stderr on one line each and validation exits `0`). Output:
 
 - **Errors** print as `✗ <path>: <message>` — the message carries the actionable hint inline.
 - **Advisories** print in a separate section and never affect the exit code.
@@ -95,7 +95,7 @@ Loads a content-pack JSON file and validates it against the engine schemas (`loa
 **Exit code:** `0` when valid, `1` when there are errors (or a usage problem).
 
 ```bash
-ai-rpg-engine validate ./content/zones.json
+ai-rpg-engine validate ./content/zones.json --manifest ./content/manifest.json
 ```
 
 ---

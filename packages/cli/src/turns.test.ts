@@ -275,6 +275,21 @@ describe('runNpcTurns (F1a) — enemies act after the player', () => {
     expect(results).toEqual([]); // idle turn passed, nothing submitted
     expect(engine.tick).toBe(tickBefore); // no tick burned on idling
   });
+
+  it('an enemy-tagged entity with aiProfile passive runs passive without falling back to aggressive', () => {
+    const engine = makeBareEngine();
+    engine.store.state.entities['gnasher'].ai!.profileId = 'passive';
+    const selectBefore = selectActionForEntity(engine.world, 'gnasher');
+    expect(selectBefore?.profileId).toBe('passive');
+    expect(selectBefore?.usedFallback).toBe(false);
+    expect(selectBefore?.verb).toBe('inspect');
+
+    const tickBefore = engine.tick;
+    const results = runNpcTurns(engine, { log: vi.fn() });
+    expect(results).toEqual([]);
+    expect(engine.tick).toBe(tickBefore);
+    expect(engine.world.entities['hero'].resources.hp).toBe(10);
+  });
 });
 
 describe('runCompanionTurns (F-4b9c5aee) — companions act after the player and hostiles', () => {

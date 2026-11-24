@@ -18,6 +18,7 @@ import {
   cautiousProfile,
   territorialProfile,
   calculatingProfile,
+  passiveProfile,
   BUILTIN_INTENT_PROFILES,
   resolveIntentProfile,
   getRegisteredIntentProfiles,
@@ -25,7 +26,7 @@ import {
 } from './cognition-core.js';
 import type { IntentProfile } from './cognition-core.js';
 import { traversalCore } from './traversal-core.js';
-import { combatCore, COMBAT_STATES } from './combat-core.js';
+import { combatCore, createCombatCore, COMBAT_STATES } from './combat-core.js';
 import { statusCore, hasStatus, applyStatus } from './status-core.js';
 
 const makeAIEntity = (id: string, name: string, zoneId: string, overrides?: Partial<EntityState>): EntityState => ({
@@ -872,10 +873,129 @@ describe('Calculating profile', () => {
   });
 });
 
+describe('Passive profile', () => {
+  it('is registered in BUILTIN_INTENT_PROFILES and getRegisteredIntentProfiles for an engine with cognition-core', () => {
+    expect(BUILTIN_INTENT_PROFILES.map((p) => p.id)).toContain('passive');
+    expect(resolveIntentProfile('passive')?.id).toBe('passive');
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a')],
+      zones: zonesWithExit,
+    });
+    const registeredIds = getRegisteredIntentProfiles(engine).map((p) => p.id);
+    expect(registeredIds).toContain('passive');
+  });
+
+  it('a passive NPC with a visible hostile in its zone proposes no hostile intent over several rounds', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, createCombatCore({ disengageChance: () => 100 }), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeAIEntity('bystander', 'Bystander', 'a', {
+          type: 'npc',
+          tags: [],
+          ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'bystander');
+    setBelief(cog, 'player', 'hostile', true, 1.0, 'observed', 0);
+    cog.suspicion = 80;
+
+    const passive = resolveIntentProfile('passive');
+    expect(passive).toBeDefined();
+
+    const offensiveVerbs = new Set(['attack', 'strike', 'shoot', 'cast']);
+    for (const morale of [80, 70, 50, 35, 25]) {
+      cog.morale = morale;
+      const directIntent = selectIntent(engine.world.entities.bystander, cog, engine.world, passive!);
+      expect(directIntent).toBeDefined();
+      expect(directIntent!.verb).toBe('inspect');
+      expect(offensiveVerbs.has(directIntent!.verb)).toBe(false);
+
+      const sel = selectActionForEntity(engine.world, 'bystander');
+      expect(sel).not.toBeNull();
+      expect(sel!.requestedProfileId).toBe('passive');
+      expect(sel!.profileId).toBe('passive');
+      expect(sel!.usedFallback).toBe(false);
+      expect(sel!.verb).toBe('inspect');
+      expect(sel!.options.some((o) => offensiveVerbs.has(o.verb))).toBe(false);
+    }
+  });
+
+  it('after morale collapse, passive NPC takes FLEEING via cognition-core and disengages', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, createCombatCore({ disengageChance: () => 100 }), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeAIEntity('bystander', 'Bystander', 'a', {
+          type: 'npc',
+          tags: [],
+          stats: { vigor: 3, instinct: 4, will: 3 },
+          resources: { hp: 20, maxHp: 20, stamina: 5 },
+          ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'bystander');
+    setBelief(cog, 'player', 'hostile', true, 1.0, 'observed', 0);
+    cog.morale = 25;
+
+    // Trigger morale collapse through cognition-core's combat.damage.applied handler:
+    // rawLoss at full hp ratio is -25 with will=3 -> morale drops from 25 to 0 (<= 15 threshold) -> FLEEING.
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.damage.applied',
+      actorId: 'player',
+      payload: { targetId: 'bystander', damage: 15, previousHp: 20, currentHp: 5 },
+    });
+
+    expect(hasStatus(engine.world.entities.bystander, COMBAT_STATES.FLEEING)).toBe(true);
+
+    const sel = selectActionForEntity(engine.world, 'bystander');
+    expect(sel).not.toBeNull();
+    expect(sel!.profileId).toBe('passive');
+    expect(sel!.usedFallback).toBe(false);
+    expect(sel!.verb).toBe('disengage');
+    expect(sel!.options[0].priority).toBe(100);
+    expect(sel!.reason).toBe('disengage: fleeing');
+
+    const events = engine.submitActionAs('bystander', sel!.verb);
+    expect(events.some((e) => e.type === 'combat.disengage.success')).toBe(true);
+    expect(engine.world.entities.bystander.zoneId).toBe('b');
+  });
+
+  it('cornered fleeing passive NPC with no neighbor exit yields no options', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeAIEntity('bystander', 'Bystander', 'a', {
+          type: 'npc',
+          tags: [],
+          ai: { profileId: 'passive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    applyStatus(engine.world.entities.bystander, COMBAT_STATES.FLEEING, 1, { duration: 3 });
+    expect(resolveIntentProfile('passive')).toBe(passiveProfile);
+    expect(selectIntent(engine.world.entities.bystander, getCognition(engine.world, 'bystander'), engine.world, passiveProfile)).toBeNull();
+    expect(selectActionForEntity(engine.world, 'bystander')).toBeNull();
+  });
+});
+
 describe('Built-in intent profile resolution', () => {
-  it('exposes all four built-ins with stable ids', () => {
+  it('exposes all five built-ins with stable ids', () => {
     expect(BUILTIN_INTENT_PROFILES.map((p) => p.id)).toEqual([
-      'aggressive', 'cautious', 'territorial', 'calculating',
+      'aggressive', 'cautious', 'territorial', 'calculating', 'passive',
     ]);
   });
 
@@ -884,6 +1004,7 @@ describe('Built-in intent profile resolution', () => {
     expect(resolveIntentProfile('cautious')).toBe(cautiousProfile);
     expect(resolveIntentProfile('territorial')).toBe(territorialProfile);
     expect(resolveIntentProfile('calculating')).toBe(calculatingProfile);
+    expect(resolveIntentProfile('passive')).toBe(passiveProfile);
     expect(resolveIntentProfile('no-such-profile')).toBeUndefined();
   });
 

@@ -30,6 +30,7 @@ export {
   cautiousProfile,
   territorialProfile,
   calculatingProfile,
+  passiveProfile,
   BUILTIN_INTENT_PROFILES,
   COGNITION_PROFILES_FORMULA,
   getRegisteredIntentProfiles,

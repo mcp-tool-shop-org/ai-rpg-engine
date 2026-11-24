@@ -1,0 +1,22 @@
+{
+  "id": "forge-passive-roles",
+  "title": "World Forge Default Roles Fixture",
+  "version": "1.0.0",
+  "engineVersion": ">=3.8.0 <4.0.0",
+  "ruleset": "standard-v1",
+  "modules": [
+    "traversal-core",
+    "status-core",
+    "cognition-core",
+    "combat-core",
+    "inventory-core",
+    "dialogue-core",
+    "perception-filter",
+    "progression-core",
+    "environment-core"
+  ],
+  "contentPacks": [
+    "forge-passive-roles"
+  ],
+  "contentHash": "sha256:5003f4182796c441cb7d0abde528e0a0b322517879f8e29a6c9b93441c7826bf"
+}
