@@ -8,8 +8,11 @@ import {
   canonicalStateHash,
   diffState,
   projectState,
+  quantize,
   snapshotDelta,
+  StateDigestError,
   stateHash,
+  validateDigestState,
 } from './serializer.js';
 
 function logOf(n: number): { id: string; tick: number; type: string }[] {
@@ -43,26 +46,74 @@ describe('F-8b1563f6 — eventLog incremental patches are O(new events)', () => 
   });
 });
 
-describe('F-3f53c837 — canonicalStateHash is Godot-stable and not a JS-hash replacement', () => {
-  it('the same WorldState hashes identically from a fixture that mimics Godot key-order + 5.0', () => {
-    // Node insertion order vs Godot JSON.stringify alphabetizing. Integers stay
-    // integers (`5`, never `5.0`) so a GDScript encoder can match.
-    const jsInsertionOrder = { tick: 5, flag: true, z: 1, a: 2 };
-    const godotAlphaOrder = { a: 2, flag: true, tick: 5, z: 1 };
-    expect(canonicalJson(jsInsertionOrder)).toBe('{"a":2,"flag":true,"tick":5,"z":1}');
-    expect(canonicalJson(godotAlphaOrder)).toBe(canonicalJson(jsInsertionOrder));
-    expect(canonicalStateHash(jsInsertionOrder)).toBe(canonicalStateHash(godotAlphaOrder));
-    expect(canonicalJson({ n: 5 })).toBe('{"n":5}');
-    expect(canonicalJson({ n: 5 })).not.toContain('5.0');
+// Cross-language canonicalJson / canonicalStateHash parity is verified against
+// real GDScript using fixtures/state_digest_vectors.jsonl (see state-digest-vectors.test.ts
+// and fixtures/verify_state_digest_vectors.gd). The earlier JS-mimicry test was retired.
+describe('canonicalStateHash — digest formatting, validation, and JS stateHash separation', () => {
+  it('retains null keys, skips undefined, scales by 1e6 half-away-from-zero, and normalizes -0', () => {
+    expect(canonicalJson({ a: null, b: undefined, c: 5, d: -0 })).toBe('{"a":null,"c":5000000,"d":0}');
+    expect(canonicalJson([undefined, null, -0.0000005, 0.0078125, -0.0078125])).toBe(
+      '[null,null,-1,7813,-7813]',
+    );
+    expect(canonicalJson(() => 1)).toBe('null');
+    expect(() => validateDigestState({ nested: [1, { keep: 'ok', skip: undefined }] })).not.toThrow();
+    expect(canonicalJson({ ctrl: '\u0000\u0001\b\t\n\u000b\f\r\x7f' })).toBe(
+      '{"ctrl":"\\u0000\\u0001\\b\\t\\n\\u000b\\f\\r\x7f"}',
+    );
+    expect(quantize(-0.0000005)).toBe(-0.000001);
+    expect(quantize(-0)).toBe(0);
+    expect(Object.is(quantize(-0), -0)).toBe(false);
+  });
+
+  it('validateDigestState and canonicalJson refuse non-finite numbers with StateDigestError', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => validateDigestState({ hp: bad })).toThrowError(StateDigestError);
+      try {
+        canonicalJson({ hp: bad });
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        const e = err as StateDigestError;
+        expect(e.code).toBe('NON_FINITE_NUMBER');
+        expect(e.path).toBe('$.hp');
+        expect(e.toJSON()).toMatchObject({ code: 'NON_FINITE_NUMBER', path: '$.hp' });
+      }
+    }
+  });
+
+  it('validateDigestState and canonicalJson refuse scaled values beyond 2^53 - 1 in magnitude', () => {
+    expect(() => validateDigestState({ big: 9007199254.74099 })).not.toThrow();
+    for (const tooBig of [9007199254.740992, -9007199254.740992, 9007199255, Number.MAX_SAFE_INTEGER]) {
+      try {
+        canonicalJson({ edge: tooBig });
+        expect.unreachable('expected UNSAFE_SCALED_INTEGER');
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        const e = err as StateDigestError;
+        expect(e.code).toBe('UNSAFE_SCALED_INTEGER');
+        expect(e.path).toBe('$.edge');
+      }
+    }
+  });
+
+  it('validateDigestState and canonicalJson refuse non-ASCII object keys', () => {
+    expect(() => validateDigestState({ ascii_only: 'café' })).not.toThrow();
+    for (const bad of [{ café: 1 }, { nested: { '\u03bb': 2 } }]) {
+      try {
+        canonicalJson(bad);
+        expect.unreachable('expected NON_ASCII_KEY');
+      } catch (err) {
+        expect(err).toBeInstanceOf(StateDigestError);
+        const e = err as StateDigestError;
+        expect(e.code).toBe('NON_ASCII_KEY');
+      }
+    }
   });
 
   it('CONTROL: stateHash is left as the JS hasher (not replaced)', () => {
     const state = { tick: 5, flag: true } as unknown as WorldState;
     expect(stateHash(state)).toMatch(/^[0-9a-f]{32}$/);
     expect(canonicalStateHash(state)).toMatch(/^[0-9a-f]{32}$/);
-    // Two functions, two contracts — they may or may not coincide for a given
-    // object, but canonicalJson is what a non-JS host implements.
-    expect(canonicalJson(state)).toContain('"tick":5');
+    expect(canonicalJson(state)).toContain('"tick":5000000');
   });
 });
 

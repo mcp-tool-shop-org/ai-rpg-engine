@@ -32,6 +32,10 @@ describe('F-31094245 — GDScript framing fixture matches Node MessageReader', (
     expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/SidecarAttachClient/);
     expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/apply_patches/);
     expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/canonical_state_hash/);
+    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/DIGEST_SPEC_VERSION\s*:=\s*2/);
+    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/server_digest_spec_version/);
+    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/_escape_json_string/);
+    expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).not.toMatch(/%\.\*f/);
     expect(readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8')).toMatch(/connect_to_host/);
   });
 

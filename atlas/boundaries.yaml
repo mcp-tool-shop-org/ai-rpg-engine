@@ -52,6 +52,10 @@ boundaries:
     globs:
       - packages/equipment/**
     role: code
+  - name: fixtures
+    globs:
+      - fixtures/**
+    role: data
   - name: image-gen
     globs:
       - packages/image-gen/**

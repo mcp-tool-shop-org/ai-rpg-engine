@@ -315,6 +315,22 @@
         "importsAndCoChanges": [],
         "importsOnly": []
       },
+      "cohesion": null,
+      "cohesionDropped": false,
+      "confidence": "low",
+      "highWater": null,
+      "name": "fixtures",
+      "qualifyingSourceCommits": 0,
+      "rebaseline": null
+    },
+    {
+      "breakage": {
+        "coChangesOnly": [],
+        "collapsed": false,
+        "confidence": "full",
+        "importsAndCoChanges": [],
+        "importsOnly": []
+      },
       "cohesion": 1,
       "cohesionDropped": false,
       "confidence": "low",
@@ -900,8 +916,8 @@
         "path": ".signalfire/save.json"
       },
       {
-        "commits": 47,
-        "lines": 2301,
+        "commits": 49,
+        "lines": 2309,
         "path": "CHANGELOG.md"
       },
       {
@@ -915,43 +931,43 @@
         "path": "PHILOSOPHY.md"
       },
       {
-        "commits": 29,
-        "lines": 2561,
+        "commits": 31,
+        "lines": 2566,
         "path": "README.es.md"
       },
       {
-        "commits": 29,
-        "lines": 2180,
+        "commits": 31,
+        "lines": 2185,
         "path": "README.fr.md"
       },
       {
-        "commits": 29,
-        "lines": 2340,
+        "commits": 31,
+        "lines": 2345,
         "path": "README.hi.md"
       },
       {
-        "commits": 29,
-        "lines": 2669,
+        "commits": 31,
+        "lines": 2674,
         "path": "README.it.md"
       },
       {
-        "commits": 29,
-        "lines": 2318,
+        "commits": 31,
+        "lines": 2323,
         "path": "README.ja.md"
       },
       {
-        "commits": 42,
-        "lines": 814,
+        "commits": 43,
+        "lines": 817,
         "path": "README.md"
       },
       {
-        "commits": 29,
-        "lines": 2023,
+        "commits": 31,
+        "lines": 2028,
         "path": "README.pt-BR.md"
       },
       {
-        "commits": 29,
-        "lines": 2711,
+        "commits": 31,
+        "lines": 2716,
         "path": "README.zh.md"
       },
       {
@@ -960,18 +976,18 @@
         "path": "SCORECARD.md"
       },
       {
-        "commits": 3,
-        "lines": 48,
+        "commits": 4,
+        "lines": 115,
         "path": "SECURITY.md"
       },
       {
-        "commits": 42,
-        "lines": 110,
+        "commits": 43,
+        "lines": 112,
         "path": "SHIP_GATE.md"
       },
       {
-        "commits": 9,
-        "lines": 511,
+        "commits": 10,
+        "lines": 517,
         "path": "atlas/README.md"
       },
       {
@@ -980,18 +996,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 9,
-        "lines": 4980,
+        "commits": 10,
+        "lines": 4994,
         "path": "atlas/page.json"
       },
       {
-        "commits": 9,
-        "lines": 42871,
+        "commits": 10,
+        "lines": 43080,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 9,
-        "lines": 105150,
+        "commits": 10,
+        "lines": 105294,
         "path": "atlas/structure.json"
       },
       {
@@ -1350,18 +1366,18 @@
         "path": "dogfood/roadmap/swarm-1788226678-0c6b.json"
       },
       {
-        "commits": 50,
-        "lines": 2643,
+        "commits": 51,
+        "lines": 2730,
         "path": "package-lock.json"
       },
       {
-        "commits": 39,
-        "lines": 84,
+        "commits": 40,
+        "lines": 86,
         "path": "package.json"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/asset-registry/package.json"
       },
       {
@@ -1410,8 +1426,8 @@
         "path": "packages/audio-director/README.md"
       },
       {
-        "commits": 36,
-        "lines": 90,
+        "commits": 37,
+        "lines": 94,
         "path": "packages/audio-director/package.json"
       },
       {
@@ -1445,8 +1461,8 @@
         "path": "packages/campaign-memory/README.md"
       },
       {
-        "commits": 37,
-        "lines": 76,
+        "commits": 38,
+        "lines": 78,
         "path": "packages/campaign-memory/package.json"
       },
       {
@@ -1550,8 +1566,8 @@
         "path": "packages/character-creation/README.zh.md"
       },
       {
-        "commits": 37,
-        "lines": 100,
+        "commits": 38,
+        "lines": 104,
         "path": "packages/character-creation/package.json"
       },
       {
@@ -1660,8 +1676,8 @@
         "path": "packages/character-profile/README.zh.md"
       },
       {
-        "commits": 38,
-        "lines": 118,
+        "commits": 39,
+        "lines": 124,
         "path": "packages/character-profile/package.json"
       },
       {
@@ -1745,8 +1761,8 @@
         "path": "packages/cli/README.md"
       },
       {
-        "commits": 40,
-        "lines": 94,
+        "commits": 41,
+        "lines": 96,
         "path": "packages/cli/package.json"
       },
       {
@@ -2160,8 +2176,8 @@
         "path": "packages/content-schema/README.zh.md"
       },
       {
-        "commits": 37,
-        "lines": 82,
+        "commits": 38,
+        "lines": 84,
         "path": "packages/content-schema/package.json"
       },
       {
@@ -2275,8 +2291,8 @@
         "path": "packages/content-schema/src/validate.ts"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/core/package.json"
       },
       {
@@ -2475,8 +2491,8 @@
         "path": "packages/equipment/README.zh.md"
       },
       {
-        "commits": 36,
-        "lines": 78,
+        "commits": 37,
+        "lines": 80,
         "path": "packages/equipment/package.json"
       },
       {
@@ -2545,8 +2561,8 @@
         "path": "packages/image-gen/README.md"
       },
       {
-        "commits": 37,
-        "lines": 82,
+        "commits": 38,
+        "lines": 84,
         "path": "packages/image-gen/package.json"
       },
       {
@@ -2635,8 +2651,8 @@
         "path": "packages/ledger-adapter/README.md"
       },
       {
-        "commits": 28,
-        "lines": 125,
+        "commits": 29,
+        "lines": 127,
         "path": "packages/ledger-adapter/package.json"
       },
       {
@@ -2870,8 +2886,8 @@
         "path": "packages/ledger-adapter/tsconfig.test.json"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/modules/package.json"
       },
       {
@@ -3685,8 +3701,8 @@
         "path": "packages/ollama/README.zh.md"
       },
       {
-        "commits": 36,
-        "lines": 84,
+        "commits": 37,
+        "lines": 86,
         "path": "packages/ollama/package.json"
       },
       {
@@ -4265,8 +4281,8 @@
         "path": "packages/pack-registry/README.zh.md"
       },
       {
-        "commits": 37,
-        "lines": 76,
+        "commits": 38,
+        "lines": 78,
         "path": "packages/pack-registry/package.json"
       },
       {
@@ -4335,8 +4351,8 @@
         "path": "packages/presentation/README.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/presentation/package.json"
       },
       {
@@ -4375,8 +4391,8 @@
         "path": "packages/rumor-system/README.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/rumor-system/package.json"
       },
       {
@@ -4450,8 +4466,8 @@
         "path": "packages/sidecar/gdscript/sidecar_client.gd"
       },
       {
-        "commits": 13,
-        "lines": 122,
+        "commits": 14,
+        "lines": 124,
         "path": "packages/sidecar/package.json"
       },
       {
@@ -4550,8 +4566,8 @@
         "path": "packages/soundpack-core/README.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/soundpack-core/package.json"
       },
       {
@@ -4665,8 +4681,8 @@
         "path": "packages/starter-bounty-hunter/README.zh.md"
       },
       {
-        "commits": 10,
-        "lines": 112,
+        "commits": 11,
+        "lines": 114,
         "path": "packages/starter-bounty-hunter/package.json"
       },
       {
@@ -4680,8 +4696,8 @@
         "path": "packages/starter-bounty-hunter/src/content-truth.test.ts"
       },
       {
-        "commits": 15,
-        "lines": 2102,
+        "commits": 16,
+        "lines": 2106,
         "path": "packages/starter-bounty-hunter/src/content.ts"
       },
       {
@@ -4760,8 +4776,8 @@
         "path": "packages/starter-colony/README.zh.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-colony/package.json"
       },
       {
@@ -4780,8 +4796,8 @@
         "path": "packages/starter-colony/src/content.test.ts"
       },
       {
-        "commits": 27,
-        "lines": 672,
+        "commits": 28,
+        "lines": 676,
         "path": "packages/starter-colony/src/content.ts"
       },
       {
@@ -4840,8 +4856,8 @@
         "path": "packages/starter-cyberpunk/README.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-cyberpunk/package.json"
       },
       {
@@ -4855,8 +4871,8 @@
         "path": "packages/starter-cyberpunk/src/content.test.ts"
       },
       {
-        "commits": 25,
-        "lines": 568,
+        "commits": 26,
+        "lines": 572,
         "path": "packages/starter-cyberpunk/src/content.ts"
       },
       {
@@ -4940,8 +4956,8 @@
         "path": "packages/starter-detective/README.zh.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-detective/package.json"
       },
       {
@@ -4960,8 +4976,8 @@
         "path": "packages/starter-detective/src/content.test.ts"
       },
       {
-        "commits": 27,
-        "lines": 660,
+        "commits": 28,
+        "lines": 664,
         "path": "packages/starter-detective/src/content.ts"
       },
       {
@@ -5010,8 +5026,8 @@
         "path": "packages/starter-fantasy/README.md"
       },
       {
-        "commits": 38,
-        "lines": 86,
+        "commits": 39,
+        "lines": 88,
         "path": "packages/starter-fantasy/package.json"
       },
       {
@@ -5020,8 +5036,8 @@
         "path": "packages/starter-fantasy/src/content-truth.test.ts"
       },
       {
-        "commits": 13,
-        "lines": 1616,
+        "commits": 14,
+        "lines": 1620,
         "path": "packages/starter-fantasy/src/content.json"
       },
       {
@@ -5030,8 +5046,8 @@
         "path": "packages/starter-fantasy/src/content.test.ts"
       },
       {
-        "commits": 34,
-        "lines": 934,
+        "commits": 35,
+        "lines": 938,
         "path": "packages/starter-fantasy/src/content.ts"
       },
       {
@@ -5120,8 +5136,8 @@
         "path": "packages/starter-gladiator/README.zh.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-gladiator/package.json"
       },
       {
@@ -5140,8 +5156,8 @@
         "path": "packages/starter-gladiator/src/content.test.ts"
       },
       {
-        "commits": 26,
-        "lines": 609,
+        "commits": 27,
+        "lines": 613,
         "path": "packages/starter-gladiator/src/content.ts"
       },
       {
@@ -5240,8 +5256,8 @@
         "path": "packages/starter-merchant/README.zh.md"
       },
       {
-        "commits": 16,
-        "lines": 126,
+        "commits": 17,
+        "lines": 128,
         "path": "packages/starter-merchant/package.json"
       },
       {
@@ -5260,8 +5276,8 @@
         "path": "packages/starter-merchant/src/content.test.ts"
       },
       {
-        "commits": 21,
-        "lines": 2400,
+        "commits": 22,
+        "lines": 2404,
         "path": "packages/starter-merchant/src/content.ts"
       },
       {
@@ -5335,8 +5351,8 @@
         "path": "packages/starter-pirate/README.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-pirate/package.json"
       },
       {
@@ -5355,8 +5371,8 @@
         "path": "packages/starter-pirate/src/content.test.ts"
       },
       {
-        "commits": 29,
-        "lines": 798,
+        "commits": 30,
+        "lines": 802,
         "path": "packages/starter-pirate/src/content.ts"
       },
       {
@@ -5435,8 +5451,8 @@
         "path": "packages/starter-ronin/README.zh.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-ronin/package.json"
       },
       {
@@ -5455,8 +5471,8 @@
         "path": "packages/starter-ronin/src/content.test.ts"
       },
       {
-        "commits": 25,
-        "lines": 637,
+        "commits": 26,
+        "lines": 641,
         "path": "packages/starter-ronin/src/content.ts"
       },
       {
@@ -5540,8 +5556,8 @@
         "path": "packages/starter-vampire/README.zh.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-vampire/package.json"
       },
       {
@@ -5560,8 +5576,8 @@
         "path": "packages/starter-vampire/src/content.test.ts"
       },
       {
-        "commits": 25,
-        "lines": 598,
+        "commits": 26,
+        "lines": 602,
         "path": "packages/starter-vampire/src/content.ts"
       },
       {
@@ -5645,8 +5661,8 @@
         "path": "packages/starter-weird-west/README.zh.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-weird-west/package.json"
       },
       {
@@ -5660,8 +5676,8 @@
         "path": "packages/starter-weird-west/src/content.test.ts"
       },
       {
-        "commits": 27,
-        "lines": 722,
+        "commits": 28,
+        "lines": 726,
         "path": "packages/starter-weird-west/src/content.ts"
       },
       {
@@ -5745,8 +5761,8 @@
         "path": "packages/starter-zombie/README.md"
       },
       {
-        "commits": 35,
-        "lines": 70,
+        "commits": 36,
+        "lines": 72,
         "path": "packages/starter-zombie/package.json"
       },
       {
@@ -5765,8 +5781,8 @@
         "path": "packages/starter-zombie/src/content.test.ts"
       },
       {
-        "commits": 28,
-        "lines": 643,
+        "commits": 29,
+        "lines": 647,
         "path": "packages/starter-zombie/src/content.ts"
       },
       {
@@ -5820,8 +5836,8 @@
         "path": "packages/terminal-ui/README.md"
       },
       {
-        "commits": 37,
-        "lines": 88,
+        "commits": 38,
+        "lines": 90,
         "path": "packages/terminal-ui/package.json"
       },
       {
@@ -6100,13 +6116,13 @@
         "path": "site/src/content/docs/handbook/appendix-d-cli-reference.md"
       },
       {
-        "commits": 18,
-        "lines": 476,
+        "commits": 19,
+        "lines": 478,
         "path": "site/src/content/docs/handbook/index.md"
       },
       {
-        "commits": 19,
-        "lines": 142,
+        "commits": 20,
+        "lines": 144,
         "path": "site/src/site-config.ts"
       },
       {
@@ -6125,8 +6141,8 @@
         "path": "templates/starter/SCAFFOLD.md"
       },
       {
-        "commits": 35,
-        "lines": 212,
+        "commits": 36,
+        "lines": 214,
         "path": "templates/starter/package.json"
       },
       {
@@ -6180,248 +6196,199 @@
     "level": "full",
     "reason": "at least 30 qualifying commits, and at least 20 source files reach 10 revisions"
   },
-  "generatedAt": "2026-11-21T12:04:43.452Z",
+  "generatedAt": "2026-11-24T08:38:52.842Z",
   "generatedFrom": {
-    "commit": "ae7219349365109436077f8df2e2e94dceb65289"
+    "commit": "03342f55fd4d3ba01f40e8277eb27d6b5bdf1d24"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
       "b": "README.md",
-      "either": 26,
+      "either": 27,
       "shared": 14,
-      "strength": 0.538462
+      "strength": 0.518519
     },
     {
       "a": "CHANGELOG.md",
       "b": "package.json",
-      "either": 24,
+      "either": 25,
       "shared": 14,
-      "strength": 0.583333
+      "strength": 0.56
     },
     {
       "a": "README.es.md",
       "b": "README.fr.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.hi.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.it.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.ja.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.es.md",
-      "b": "README.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
-    },
-    {
-      "a": "README.es.md",
       "b": "README.pt-BR.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.zh.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
+      "strength": 0.526316
     },
     {
       "a": "README.fr.md",
       "b": "README.hi.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.it.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.ja.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.fr.md",
-      "b": "README.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
-    },
-    {
-      "a": "README.fr.md",
       "b": "README.pt-BR.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.zh.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
+      "strength": 0.526316
     },
     {
       "a": "README.hi.md",
       "b": "README.it.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.ja.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.hi.md",
-      "b": "README.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
-    },
-    {
-      "a": "README.hi.md",
       "b": "README.pt-BR.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.zh.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
+      "strength": 0.526316
     },
     {
       "a": "README.it.md",
       "b": "README.ja.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.it.md",
-      "b": "README.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
-    },
-    {
-      "a": "README.it.md",
       "b": "README.pt-BR.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.it.md",
       "b": "README.zh.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.it.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
-    },
-    {
-      "a": "README.ja.md",
-      "b": "README.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
+      "strength": 0.526316
     },
     {
       "a": "README.ja.md",
       "b": "README.pt-BR.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.ja.md",
       "b": "README.zh.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.ja.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
-    },
-    {
-      "a": "README.md",
-      "b": "README.pt-BR.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
-    },
-    {
-      "a": "README.md",
-      "b": "README.zh.md",
-      "either": 20,
-      "shared": 10,
-      "strength": 0.5
+      "strength": 0.526316
     },
     {
       "a": "README.md",
@@ -6440,23 +6407,23 @@
     {
       "a": "README.pt-BR.md",
       "b": "README.zh.md",
-      "either": 12,
-      "shared": 12,
+      "either": 13,
+      "shared": 13,
       "strength": 1
     },
     {
       "a": "README.pt-BR.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
+      "strength": 0.526316
     },
     {
       "a": "README.zh.md",
       "b": "package.json",
-      "either": 18,
+      "either": 19,
       "shared": 10,
-      "strength": 0.555556
+      "strength": 0.526316
     },
     {
       "a": "SCORECARD.md",
@@ -9458,16 +9425,16 @@
     "floor": "strong",
     "floorHeld": false,
     "floorTrigger": null,
-    "headDate": "2026-11-21T07:02:12-05:00",
-    "inScopeFiles": 1391,
+    "headDate": "2026-11-21T09:07:08-05:00",
+    "inScopeFiles": 1394,
     "pinnedStart": null,
     "priorFloor": "strong",
-    "qualifyingCommits": 429,
+    "qualifyingCommits": 431,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 10,
-    "since": "2026-05-25T12:02:12.000Z",
+    "since": "2026-05-25T14:07:08.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",

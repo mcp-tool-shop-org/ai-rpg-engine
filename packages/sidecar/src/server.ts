@@ -23,6 +23,7 @@ import {
 } from '@ai-rpg-engine/core';
 import {
   ALL_METHODS,
+  DIGEST_SPEC_VERSION,
   ERROR_CODES,
   METHODS,
   METHOD_PARAMS,
@@ -45,7 +46,7 @@ import {
   type TickNotification,
   type WireEvent,
 } from './protocol.js';
-import { canonicalStateHash, diffState, projectState, snapshotDelta, stateHash, toWireEvent } from './serializer.js';
+import { canonicalStateHash, diffState, projectState, snapshotDelta, stateHash, StateDigestError, toWireEvent } from './serializer.js';
 import { MessageTooLargeError, type RpcMessage } from './framing.js';
 import { FeltPresenter } from './felt.js';
 
@@ -317,7 +318,11 @@ export class SidecarServer {
       this.dispatch(name, params, id, hasId);
     } catch (err) {
       if (hasId) {
-        this.fail(id, ERROR_CODES.INTERNAL_ERROR, err instanceof Error ? err.message : String(err));
+        if (err instanceof StateDigestError) {
+          this.fail(id, ERROR_CODES.INTERNAL_ERROR, err.message, err.toJSON());
+        } else {
+          this.fail(id, ERROR_CODES.INTERNAL_ERROR, err instanceof Error ? err.message : String(err));
+        }
       }
     }
   }
@@ -343,6 +348,7 @@ export class SidecarServer {
         const result: InitializeResult = {
           serverName: this.serverName,
           engineVersion: this.engineVersion,
+          digest_spec_version: DIGEST_SPEC_VERSION,
           capabilities: this.capabilities,
           tick: this.engine.store.tick,
         };

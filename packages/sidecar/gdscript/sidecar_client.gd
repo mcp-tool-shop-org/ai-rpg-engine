@@ -5,13 +5,15 @@
 #
 # Staleness: position-check (server tick+hash vs last recorded position) always.
 # When initialize requested canonicalHashes, also recompute canonicalStateHash
-# (sorted keys, integers stay integers) — never Godot's JSON.stringify, which
-# emits 5.0 and alphabetizes keys.
+# (sorted ASCII keys, null keys retained, every number scaled by 1e6 rounded
+# half-away-from-zero as plain decimal integer digits — never Godot's
+# JSON.stringify or float-to-text formatting).
 extends RefCounted
 class_name SidecarAttachClient
 
 const MAX_MESSAGE_BYTES := 16 * 1024 * 1024
 const WIRE_PRECISION := 6
+const DIGEST_SPEC_VERSION := 2
 
 const METHOD_INITIALIZE := "initialize"
 const METHOD_SNAPSHOT := "snapshot"
@@ -39,6 +41,7 @@ var applied_snapshot_seq: int = 0
 var last_tick: int = -1
 var last_hash: String = ""
 var canonical_hashes: bool = false
+var server_digest_spec_version: int = 0
 var writes: bool = true
 ## Reject in-flight RPCs after this many ms. 0 = wait indefinitely (JS default 30000).
 var request_timeout_ms: int = 30000
@@ -225,7 +228,10 @@ func _on_message(msg: Dictionary) -> void:
 			_flush_queued_ticks()
 		return
 	var result: Variant = msg.get("result", {})
-	if method == METHOD_SNAPSHOT:
+	if method == METHOD_INITIALIZE:
+		if typeof(result) == TYPE_DICTIONARY:
+			server_digest_spec_version = int(result.get("digest_spec_version", 0))
+	elif method == METHOD_SNAPSHOT:
 		_apply_snapshot(result)
 	elif method == METHOD_SUBMIT_ACTION or method == METHOD_ADVANCE or method == METHOD_LOAD:
 		if typeof(result) == TYPE_DICTIONARY:
@@ -364,7 +370,7 @@ static func _resolve_parent(root: Variant, path: Array) -> Variant:
 
 
 static func canonical_json(value: Variant) -> String:
-	return _write_canonical(_quantize(value))
+	return _write_canonical(value)
 
 
 static func canonical_state_hash(state: Variant) -> String:
@@ -374,27 +380,64 @@ static func canonical_state_hash(state: Variant) -> String:
 	return ctx.finish().hex_encode().substr(0, 32)
 
 
+static func _escape_json_string(s: String) -> String:
+	var out := "\""
+	for i in range(s.length()):
+		var cp := s.unicode_at(i)
+		match cp:
+			0x22:
+				out += "\\\""
+			0x5C:
+				out += "\\\\"
+			0x08:
+				out += "\\b"
+			0x0C:
+				out += "\\f"
+			0x0A:
+				out += "\\n"
+			0x0D:
+				out += "\\r"
+			0x09:
+				out += "\\t"
+			_:
+				if cp < 0x20:
+					out += "\\u%04x" % cp
+				else:
+					out += char(cp)
+	out += "\""
+	return out
+
+
 static func _quantize(value: Variant) -> Variant:
 	match typeof(value):
-		TYPE_FLOAT, TYPE_INT:
-			if typeof(value) == TYPE_INT or value == floor(value):
-				return int(value)
+		TYPE_INT:
+			return int(value)
+		TYPE_FLOAT:
 			var factor := pow(10.0, WIRE_PRECISION)
-			return round(float(value) * factor) / factor
+			var scaled: float = float(value) * factor
+			var rounded: int = int(round(scaled))
+			if rounded == 0:
+				return 0
+			var quantized: float = float(rounded) / factor
+			if quantized == floor(quantized):
+				return int(quantized)
+			return quantized
 		TYPE_ARRAY:
 			var out: Array = []
 			for item in value:
 				out.append(_quantize(item))
 			return out
 		TYPE_DICTIONARY:
-			var keys: Array = (value as Dictionary).keys()
-			keys.sort()
+			var pairs: Array = []
+			for k in (value as Dictionary).keys():
+				pairs.append([str(k), k])
+			pairs.sort_custom(func(a: Array, b: Array) -> bool: return String(a[0]) < String(b[0]))
 			var out := {}
-			for k in keys:
-				var v: Variant = (value as Dictionary)[k]
-				if v == null:
-					continue
-				out[str(k)] = _quantize(v)
+			for pair in pairs:
+				var k_str: String = pair[0]
+				var orig_k: Variant = pair[1]
+				var v: Variant = (value as Dictionary)[orig_k]
+				out[k_str] = _quantize(v)
 			return out
 		_:
 			return value
@@ -406,33 +449,28 @@ static func _write_canonical(value: Variant) -> String:
 			return "null"
 		TYPE_BOOL:
 			return "true" if value else "false"
-		TYPE_INT:
-			return str(int(value))
-		TYPE_FLOAT:
-			if value == floor(value):
-				return str(int(value))
-			var s := "%.*f" % [WIRE_PRECISION, float(value)]
-			while s.ends_with("0"):
-				s = s.substr(0, s.length() - 1)
-			if s.ends_with("."):
-				s += "0"
-			return s
+		TYPE_INT, TYPE_FLOAT:
+			var scaled: float = float(value) * 1e6
+			var rounded: int = int(round(scaled))
+			return "0" if rounded == 0 else str(rounded)
 		TYPE_STRING:
-			return JSON.stringify(value)
+			return _escape_json_string(value)
 		TYPE_ARRAY:
 			var parts: PackedStringArray = PackedStringArray()
 			for item in value:
 				parts.append(_write_canonical(item))
 			return "[" + ",".join(parts) + "]"
 		TYPE_DICTIONARY:
-			var keys: Array = (value as Dictionary).keys()
-			keys.sort()
+			var pairs: Array = []
+			for k in (value as Dictionary).keys():
+				pairs.append([str(k), k])
+			pairs.sort_custom(func(a: Array, b: Array) -> bool: return String(a[0]) < String(b[0]))
 			var parts: PackedStringArray = PackedStringArray()
-			for k in keys:
-				var v: Variant = (value as Dictionary)[k]
-				if v == null:
-					continue
-				parts.append(JSON.stringify(str(k)) + ":" + _write_canonical(v))
+			for pair in pairs:
+				var k_str: String = pair[0]
+				var orig_k: Variant = pair[1]
+				var v: Variant = (value as Dictionary)[orig_k]
+				parts.append(_escape_json_string(k_str) + ":" + _write_canonical(v))
 			return "{" + ",".join(parts) + "}"
 		_:
 			return "null"

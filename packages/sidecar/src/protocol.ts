@@ -58,6 +58,13 @@ export type MethodName = (typeof METHODS)[keyof typeof METHODS];
 export const ALL_METHODS: readonly MethodName[] = Object.values(METHODS);
 
 /**
+ * Canonical cross-language digest specification version announced on
+ * `initialize`. Increments whenever the canonical pre-image rules change
+ * (v2: scaled 1e6 half-away-from-zero integers, null key retention, ASCII keys).
+ */
+export const DIGEST_SPEC_VERSION = 2;
+
+/**
  * The parameter fields each method accepts, exactly.
  *
  * Strict-in is enforced against THIS table: a field not listed here is refused
@@ -248,6 +255,8 @@ export type InitializeResult = {
   serverName: string;
   /** The engine's version — informational. Compatibility is by capability. */
   engineVersion: string;
+  /** Cross-language canonical state digest specification version. */
+  digest_spec_version: number;
   capabilities: ServerCapabilities;
   /** The tick the world is at right now. */
   tick: number;

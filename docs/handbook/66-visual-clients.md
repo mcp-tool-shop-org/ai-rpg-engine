@@ -22,9 +22,11 @@ Handshake capabilities are additive:
 
 | Flag | What the host gets |
 |---|---|
-| `hashes` / `canonicalHashes` | Per-tick staleness |
+| `hashes` / `canonicalHashes` | Per-tick staleness (`initialize` also announces `digest_spec_version`) |
 | `presentation` | `presentAll` events, FOW applied |
 | `audio` | `felt` payload on submit / advance / matching `sim/tick` |
+
+Canonical pre-images scale every finite number by `1e6` (rounded half away from zero to plain decimal integers, `-0` written as `0`), retain `null` object keys, and sort ASCII keys lexicographically — verified across TypeScript and GDScript via `fixtures/state_digest_vectors.jsonl`.
 
 `felt` is `AudioCommand[]` (cue ids; overlay stings do not replace the zone stem), optional `speaker` (the spoken line once), and `uiEffects`. It is omitted when `audio` is off so exact-match clients stay stable. It is **never** in the state hash. Writers play it from the submit/advance result and ignore `sim/tick.felt` so overlay stings do not double. Observers never get those RPC results; they play the tick.
 

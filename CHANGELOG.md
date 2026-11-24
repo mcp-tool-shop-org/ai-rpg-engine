@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-language canonical state digest spec v2 (`@ai-rpg-engine/sidecar`):** `initialize` now returns `digest_spec_version` (`DIGEST_SPEC_VERSION = 2`), stored by both TypeScript and GDScript clients.
+- **Authority state digest validator:** `validateDigestState` and `canonicalJson` throw `StateDigestError` on non-finite numbers, values whose `v * 1e6` magnitude exceeds `2^53 - 1`, or non-ASCII object keys.
+- **Shared state digest vectors & CI Godot verification:** `fixtures/state_digest_vectors.jsonl` and `fixtures/verify_state_digest_vectors.gd` run in Vitest and a pinned Godot 4.7.2 headless CI job (`godot-digest`), failing on exit status or any `SCRIPT ERROR` line.
+
+### Changed
+
+- **Integer-scaled canonical pre-image:** `canonicalJson` (TypeScript) and `_write_canonical` (GDScript) scale every finite number by `1e6`, round half away from zero (`Math.sign(s) * Math.round(Math.abs(s))` and `int(round(s))`), and emit plain decimal digits (`-0` writes as `0`), removing the float-to-text paths (`toFixed(6)` and `"%.*f"`). `quantize()` in both languages also rounds half away from zero.
+- **Core world hash naming (`@ai-rpg-engine/core`):** Renamed the `canonicalStateHash` alias to `worldStateHash` (`stateHash` unchanged) with a deprecated `canonicalStateHash` re-export for 3.x compatibility.
+
+### Fixed
+
+- **GDScript digest parity (`packages/sidecar/gdscript/sidecar_client.gd`):** Retained `null`-valued object keys in `_quantize` and `_write_canonical`, normalized `-0` and integers/floats uniformly (`5` vs `5.0`), and replaced Godot's `JSON.stringify` in canonical pre-images with `_escape_json_string` matching ECMA-262 / RFC 8785 string escaping.
+
 ## [3.12.2] - 2026-11-21
 
 A patch on 3.12.1. The load gate's key check no longer refuses a pack for the 13 top-level keys a World Forge export carries. Simulation behaviour, the wire format and hashes are unchanged.

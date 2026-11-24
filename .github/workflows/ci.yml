@@ -30,6 +30,7 @@ on:
       - 'docs/examples/**'
       - 'docs/check-docs-integrity.mjs'
       - 'docs/mixed-game-viability-proof.ts'
+      - 'fixtures/**'
       - '.github/workflows/**'
       - 'atlas/**'
       # Codecov reads its status and comment settings from this file.
@@ -229,6 +230,57 @@ jobs:
           report_type: test_results
           disable_search: true
           files: ./junit.xml
+
+  godot-digest:
+    name: Godot 4.7.2 State Digest Vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GODOT_VERSION: '4.7.2-stable'
+      GODOT_ARCHIVE_SHA256: 'cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install and verify Godot 4.7.2 (pinned sha256)
+        run: |
+          set -euo pipefail
+          ZIP="Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/${ZIP}"
+          curl -fsSL -o /tmp/godot.zip "${URL}"
+          echo "${GODOT_ARCHIVE_SHA256}  /tmp/godot.zip" | sha256sum -c -
+          mkdir -p /tmp/godot-bin
+          unzip -q /tmp/godot.zip -d /tmp/godot-bin
+          mv "/tmp/godot-bin/Godot_v${GODOT_VERSION}_linux.x86_64" /tmp/godot-bin/godot
+          chmod +x /tmp/godot-bin/godot
+          /tmp/godot-bin/godot --version > /tmp/godot-version.txt 2>&1
+          cat /tmp/godot-version.txt
+          grep -q "^4\.7\.2\." /tmp/godot-version.txt || { echo "::error::Unexpected Godot version"; exit 1; }
+
+      - name: Run GDScript canonical digest vectors (headless)
+        run: |
+          set -euo pipefail
+          PROJ="/tmp/godot-digest-proj"
+          mkdir -p "${PROJ}"
+          printf 'config_version=5\n\n[application]\nconfig/name="state-digest-vectors"\n' > "${PROJ}/project.godot"
+          cp packages/sidecar/gdscript/framing.gd packages/sidecar/gdscript/sidecar_client.gd fixtures/verify_state_digest_vectors.gd fixtures/state_digest_vectors.jsonl "${PROJ}/"
+          timeout 30s /tmp/godot-bin/godot --headless --path "${PROJ}" --import
+          set +e
+          timeout 60s /tmp/godot-bin/godot --headless --path "${PROJ}" -s res://verify_state_digest_vectors.gd 2>&1 | tee /tmp/godot-digest.log
+          GODOT_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "${GODOT_EXIT}" -ne 0 ]; then
+            echo "::error::Headless Godot vector runner exited ${GODOT_EXIT}"
+            exit 1
+          fi
+          if grep -Eq 'SCRIPT ERROR' /tmp/godot-digest.log; then
+            echo "::error::Godot emitted SCRIPT ERROR during digest vector run"
+            grep -En 'SCRIPT ERROR' /tmp/godot-digest.log
+            exit 1
+          fi
+          grep -Fq 'DIGEST_VECTORS_OK' /tmp/godot-digest.log || {
+            echo "::error::Missing DIGEST_VECTORS_OK verdict in Godot output"
+            exit 1
+          }
 
   # Dedicated job (not a fifth workflow file — the org already carries 4 vs
   # the 2-file guideline in docs-integrity.yml). Proves the CLI image boots

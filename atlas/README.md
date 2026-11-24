@@ -1,19 +1,27 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-21 from commit ae72193 by Atlas 1.26.0.
+Mapped at 2026-11-24 from commit 03342f5 by Atlas 1.26.0.
 
 ## What this is
 
-39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
+40 parts, mostly TypeScript (798 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-11-12 (685bfb2)
+## What changed since 2026-11-21 (ae72193)
 
-Nothing structural changed since 2026-11-12; 68 files changed content.
+- CI's push trigger now also names `fixtures/**`.
+- CI runs 1 more file than before.
+- Release runs 1 more file than before.
+- fixtures/state_digest_vectors.jsonl is now read by .github/workflows/ci.yml and packages/sidecar/src/state-digest-vectors.test.ts.
+- fixtures/verify_state_digest_vectors.gd is now read by .github/workflows/ci.yml.
+- packages/sidecar/gdscript/framing.gd is now also read by .github/workflows/ci.yml.
+- And 1 more new writer or reader of a place.
+- fixtures is a new part, drawn from `fixtures/**`.
+- 3 files added and 27 changed content, across 8 parts.
 
 ## What comes in
 
-1. **CI.** On a pull request; on a push touching 16 paths; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 390 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
-2. **Release.** When a release is published; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 389 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
+1. **CI.** On a pull request; on a push touching 17 paths; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 391 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
+2. **Release.** When a release is published; or by hand. Runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 390 more; builds docs/mixed-game-viability-proof.ts; checks templates/, docs/, eslint.config.js and 5 more; packs package-lock.json, package.json, packages/ and 1 more into an image.
 3. **Deploy site to GitHub Pages.** On a pull request touching 2 paths; on a push to main touching 2 paths; or by hand. Runs site/astro.config.mjs and site/src/.
 4. **Docs Integrity.** On a pull request touching 5 paths; on a push touching 5 paths; or by hand. Runs docs/check-docs-integrity.mjs.
 5. **ai-rpg-engine** (a command people run). Runs packages/cli/src/bin.ts.
@@ -46,7 +54,7 @@ Nothing structural changed since 2026-11-12; 68 files changed content.
 
 ## The other doors
 
-**Release** runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 389 more, builds docs/mixed-game-viability-proof.ts, checks templates/, docs/, eslint.config.js and 5 more, packs package-lock.json, package.json, packages/ and 1 more into an image, writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json, docs/c0-alignment/version-skew.json and docs/contract-v1/rng-audit.json, and publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false).
+**Release** runs packages/cli/src/bin.ts, scripts/check-packaging.mjs, scripts/verify-isolated-consumer.mjs and 390 more, builds docs/mixed-game-viability-proof.ts, checks templates/, docs/, eslint.config.js and 5 more, packs package-lock.json, package.json, packages/ and 1 more into an image, writes to docs/c0-alignment/intake-table.json, docs/c0-alignment/reverse-table.json, docs/c0-alignment/version-skew.json and docs/contract-v1/rng-audit.json, and publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false).
 
 **Deploy site to GitHub Pages** runs site/astro.config.mjs and site/src/, and deploys the site on main.
 
@@ -116,7 +124,7 @@ These are candidates from names and call order, not a judgement.
 
 ## Hand-authored
 
-People write .claude/, .github/, dogfood/, the repository root and site/; 21 writes with paths built at run time may land here.
+People write .claude/, .github/, dogfood/, fixtures/, the repository root and site/; 21 writes with paths built at run time may land here.
 
 ## Where to start
 
@@ -126,7 +134,7 @@ Read those in order to follow one pull request end to end.
 
 ## What this map cannot see
 
-- 3 imports could not be resolved: `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; `packages/pack-registry/src/starter-readme-usage.test.ts` imports a path built at run time.
+- 4 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; and 1 more.
 - 21 writes and 34 reads use paths built at run time and are not named here.
 - 1 write goes to places this repository does not track, so it is not listed as generated.
 - 7 writes and 112 reads go to a path their caller passes, not to this repository.
@@ -134,7 +142,7 @@ Read those in order to follow one pull request end to end.
 - 12 writes and 9 reads go to the directory the command is run in, not to this repository.
 - 6 writes and 3 reads go to a temporary directory, not to this repository.
 - 2 commands are built at run time and not followed, 1 of them in tests.
-- CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434.
-- Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 433.
+- CI runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435.
+- Release runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434.
 
 Regenerate with `npx --yes @dogfood-lab/atlas map`.

@@ -32,7 +32,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "cf61ffd04047d855ea4b002fe61db768e46866c7746276efdb7440e1e8fe7a72",
+          "hash": "fdd13022c16fd0c44d458a3ef369c48b3941d4b27a34966b8a50010609f20bba",
           "path": ".github/workflows/ci.yml"
         },
         {
@@ -3638,7 +3638,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "a578c25d67cceffecfde3fd693307034726252ab0f8cea671b838ea7fdeefc64",
+          "hash": "b3ffb45665fcaaa348b928efcb356f0b1c8bff7aa151da074f7737c3036d71e3",
           "importsFiles": [
             "packages/sidecar/src/index.ts"
           ],
@@ -7576,7 +7576,7 @@
             "canonicalizeForHash",
             "stateHash"
           ],
-          "hash": "3b7f725d251638117407e98e93d281b9c7bb6de3562aaa6cdaa92098327b7121",
+          "hash": "26ca0ee38f48bb7d0ff20872a95596f5f80095c3d9e68df6f8c7294ae178766e",
           "importsFiles": [
             "packages/core/src/types.ts"
           ],
@@ -7628,7 +7628,7 @@
           "path": "packages/core/src/types.ts"
         },
         {
-          "hash": "96fd6b30819148ff7b636920aebe556da697973679277e39de4fa9c6ec1b9fcb",
+          "hash": "3eaf3a25e6678a37bda61411a4efc7b8da0a9f912dec3be795fb08c49940c12a",
           "importOrder": [
             "packages/core/src/engine.ts",
             "packages/core/src/world.ts",
@@ -7800,7 +7800,7 @@
       "testRunners": [
         "vitest"
       ],
-      "testedBy": 280,
+      "testedBy": 281,
       "unresolvedSites": 0
     },
     {
@@ -7888,7 +7888,7 @@
           "path": "docs/composition-model.md"
         },
         {
-          "hash": "d629bd1ba4cf7f4e397aca064221766dcde6ca8f18a38e052620bffcf9d83380",
+          "hash": "91ad3a8b18c51d4f4e70d75b8b988a7b028c6b4fc0b44e4186f165058e438216",
           "path": "docs/contract-v1/CONTRACT.md"
         },
         {
@@ -8286,7 +8286,7 @@
           "path": "docs/handbook/65-consequences-that-leave-marks.md"
         },
         {
-          "hash": "2f3ad2d68085c2129aa1adb9ef0beb258822af1ca6c633526bbb39d3a1c1ca0c",
+          "hash": "b40ecb13896c4e4e23fd392de85583c4fcd662e3b3e414b19d3916f0268baff7",
           "path": "docs/handbook/66-visual-clients.md"
         },
         {
@@ -8759,6 +8759,40 @@
       ],
       "testedBy": 159,
       "unresolvedSites": 0
+    },
+    {
+      "dynamicReads": 0,
+      "dynamicSpawns": 0,
+      "dynamicSpawnsInTests": 0,
+      "dynamicWrites": 0,
+      "entryPoints": [],
+      "externals": 0,
+      "files": [
+        {
+          "hash": "6dab995eb5260212f283b9f21f234cfb814763739220ca27c50d1cdbce751586",
+          "path": "fixtures/state_digest_vectors.jsonl"
+        },
+        {
+          "hash": "84b831a1adef9ad95de87f8badb2ad4fde02d9f9fbd469de42cbe3ac68f174dd",
+          "path": "fixtures/verify_state_digest_vectors.gd"
+        }
+      ],
+      "globs": [
+        "fixtures/**"
+      ],
+      "importConfidence": "low",
+      "name": "fixtures",
+      "origin": "authored",
+      "role": "data",
+      "testedBy": 0,
+      "unresolvedNamed": [
+        {
+          "path": "fixtures/verify_state_digest_vectors.gd",
+          "specifier": "res://sidecar_client.gd",
+          "why": "other"
+        }
+      ],
+      "unresolvedSites": 1
     },
     {
       "dynamicReads": 0,
@@ -18627,7 +18661,7 @@
           "path": ".gitignore"
         },
         {
-          "hash": "bb201307ccbd7171a8ee36750cc7b538055b5756975af782108ec2afb9dc740c",
+          "hash": "5651c8bfcfc41f30fc52b7531af562a82b2f49bdf514a964c0cb023dc85ffb54",
           "path": "CHANGELOG.md"
         },
         {
@@ -18647,35 +18681,35 @@
           "path": "PHILOSOPHY.md"
         },
         {
-          "hash": "85a416de0c1189e581d3454d19223838f1af63c80d156c2fe2df144795bf8f16",
+          "hash": "4ff022297da470756432268f296df52b3b3efd63e5250edd576e6d01dd8e0701",
           "path": "README.es.md"
         },
         {
-          "hash": "36a76921108f9aef126700b237d016ba9f85be0bf6c6d9641aafe487f738b7cc",
+          "hash": "084410479701eef39e71100bb6b4eaa583f9ef64a4dda2d1e9408c72b02b671e",
           "path": "README.fr.md"
         },
         {
-          "hash": "e841815e75e2dba1960897d7a7e7f245b2b87bd624403cc0ba377b0f9f5f779f",
+          "hash": "902bd1ff989086640303640cf01d5677fb773ef69dbde5d720b4cdb047ffbc2a",
           "path": "README.hi.md"
         },
         {
-          "hash": "b835c844b6adf263fbd0461ec2e7b8af726b080524073cfa88b5a0832889c2f9",
+          "hash": "3c7f3341ed8a7c6b6281995ad3565ae32f7520bef4067ac7704402c98633194e",
           "path": "README.it.md"
         },
         {
-          "hash": "9b5a544e5bf8185f7bbaa006649110d0898b0a07687710b80a242bf80ae7c328",
+          "hash": "a960406327035b8df2915600270f79fca1535532cc7e9b3197a04ae21cc2e828",
           "path": "README.ja.md"
         },
         {
-          "hash": "1968e3fc22eaf9df77e419006766a262d56cbb2cecd83ad7562e373b80888640",
+          "hash": "7cd276f8a32b0eba044cedcc2566cbae960bd841127742a2cfe919106fe589c9",
           "path": "README.md"
         },
         {
-          "hash": "6915f00a5910bc070bbfc90576b99f8eaf683b68292a7bd059816e83725c5a73",
+          "hash": "4003981d63e9a91bfd96d8e0c343f27865de658aedf7831e4a071348f5e1950e",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "55f51c589c5de0809e01154eb9f2686455b4e866f290bffd05c298f80ecb5342",
+          "hash": "9f692ab22f21e1039b6fc7c39a3bde5e099f7f8b1d51b1d3bf8ba79d40b3b0a6",
           "path": "README.zh.md"
         },
         {
@@ -18683,7 +18717,7 @@
           "path": "SCORECARD.md"
         },
         {
-          "hash": "431116a90a5ff24f5e970fbcd67354858409de60c44bdb976e83d23aaf909188",
+          "hash": "0a7553b5b729d4f09b06870c7775e0b444fd90e1480373ad4c02a529ab0d57f2",
           "path": "SECURITY.md"
         },
         {
@@ -19057,7 +19091,7 @@
           "path": "packages/sidecar/LICENSE"
         },
         {
-          "hash": "82a5c1b6eb031a262bdd25b5a49ffc59d7dcf2c3d7d17d6bea176487c04c8c47",
+          "hash": "d3dea950ced530b52d7a6b97b4461dedf324ffde23f9a2c841d4e15f6a5a1699",
           "path": "packages/sidecar/README.md"
         },
         {
@@ -19093,7 +19127,7 @@
             "snapshot",
             "submit_action"
           ],
-          "hash": "acb91917c2317c10e49cde212d17ca02814f045bc8f63bae2ba9b843cec04d77",
+          "hash": "da25578723e9af45f3b6e1b01390c84f0d662c8cc3d52ead2d6d59441ae0e8c0",
           "importsFiles": [
             "packages/sidecar/gdscript/framing.gd"
           ],
@@ -19121,7 +19155,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "6b423cf4bdbb5b8a8f777f2312b581e264bb097853acd53456e8fee03cee7acb",
+          "hash": "8dcac832bde5da06b2a05fbcaa1ce6e4dbeebf9a9cc31068980706ca60025c9c",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/framing.ts",
@@ -19186,7 +19220,7 @@
           "path": "packages/sidecar/src/framing.ts"
         },
         {
-          "hash": "4d6ee3c1820eff00d9d1c255467f5c5ee68ab83b426f3525759a2a3890fee1e3",
+          "hash": "fa7a4cc6e1d3d062705649350d7d1101a5746694520cc390deced75e9a4f00f3",
           "importsFiles": [
             "packages/sidecar/src/framing.ts"
           ],
@@ -19240,17 +19274,17 @@
             {
               "in": "assertNotReserved",
               "kind": "throw",
-              "line": 320
+              "line": 329
             }
           ],
-          "hash": "386089620723722d1344220ac747d8dbeb2cec4f290cdd78fd49cbf6a13d344d",
+          "hash": "a8450dc42100cfbdeb4bda972a4a2ebf1bd3b9f4a032a9c1da6562118c14bd78",
           "importsFiles": [
             "packages/sidecar/src/framing.ts"
           ],
           "path": "packages/sidecar/src/protocol.ts"
         },
         {
-          "hash": "cee9de29993b8576a6654d3ed46ea95413962b6fd6d05afc03def361a28a0d14",
+          "hash": "697544026016698214c2ad9d6ccbbc75bf45eada212d759daba077ef68f938c2",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/serializer.ts"
@@ -19268,9 +19302,27 @@
             "quantize",
             "snapshotDelta",
             "stateHash",
-            "toWireEvent"
+            "toWireEvent",
+            "validateDigestState"
           ],
-          "hash": "cb01e5617cd6d89d0e1bae10e6b5243f4c34fe122c6700c17db24b52709be748",
+          "failurePaths": [
+            {
+              "in": "assertAsciiKey",
+              "kind": "throw",
+              "line": 314
+            },
+            {
+              "in": "scaleDigestInteger",
+              "kind": "throw",
+              "line": 326
+            },
+            {
+              "in": "scaleDigestInteger",
+              "kind": "throw",
+              "line": 341
+            }
+          ],
+          "hash": "af178c6ba7fb181896c1e255344454cb5bd435dcd0054be0aac7ac85b75cf703",
           "importOrder": [
             "packages/sidecar/src/protocol.ts",
             "packages/core/src/index.ts"
@@ -19282,7 +19334,7 @@
           "path": "packages/sidecar/src/serializer.ts"
         },
         {
-          "hash": "557618a890e1c2a3c4c09a5a6e7002b5ec8e4f926308adcadeb0370b522a938b",
+          "hash": "8df3520f3adc14527e81ee6101ad24e5c35b26bff0b7176f39edcbb4205f4d7e",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/client.ts",
@@ -19310,30 +19362,30 @@
             {
               "in": "handle",
               "kind": "catch",
-              "line": 318
+              "line": 319
             },
             {
               "in": "dispatch",
               "kind": "catch",
-              "line": 538
+              "line": 544
             },
             {
               "in": "preview",
               "kind": "throw",
-              "line": 589
+              "line": 595
             },
             {
               "in": "outbound",
               "kind": "catch",
-              "line": 1030
+              "line": 1036
             },
             {
               "in": "outbound",
               "kind": "throw",
-              "line": 1049
+              "line": 1055
             }
           ],
-          "hash": "b96178786f1a50d9eabb6c98649c685cd91436907412f1d74bc059ea715777d8",
+          "hash": "37e12d16456a8ce6628f3ab102d0160acce44066d9cca2eb902bfeecf7775319",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/protocol.ts",
@@ -19392,6 +19444,14 @@
           "path": "packages/sidecar/src/socket.ts"
         },
         {
+          "hash": "98a971256936ad917dea5494ed53d0c82d5d09ec7e30c59ffe1b8f40c40e819b",
+          "importsFiles": [
+            "packages/sidecar/src/serializer.ts"
+          ],
+          "path": "packages/sidecar/src/state-digest-vectors.test.ts",
+          "testFramework": "vitest"
+        },
+        {
           "hash": "e64996540a021e08f7a374c88969e08554d7b32381a48231dca84802c8834e2d",
           "importOrder": [
             "packages/core/src/index.ts",
@@ -19444,7 +19504,7 @@
       "testRunners": [
         "vitest"
       ],
-      "testedBy": 15,
+      "testedBy": 16,
       "unresolvedSites": 0
     },
     {
@@ -19741,7 +19801,7 @@
           "path": "site/src/content/docs/handbook/65-consequences-that-leave-marks.md"
         },
         {
-          "hash": "5e15d1aeac2ae6e994d8c62c74556cf933930c63054371d638ffd1f4b76cab2f",
+          "hash": "b392aaa51e6b139ff309f5c7c18512e3efb826243e6b56ef98ed60757f780082",
           "path": "site/src/content/docs/handbook/66-visual-clients.md"
         },
         {
@@ -19765,7 +19825,7 @@
           "path": "site/src/content/docs/handbook/beginners.md"
         },
         {
-          "hash": "db1522c5453d991e1efd678905df111efce19ee5e04a8ad77f16a7343d158767",
+          "hash": "7ddbdf5c29e06253d4274e248520644c16da9c762a5c5ff7e361316e79251ecd",
           "path": "site/src/content/docs/handbook/index.md"
         },
         {
@@ -23779,6 +23839,38 @@
         },
         {
           "dir": "",
+          "job": "godot-digest",
+          "programs": [
+            "1",
+            "cat",
+            "chmod",
+            "curl",
+            "echo",
+            "grep",
+            "mkdir",
+            "mv",
+            "sha256sum",
+            "unzip"
+          ],
+          "step": "Install and verify Godot 4.7.2 (pinned sha256)"
+        },
+        {
+          "dir": "",
+          "job": "godot-digest",
+          "programs": [
+            "1",
+            "cp",
+            "echo",
+            "grep",
+            "mkdir",
+            "printf",
+            "tee",
+            "timeout"
+          ],
+          "step": "Run GDScript canonical digest vectors (headless)"
+        },
+        {
+          "dir": "",
           "job": "docker-smoke",
           "programs": [
             "docker"
@@ -23848,6 +23940,22 @@
         },
         {
           "basis": "declared",
+          "name": "godot-digest",
+          "runsOn": [
+            {
+              "labels": [
+                "ubuntu-latest"
+              ],
+              "platform": {
+                "cpu": "x64",
+                "libc": "glibc",
+                "os": "linux"
+              }
+            }
+          ]
+        },
+        {
+          "basis": "declared",
           "name": "docker-smoke",
           "runsOn": [
             {
@@ -23870,6 +23978,22 @@
         "docs/contract-v1/rng-audit.json"
       ],
       "mentions": [
+        {
+          "job": "godot-digest",
+          "path": "fixtures/state_digest_vectors.jsonl"
+        },
+        {
+          "job": "godot-digest",
+          "path": "fixtures/verify_state_digest_vectors.gd"
+        },
+        {
+          "job": "godot-digest",
+          "path": "packages/sidecar/gdscript/framing.gd"
+        },
+        {
+          "job": "godot-digest",
+          "path": "packages/sidecar/gdscript/sidecar_client.gd"
+        },
         {
           "job": "build-and-test",
           "path": "tsconfig.tests.json"
@@ -23980,7 +24104,7 @@
         {
           "boundary": "sidecar",
           "depth": 0,
-          "files": 19
+          "files": 20
         },
         {
           "boundary": "soundpack-core",
@@ -25498,7 +25622,7 @@
           "via": "eslint eslint.config.js"
         }
       ],
-      "runsCount": 434,
+      "runsCount": 435,
       "runsCut": true,
       "secrets": [],
       "sends": {
@@ -25522,7 +25646,7 @@
         },
         {
           "config": "vitest.config.ts",
-          "files": 388,
+          "files": 389,
           "job": "build-and-test",
           "runner": "vitest",
           "step": "13",
@@ -25533,7 +25657,7 @@
         {
           "config": "vitest.config.ts",
           "coverage": true,
-          "files": 388,
+          "files": 389,
           "job": "build-and-test",
           "junit": true,
           "runner": "vitest",
@@ -25555,6 +25679,7 @@
             "docs/examples/**",
             "docs/mixed-game-viability-proof.ts",
             "eslint.config.js",
+            "fixtures/**",
             "package-lock.json",
             "package.json",
             "packages/**",
@@ -26186,7 +26311,7 @@
         {
           "boundary": "sidecar",
           "depth": 0,
-          "files": 19
+          "files": 20
         },
         {
           "boundary": "soundpack-core",
@@ -27714,7 +27839,7 @@
           "via": "eslint eslint.config.js"
         }
       ],
-      "runsCount": 433,
+      "runsCount": 434,
       "runsCut": true,
       "secrets": [
         "GITHUB_TOKEN"
@@ -27733,7 +27858,7 @@
       "tests": [
         {
           "config": "vitest.config.ts",
-          "files": 388,
+          "files": 389,
           "job": "npm",
           "runner": "vitest",
           "step": "8",
@@ -29169,8 +29294,8 @@
   ],
   "engine": "1.26.0",
   "generatedFrom": {
-    "commit": "ae7219349365109436077f8df2e2e94dceb65289",
-    "tracked": 1386
+    "commit": "03342f55fd4d3ba01f40e8277eb27d6b5bdf1d24",
+    "tracked": 1389
   },
   "landings": [
     {
@@ -30094,6 +30219,32 @@
         }
       ],
       "target": "dogfood/roadmap/swarm-1788226678-0c6b.1.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
+        {
+          "by": "packages/sidecar/src/state-digest-vectors.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "fixtures/state_digest_vectors.jsonl",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        }
+      ],
+      "target": "fixtures/verify_state_digest_vectors.gd",
       "writers": []
     },
     {
@@ -31462,6 +31613,10 @@
     {
       "readers": [
         {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
+        {
           "by": "packages/sidecar/src/gdscript-kit.test.ts",
           "call": "readFileSync",
           "confidence": "ast",
@@ -31473,6 +31628,10 @@
     },
     {
       "readers": [
+        {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
         {
           "by": "packages/sidecar/src/gdscript-kit.test.ts",
           "call": "readFileSync",
@@ -32050,7 +32209,7 @@
   "overlaps": [],
   "submodules": [],
   "symlinks": [],
-  "testFiles": 391,
+  "testFiles": 392,
   "unassigned": [],
   "workspaces": [
     "packages/asset-registry",

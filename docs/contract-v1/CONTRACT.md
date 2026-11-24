@@ -292,6 +292,18 @@ Every tick notification carries a state hash. Clients detect staleness and
 boundary are quantized so the process boundary cannot introduce float drift
 (Overwatch, charter §3.2).
 
+**Cross-language canonical digest v2 addendum:** When `canonicalHashes` is
+negotiated, `initialize` returns `digest_spec_version` (`2`). Both the authority
+(`@ai-rpg-engine/sidecar`) and GDScript client (`sidecar_client.gd`) build the
+canonical pre-image by retaining `null` object keys, sorting ASCII keys
+lexicographically, escaping control characters and quotes/backslashes consistently
+(ECMA-262 / RFC 8785), and scaling every finite number by `1e6` rounded half
+away from zero to plain decimal integer digits (`-0` writes as `0`, bypassing
+float-to-text formatting). The authority rejects non-finite numbers, scaled
+values beyond `2^53 - 1`, and non-ASCII object keys with `StateDigestError`.
+In `@ai-rpg-engine/core`, the full-world helper is named `worldStateHash`
+(`stateHash` alias) while `canonicalStateHash` remains a deprecated re-export.
+
 ---
 
 ## 5. The forge side

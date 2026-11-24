@@ -312,6 +312,10 @@ export class SidecarClient {
     return this.serverInfo;
   }
 
+  get digestSpecVersion(): number | undefined {
+    return this.serverInfo?.digest_spec_version;
+  }
+
   get isClosed(): boolean {
     return this.closed;
   }

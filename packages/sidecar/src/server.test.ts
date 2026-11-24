@@ -7,7 +7,14 @@ import { describe, it, expect } from 'vitest';
 import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
 import { SidecarServer, attachedServerCount } from './server.js';
-import { ERROR_CODES, METHODS, NOTIFICATIONS, type PackIntakeSummary, type RpcMessage } from './protocol.js';
+import {
+  DIGEST_SPEC_VERSION,
+  ERROR_CODES,
+  METHODS,
+  NOTIFICATIONS,
+  type PackIntakeSummary,
+  type RpcMessage,
+} from './protocol.js';
 import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
 import { applyPatches, canonicalStateHash, stateHash } from './serializer.js';
 import type { StatePatch } from './protocol.js';
@@ -632,10 +639,14 @@ describe('F-bb72a8ab — observer sessions cannot write; they still receive tick
 });
 
 describe('F-3f53c837 — canonicalHashes is negotiated and additive', () => {
-  it('canonicalHashes:false still only sees hash; true gets matching canonicalHash', async () => {
+  it('canonicalHashes:false still only sees hash; true gets matching canonicalHash and digest_spec_version', async () => {
     const { a, b } = dualLoopback(false);
-    await a.client.initialize({ notifications: true, hashes: true, canonicalHashes: false });
-    await b.client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+    const initA = await a.client.initialize({ notifications: true, hashes: true, canonicalHashes: false });
+    const initB = await b.client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+    expect(initA.digest_spec_version).toBe(DIGEST_SPEC_VERSION);
+    expect(initB.digest_spec_version).toBe(DIGEST_SPEC_VERSION);
+    expect(b.client.digestSpecVersion).toBe(DIGEST_SPEC_VERSION);
+
     const jsSnap = await a.client.snapshot();
     expect(jsSnap).not.toHaveProperty('canonicalHash');
     expect(jsSnap.hash).toBe(stateHash(a.client.mirroredState as WorldState));
@@ -645,6 +656,50 @@ describe('F-3f53c837 — canonicalHashes is negotiated and additive', () => {
     expect(canonSnap.canonicalHash).toBe(canonicalStateHash(b.client.mirroredState));
     expect(canonSnap.canonicalHash).toMatch(/^[0-9a-f]{32}$/);
     expect(b.client.stalenessReports).toEqual([]);
+  });
+
+  it('refuses canonical snapshot with structured StateDigestError data on non-ASCII state key', () => {
+    const { engine } = boot();
+    (engine.world.globals as Record<string, unknown>)['café'] = 1;
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
+    server.handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: METHODS.INITIALIZE,
+      params: { capabilities: { canonicalHashes: true } },
+    });
+    server.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SNAPSHOT, params: {} });
+    const err = sent.find((m) => m.id === 2)?.error as
+      | { code: number; message: string; data?: { code: string; path: string } }
+      | undefined;
+    expect(err).toBeDefined();
+    expect(err!.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(err!.data?.code).toBe('NON_ASCII_KEY');
+    expect(err!.data?.path).toContain('café');
+  });
+
+  it('surfaces generic internal errors without StateDigestError data', () => {
+    const { engine } = boot();
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer(
+      {
+        engine,
+        engineVersion: '3.8.0-test',
+        advanceRound: () => {
+          throw new Error('unexpected advance failure');
+        },
+      },
+      (m) => sent.push(m),
+    );
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    server.handle({ jsonrpc: '2.0', id: 2, method: METHODS.ADVANCE, params: { rounds: 1 } });
+    const err = sent.find((m) => m.id === 2)?.error as
+      | { code: number; message: string; data?: unknown }
+      | undefined;
+    expect(err?.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(err?.message).toBe('unexpected advance failure');
+    expect(err?.data).toBeUndefined();
   });
 });
 
