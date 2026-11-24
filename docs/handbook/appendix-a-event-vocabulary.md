@@ -219,3 +219,12 @@ Dynamic event types built from finite TypeScript union templates (`module.${phas
 | `pursuit.state.changed` | starter-bounty-hunter (pursuit-core) | Pursuit status transitioned between named pursuit states (`from`, `to`) |
 | `pursuit.sworn.in` | starter-bounty-hunter (setup) | Bounty-hunter starter setup swore in thief-taker office (`officeId`, `takerId`) |
 | `pursuit.word.bought` | starter-bounty-hunter (pursuit-core) | Actor purchased informant whereabouts on a mark (`markId`, `markName`, `whereabouts`, `price`, `infamyGained`) |
+
+## Consumed Hook Events (Not Emitted by the Engine)
+
+Built-in listeners in `packages/character-profile/src/profile-core.ts` subscribe to three optional lifecycle/game-hook event types that the engine and starters do not emit on their own (`ENGINE_EVENT_TYPES` intentionally excludes them because no built-in emitter produces them):
+
+- `combat.defeat.survived` — game-emitted survival hook handled alongside `combat.aftermath.injury` (`onSurvived`) to update profile injury records and compute injury penalties.
+- `rest.completed` — game-emitted rest hook handled alongside `ability.heal.applied` (`onHeal`) to heal active injuries and clear `injured-<id>` statuses.
+- `combat.injury.healed` — game-emitted healing hook handled by `onHeal` to heal a targeted `injuryId` or active injuries.
+

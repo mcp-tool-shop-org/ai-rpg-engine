@@ -44,7 +44,7 @@
           "path": ".github/workflows/pages.yml"
         },
         {
-          "hash": "df0c838557a151863d34769d87d7f636c5e0c304f4a9997705b1b2c94157e9f4",
+          "hash": "e2a819e9f62e11584cb5810f7065d4ba6d68a947b1028d39e76e7d3e5067f1d9",
           "path": ".github/workflows/release.yml"
         }
       ],
@@ -3747,7 +3747,7 @@
           "path": "packages/cli/src/c3/open-gates.ts"
         },
         {
-          "hash": "0e69edbe11ad1d6025e595d8b6fa44af9d90d801257bf914f62b78606c568d87",
+          "hash": "2a4dac81d525e37f5be9649287f6b43ea59844c18bc7278fcad50707ccd6fc4e",
           "importOrder": [
             "packages/cli/src/sidecar-command.ts",
             "packages/cli/src/engine-version.ts",
@@ -6226,20 +6226,20 @@
             {
               "in": "runSidecar",
               "kind": "catch",
-              "line": 233
+              "line": 234
             },
             {
               "in": "runSidecar",
               "kind": "throw",
-              "line": 246
+              "line": 247
             },
             {
               "in": "runSidecar",
               "kind": "catch",
-              "line": 320
+              "line": 321
             }
           ],
-          "hash": "53831389417d9db3f47b04d16deb702da3ac8b77c6f25ab654700feb12599e44",
+          "hash": "346c3b6a77f3316bb185d67a077db16dea56002038e7e06ba01fe8b64c3f637a",
           "importOrder": [
             "packages/sidecar/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -6768,7 +6768,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "688236af1fe96de15db5fb6ba636fd2c899da11c838d72318f430c63aa694969",
+          "hash": "bec0c37d2eaee4814094c6bb404a9c373d1e97819e32a050a1316226d22f6e29",
           "importsFiles": [
             "packages/content-schema/src/loader.ts",
             "packages/content-schema/src/refs.ts"
@@ -6865,7 +6865,7 @@
           "exports": [
             "normalizeTargetSpec"
           ],
-          "hash": "99503fe3abc7551f5044a3990290ef0f68a45ade81fa55e0167f1021219172f5",
+          "hash": "ba4f144bd1b0ebae80517fd7cbae6e487a74a4c79d7d9ffa77acc415f4c6f401",
           "importsFiles": [
             "packages/core/src/index.ts"
           ],
@@ -6962,7 +6962,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "9a0cd816a6aa68d1ddef8083534cff7fc1be4a77e85ceb621d75d870f3c1d824",
+          "hash": "35caaa2abd08ec6e35c6a99f2b24caf39b26012f5863f0f20f47637ad17b4f18",
           "importOrder": [
             "packages/content-schema/src/validate.ts",
             "packages/starter-fantasy/src/content.ts",
@@ -7002,7 +7002,7 @@
             "validateStatusPackAgainstRuleset",
             "validateZoneDefinition"
           ],
-          "hash": "ceb8a842bdf3c1963b613c299062ed10435ebf5ac5e71d1ecb19cd4118dab38f",
+          "hash": "6beb622122aab73e691417a2a5669ccd6b98285c67c0367fec1a8edd01d1ec77",
           "importsFiles": [
             "packages/content-schema/src/schemas.ts"
           ],
@@ -7071,7 +7071,7 @@
           "path": "packages/core/README.ja.md"
         },
         {
-          "hash": "ae9d86ceb45a96d7ea430ed6574528a4122598611d8982c1fc037248d14ff5e7",
+          "hash": "1153e75ad1dd3ab3deae92b2650654f9cfc0a417bb12526ed6ceed4f1351c00d",
           "path": "packages/core/README.md"
         },
         {
@@ -7266,6 +7266,32 @@
           "path": "packages/core/src/engine.ts"
         },
         {
+          "hash": "f76adb5b70d01e642398f58d47fb5ff1447c69f4eb5930d4ee011f013bc63213",
+          "importsFiles": [
+            "packages/core/src/index.ts"
+          ],
+          "names": [
+            "packages/core/src/world.ts",
+            "packages/equipment/src/equipment-core.ts",
+            "packages/modules/src/cognition-core.ts",
+            "packages/modules/src/combat-recovery.ts",
+            "packages/modules/src/defeat-fallout.ts",
+            "packages/modules/src/make-event.ts",
+            "packages/modules/src/quest-core.ts",
+            "packages/modules/src/status-core.ts",
+            "packages/modules/src/status-effects.ts",
+            "packages/modules/src/world-tick.ts",
+            "packages/starter-bounty-hunter/src/pursuit-core.ts",
+            "packages/starter-merchant/src/contract-core.ts"
+          ],
+          "path": "packages/core/src/event-vocabulary.test.ts",
+          "testFramework": "vitest"
+        },
+        {
+          "hash": "8d8c3b2423a063ab559e7f6544ae0467da3ad0dee17b4c737b79ad7bbe225921",
+          "path": "packages/core/src/event-vocabulary.ts"
+        },
+        {
           "failurePaths": [
             {
               "in": "invokeListener",
@@ -7333,13 +7359,14 @@
           "path": "packages/core/src/id.ts"
         },
         {
-          "hash": "ad67450e1c2bca886441bfb3f46c1486f28d253b01468e02ced4db3841cd389d",
+          "hash": "71950b17dfa4bdd37b092b9bbd938a583ea9fa41b8f9d31a8bd89ba1074ccf10",
           "importOrder": [
             "packages/core/src/types.ts",
             "packages/core/src/id.ts",
             "packages/core/src/manifest.ts",
             "packages/core/src/rng.ts",
             "packages/core/src/events.ts",
+            "packages/core/src/event-vocabulary.ts",
             "packages/core/src/world.ts",
             "packages/core/src/actions.ts",
             "packages/core/src/modules.ts",
@@ -7354,6 +7381,7 @@
             "packages/core/src/actions.ts",
             "packages/core/src/channels.ts",
             "packages/core/src/engine.ts",
+            "packages/core/src/event-vocabulary.ts",
             "packages/core/src/events.ts",
             "packages/core/src/formulas.ts",
             "packages/core/src/id.ts",
@@ -7371,6 +7399,7 @@
             "packages/core/src/actions.ts",
             "packages/core/src/channels.ts",
             "packages/core/src/engine.ts",
+            "packages/core/src/event-vocabulary.ts",
             "packages/core/src/events.ts",
             "packages/core/src/formulas.ts",
             "packages/core/src/id.ts",
@@ -7891,7 +7920,7 @@
       "testRunners": [
         "vitest"
       ],
-      "testedBy": 281,
+      "testedBy": 282,
       "unresolvedSites": 0
     },
     {
@@ -8381,7 +8410,7 @@
           "path": "docs/handbook/66-visual-clients.md"
         },
         {
-          "hash": "0904f453da95b4c71c5db41416179765492615ce522dca561b9683874de9bc40",
+          "hash": "b2be32d25780f102341304d1960706babd583841909f8a3cd867f8444e859a33",
           "path": "docs/handbook/appendix-a-event-vocabulary.md"
         },
         {
@@ -18758,7 +18787,7 @@
           "path": ".gitignore"
         },
         {
-          "hash": "2b03ec80b58895a442148bdb5087eb9a36078f263fe2c93dd59b4a2400aa3e9b",
+          "hash": "8556b28de090838eaea62c6c870a09cf2f9716cafaebf9b25001de4a368f6acb",
           "path": "CHANGELOG.md"
         },
         {
@@ -18814,7 +18843,7 @@
           "path": "SCORECARD.md"
         },
         {
-          "hash": "0a7553b5b729d4f09b06870c7775e0b444fd90e1480373ad4c02a529ab0d57f2",
+          "hash": "ae9e5117de8295f1ba86bd50c98f3af8955a874137dc946b7281daca59b56cd7",
           "path": "SECURITY.md"
         },
         {
@@ -19081,8 +19110,8 @@
     },
     {
       "dynamicReads": 6,
-      "dynamicSpawns": 2,
-      "dynamicSpawnsInTests": 1,
+      "dynamicSpawns": 3,
+      "dynamicSpawnsInTests": 2,
       "dynamicWrites": 0,
       "entryPoints": [],
       "externals": 0,
@@ -19101,7 +19130,7 @@
           "sequences": []
         },
         {
-          "hash": "4bce9c11ded16563c6db6ac2a75191a2ea0a264fa294549988d0acffd3ea0ab0",
+          "hash": "1961b91c651c35eb48720d15481a6df5105186b2b6a25f8f164cd81fc63758ef",
           "importsFiles": [
             "vitest.config.ts"
           ],
@@ -19510,7 +19539,7 @@
           "path": "packages/sidecar/src/server.ts"
         },
         {
-          "hash": "f36ccd28e7574da9bd32f1b3b5806a28b372e189f4e9dda036a3c042ad85db1b",
+          "hash": "d79fe46ee455f7ddd8624e53c818ed6cefee261f9241a3fc935eff8270cbaec8",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/client.ts",
@@ -19535,7 +19564,7 @@
             "connectSocketClient",
             "startSocketServer"
           ],
-          "hash": "ba425747add6714361735963c149d052781e840a42b3eabb360a1159ebc498b7",
+          "hash": "829585cb5325df8a11e93a81b3a8ebbfbc8f8dad718bf553a93108ea605e8023",
           "importOrder": [
             "packages/sidecar/src/framing.ts",
             "packages/sidecar/src/client.ts",
@@ -19912,7 +19941,7 @@
           "path": "site/src/content/docs/handbook/66-visual-clients.md"
         },
         {
-          "hash": "29cd4cfae3b269269a73f0184e5e69d134cb05da44d5d1c5fd378c4cb785ea8e",
+          "hash": "c30aba065a879e1b22ee0aa59fea8b2bf3f4b0754b2632df274d7e35676be7f5",
           "path": "site/src/content/docs/handbook/appendix-a-event-vocabulary.md"
         },
         {
@@ -24151,7 +24180,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 32
+          "files": 34
         },
         {
           "boundary": "docs",
@@ -25729,7 +25758,7 @@
           "via": "eslint eslint.config.js"
         }
       ],
-      "runsCount": 435,
+      "runsCount": 436,
       "runsCut": true,
       "secrets": [],
       "sends": {
@@ -25753,7 +25782,7 @@
         },
         {
           "config": "vitest.config.ts",
-          "files": 389,
+          "files": 390,
           "job": "build-and-test",
           "runner": "vitest",
           "step": "13",
@@ -25764,7 +25793,7 @@
         {
           "config": "vitest.config.ts",
           "coverage": true,
-          "files": 389,
+          "files": 390,
           "job": "build-and-test",
           "junit": true,
           "runner": "vitest",
@@ -26194,11 +26223,15 @@
           "dir": "",
           "job": "npm",
           "programs": [
+            "1",
             "ai-rpg-engine",
             "echo",
+            "grep",
             "mktemp",
             "node",
-            "npm"
+            "npm",
+            "rm",
+            "sleep"
           ],
           "step": "Registry round-trip — npm install CLI from registry"
         },
@@ -26309,6 +26342,10 @@
       "mentions": [
         {
           "job": "npm",
+          "path": "package.json"
+        },
+        {
+          "job": "npm",
           "path": "tsconfig.tests.json"
         }
       ],
@@ -26358,7 +26395,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 32
+          "files": 34
         },
         {
           "boundary": "docs",
@@ -27946,7 +27983,7 @@
           "via": "eslint eslint.config.js"
         }
       ],
-      "runsCount": 434,
+      "runsCount": 435,
       "runsCut": true,
       "secrets": [
         "GITHUB_TOKEN"
@@ -27965,7 +28002,7 @@
       "tests": [
         {
           "config": "vitest.config.ts",
-          "files": 389,
+          "files": 390,
           "job": "npm",
           "runner": "vitest",
           "step": "8",
@@ -28030,7 +28067,7 @@
             "file": "packages/core/src/index.ts",
             "from": "packages/cli/src/bin.ts"
           },
-          "files": 15
+          "files": 16
         },
         {
           "boundary": "equipment",
@@ -28306,7 +28343,7 @@
             "file": "packages/core/src/index.ts",
             "from": "packages/ollama/src/replay-producer.ts"
           },
-          "files": 15
+          "files": 16
         },
         {
           "boundary": "character-profile",
@@ -29401,8 +29438,8 @@
   ],
   "engine": "1.26.0",
   "generatedFrom": {
-    "commit": "c44ca4db94a580b633aa80d9121fec2fce5acbab",
-    "tracked": 1390
+    "commit": "c678bc7ee4d869df08e91d8e3c2f9e669b37f437",
+    "tracked": 1392
   },
   "landings": [
     {
@@ -30298,6 +30335,18 @@
     {
       "readers": [
         {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "docs/handbook/appendix-a-event-vocabulary.md",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "docs/check-docs-integrity.mjs",
           "call": "literal",
           "confidence": "ast"
@@ -30363,6 +30412,10 @@
     {
       "readers": [
         {
+          "by": ".github/workflows/release.yml",
+          "confidence": "config"
+        },
+        {
           "by": "docs/check-docs-integrity.mjs",
           "call": "literal",
           "confidence": "ast"
@@ -30382,6 +30435,12 @@
           "by": "scripts/check-packaging.mjs",
           "call": "readFileSync",
           "confidence": "weak"
+        },
+        {
+          "by": "scripts/gates.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         },
         {
           "by": "scripts/verify-isolated-consumer.mjs",
@@ -30406,6 +30465,12 @@
       "readers": [
         {
           "by": "packages/cli/src/engine-dormant-surface.test.ts",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
           "call": "readdirSync",
           "confidence": "ast",
           "fromTests": true
@@ -30768,6 +30833,12 @@
           "by": "packages/cli/src/bin.ts",
           "call": "import",
           "confidence": "ast"
+        },
+        {
+          "by": "scripts/gates.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "packages/cli/package.json",
@@ -31163,6 +31234,12 @@
     {
       "readers": [
         {
+          "by": "scripts/gates.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "scripts/verify-isolated-consumer.mjs",
           "call": "readFileSync",
           "confidence": "ast"
@@ -31182,6 +31259,12 @@
           "by": "dogfood/roadmap/swarm-1787959674-cd7a.json",
           "call": "literal",
           "confidence": "text"
+        },
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "packages/core/src/world.ts",
@@ -31214,6 +31297,12 @@
           "by": "dogfood/roadmap/swarm-1787959674-cd7a.json",
           "call": "literal",
           "confidence": "text"
+        },
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "packages/equipment/src/equipment-core.ts",
@@ -31377,6 +31466,42 @@
     {
       "readers": [
         {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/modules/src/cognition-core.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/modules/src/combat-recovery.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/modules/src/defeat-fallout.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "dogfood/roadmap/swarm-1788226678-0c6b.1.json",
           "call": "literal",
           "confidence": "text"
@@ -31409,6 +31534,18 @@
     {
       "readers": [
         {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/modules/src/make-event.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "packages/modules/src/minimal-install-proof.test.ts",
           "call": "readFileSync",
           "confidence": "ast",
@@ -31416,6 +31553,18 @@
         }
       ],
       "target": "packages/modules/src/minimal-install-proof.test.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/modules/src/quest-core.ts",
       "writers": []
     },
     {
@@ -31433,6 +31582,18 @@
     {
       "readers": [
         {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/modules/src/status-core.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "dogfood/roadmap/swarm-1787959674-cd7a.1.json",
           "call": "literal",
           "confidence": "text"
@@ -31441,6 +31602,12 @@
           "by": "dogfood/roadmap/swarm-1787959674-cd7a.json",
           "call": "literal",
           "confidence": "text"
+        },
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "packages/modules/src/status-effects.ts",
@@ -31457,6 +31624,12 @@
           "by": "dogfood/roadmap/swarm-1787959674-cd7a.json",
           "call": "literal",
           "confidence": "text"
+        },
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "packages/modules/src/world-tick.ts",
@@ -31678,6 +31851,18 @@
     {
       "readers": [
         {
+          "by": "scripts/gates.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/presentation/package.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "package-lock.json",
           "call": "literal",
           "confidence": "text"
@@ -31765,6 +31950,18 @@
         }
       ],
       "target": "packages/sidecar/gdscript/sidecar_client.gd",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "scripts/gates.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/sidecar/package.json",
       "writers": []
     },
     {
@@ -31906,6 +32103,18 @@
     {
       "readers": [
         {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/starter-bounty-hunter/src/pursuit-core.ts",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "package-lock.json",
           "call": "literal",
           "confidence": "text"
@@ -32033,6 +32242,18 @@
         }
       ],
       "target": "packages/starter-merchant/src",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/starter-merchant/src/contract-core.ts",
       "writers": []
     },
     {
@@ -32194,6 +32415,18 @@
     {
       "readers": [
         {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "site/src/content/docs/handbook/appendix-a-event-vocabulary.md",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
           "by": "docs/handbook/58-create-your-own-starter.md",
           "call": "cp",
           "confidence": "text"
@@ -32314,6 +32547,12 @@
         {
           "by": ".github/workflows/release.yml",
           "confidence": "config"
+        },
+        {
+          "by": "packages/core/src/event-vocabulary.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "tsconfig.tests.json",
@@ -32334,7 +32573,7 @@
   "overlaps": [],
   "submodules": [],
   "symlinks": [],
-  "testFiles": 392,
+  "testFiles": 393,
   "unassigned": [],
   "workspaces": [
     "packages/asset-registry",

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -9,6 +9,12 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 const SOURCE_ROOTS = ['packages', 'templates'] as const;
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage']);
+
+const CONSUMED_HOOK_EVENTS = [
+  'combat.defeat.survived',
+  'rest.completed',
+  'combat.injury.healed',
+] as const;
 
 interface EventSinkSpec {
   readonly fnName: string;
@@ -70,11 +76,37 @@ function collectNonTestTsFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+function buildWorkspaceSourcePaths(): Record<string, string[]> {
+  const paths: Record<string, string[]> = {};
+  const packagesDir = resolve(repoRoot, 'packages');
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const pkgJsonPath = join(packagesDir, entry.name, 'package.json');
+    if (!existsSync(pkgJsonPath)) continue;
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as { name?: string };
+    if (typeof pkgJson.name !== 'string' || pkgJson.name.length === 0) continue;
+    const srcIndex = `packages/${entry.name}/src/index.ts`;
+    if (existsSync(resolve(repoRoot, srcIndex))) {
+      paths[pkgJson.name] = [srcIndex];
+    }
+    paths[`${pkgJson.name}/*`] = [`packages/${entry.name}/src/*`, `packages/${entry.name}/*`];
+  }
+  return paths;
+}
+
 function loadCompilerOptions(): ts.CompilerOptions {
   const tsconfigPath = resolve(repoRoot, 'tsconfig.tests.json');
   const raw = ts.readConfigFile(tsconfigPath, (path) => readFileSync(path, 'utf8'));
   const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, repoRoot);
-  return { ...parsed.options, noEmit: true };
+  return {
+    ...parsed.options,
+    noEmit: true,
+    baseUrl: repoRoot.replace(/\\/g, '/'),
+    paths: {
+      ...(parsed.options.paths ?? {}),
+      ...buildWorkspaceSourcePaths(),
+    },
+  };
 }
 
 function createWorkspaceProgram(): { program: ts.Program; scannedFiles: string[] } {
@@ -226,26 +258,177 @@ function getFunctionName(fn: FunctionLike, sf: ts.SourceFile): string | null {
   return null;
 }
 
-function collectSinkMap(registeredSinks: readonly EventSinkSpec[]): Map<string, EventSinkSpec[]> {
-  const map = new Map<string, EventSinkSpec[]>();
-  for (const spec of registeredSinks) {
-    const arr = map.get(spec.fnName) ?? [];
-    arr.push(spec);
-    map.set(spec.fnName, arr);
+function unwrapExpression(expr: ts.Expression): ts.Expression {
+  let cur = expr;
+  while (
+    ts.isParenthesizedExpression(cur) ||
+    ts.isNonNullExpression(cur) ||
+    ts.isAsExpression(cur) ||
+    ts.isTypeAssertionExpression(cur)
+  ) {
+    cur = cur.expression;
   }
-  return map;
+  return cur;
 }
 
-function matchSinkForCall(
-  calleeName: string,
-  relPath: string,
-  sinkMap: Map<string, EventSinkSpec[]>,
+function resolveAliasedSymbol(checker: ts.TypeChecker, sym: ts.Symbol | undefined): ts.Symbol | undefined {
+  let cur = sym;
+  const seen = new Set<ts.Symbol>();
+  while (cur && (cur.flags & ts.SymbolFlags.Alias) !== 0 && !seen.has(cur)) {
+    seen.add(cur);
+    cur = checker.getAliasedSymbol(cur);
+  }
+  return cur;
+}
+
+function getDeclarationName(decl: ts.Declaration): string | null {
+  const sf = decl.getSourceFile();
+  if (
+    (ts.isFunctionDeclaration(decl) ||
+      ts.isMethodDeclaration(decl) ||
+      ts.isPropertyDeclaration(decl) ||
+      ts.isFunctionExpression(decl)) &&
+    decl.name
+  ) {
+    return decl.name.getText(sf);
+  }
+  if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) {
+    return decl.name.text;
+  }
+  return null;
+}
+
+function matchDeclarationToSink(
+  decl: ts.Declaration | undefined,
+  registeredSinks: readonly EventSinkSpec[],
 ): EventSinkSpec | undefined {
-  const candidates = sinkMap.get(calleeName);
-  if (!candidates) return undefined;
-  const fileMatch = candidates.find((s) => s.declFile === relPath);
-  if (fileMatch) return fileMatch;
-  return candidates.find((s) => s.scope === 'global');
+  if (!decl) return undefined;
+  const declFile = normalizeRelPath(decl.getSourceFile().fileName);
+  const declName = getDeclarationName(decl);
+  if (!declName) return undefined;
+  return registeredSinks.find((s) => s.declFile === declFile && s.fnName === declName);
+}
+
+interface ResolvedSinkTarget {
+  sink: EventSinkSpec;
+  preboundArgs: readonly ts.Expression[];
+}
+
+function getAccessName(checker: ts.TypeChecker, expr: ts.Expression): string | null {
+  const unwrapped = unwrapExpression(expr);
+  if (ts.isPropertyAccessExpression(unwrapped)) {
+    return unwrapped.name.text;
+  }
+  if (ts.isElementAccessExpression(unwrapped)) {
+    const argType = checker.getTypeAtLocation(unwrapped.argumentExpression);
+    if (argType.isStringLiteral()) return argType.value;
+    if (
+      ts.isStringLiteral(unwrapped.argumentExpression) ||
+      ts.isNoSubstitutionTemplateLiteral(unwrapped.argumentExpression)
+    ) {
+      return unwrapped.argumentExpression.text;
+    }
+  }
+  return null;
+}
+
+function getMemberSymbol(checker: ts.TypeChecker, expr: ts.Expression): ts.Symbol | undefined {
+  const unwrapped = unwrapExpression(expr);
+  if (ts.isIdentifier(unwrapped) || ts.isPropertyAccessExpression(unwrapped)) {
+    const direct = resolveAliasedSymbol(checker, checker.getSymbolAtLocation(unwrapped));
+    if (direct) return direct;
+  }
+  if (ts.isElementAccessExpression(unwrapped)) {
+    const propName = getAccessName(checker, unwrapped);
+    if (propName !== null) {
+      const receiverType = checker.getTypeAtLocation(unwrapped.expression);
+      const propSym = receiverType.getProperty(propName);
+      if (propSym) return resolveAliasedSymbol(checker, propSym);
+    }
+  }
+  return undefined;
+}
+
+function resolveSinkCallable(
+  checker: ts.TypeChecker,
+  expr: ts.Expression,
+  registeredSinks: readonly EventSinkSpec[],
+  visitedDecls: Set<ts.Node> = new Set(),
+): ResolvedSinkTarget | undefined {
+  const unwrapped = unwrapExpression(expr);
+
+  // `.bind(thisArg, ...preboundArgs)` or `.call(...)` wrapper around a sink expression
+  if (ts.isCallExpression(unwrapped)) {
+    const methodName = getAccessName(checker, unwrapped.expression);
+    if (
+      (methodName === 'bind' || methodName === 'call') &&
+      (ts.isPropertyAccessExpression(unwrapExpression(unwrapped.expression)) ||
+        ts.isElementAccessExpression(unwrapExpression(unwrapped.expression)))
+    ) {
+      const access = unwrapExpression(unwrapped.expression) as
+        | ts.PropertyAccessExpression
+        | ts.ElementAccessExpression;
+      const inner = resolveSinkCallable(checker, access.expression, registeredSinks, visitedDecls);
+      if (inner) {
+        return {
+          sink: inner.sink,
+          preboundArgs: [...inner.preboundArgs, ...unwrapped.arguments.slice(1)],
+        };
+      }
+    }
+  }
+
+  const sym = getMemberSymbol(checker, unwrapped);
+  if (sym?.declarations) {
+    for (const decl of sym.declarations) {
+      const matched = matchDeclarationToSink(decl, registeredSinks);
+      if (matched) {
+        return { sink: matched, preboundArgs: [] };
+      }
+      if (ts.isVariableDeclaration(decl) && decl.initializer && !visitedDecls.has(decl)) {
+        visitedDecls.add(decl);
+        const target = resolveSinkCallable(checker, decl.initializer, registeredSinks, visitedDecls);
+        if (target) return target;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function resolveSinkCall(
+  checker: ts.TypeChecker,
+  call: ts.CallExpression,
+  registeredSinks: readonly EventSinkSpec[],
+): { sink: EventSinkSpec; typeArg: ts.Expression | undefined } | undefined {
+  // Handle immediate `.call(thisArg, ...args)` invocation directly as a call
+  const calleeUnwrapped = unwrapExpression(call.expression);
+  if (
+    getAccessName(checker, calleeUnwrapped) === 'call' &&
+    (ts.isPropertyAccessExpression(calleeUnwrapped) || ts.isElementAccessExpression(calleeUnwrapped))
+  ) {
+    const target = resolveSinkCallable(checker, calleeUnwrapped.expression, registeredSinks);
+    if (target) {
+      const combinedArgs = [...target.preboundArgs, ...call.arguments.slice(1)];
+      return { sink: target.sink, typeArg: combinedArgs[target.sink.typeArgIndex] };
+    }
+  }
+
+  const target = resolveSinkCallable(checker, call.expression, registeredSinks);
+  if (target) {
+    const combinedArgs = [...target.preboundArgs, ...call.arguments];
+    return { sink: target.sink, typeArg: combinedArgs[target.sink.typeArgIndex] };
+  }
+
+  // Fallback to resolved call signature declaration (skip `.bind`/`.call` which return Function/any)
+  const sig = checker.getResolvedSignature(call);
+  const sigDecl = sig?.getDeclaration();
+  const matched = matchDeclarationToSink(sigDecl, registeredSinks);
+  if (matched) {
+    return { sink: matched, typeArg: call.arguments[matched.typeArgIndex] };
+  }
+
+  return undefined;
 }
 
 function formatEmitterSource(relPath: string): string {
@@ -288,20 +471,25 @@ function isEventObjectLiteral(
   props: Map<string, ts.Expression>,
 ): boolean {
   if (!props.has('type')) return false;
-  if (!props.has('payload') && !props.has('executeAtTick')) return false;
   const ctx = checker.getContextualType(obj);
   if (isExcludedContextType(checker, ctx)) return false;
-  if (ctx) {
-    const ctxStr = checker.typeToString(ctx);
-    if (ctxStr.includes('ResolvedEvent') || ctxStr.includes('PendingEffect')) return true;
+  if (isResolvedOrPendingReturnType(checker, ctx)) return true;
+  for (const prop of obj.properties) {
+    if (ts.isSpreadAssignment(prop)) {
+      const spreadType = checker.getTypeAtLocation(prop.expression);
+      if (!isExcludedContextType(checker, spreadType) && isResolvedOrPendingReturnType(checker, spreadType)) {
+        return true;
+      }
+    }
   }
+  if (!props.has('payload') && !props.has('executeAtTick')) return false;
   return props.has('id') && (props.has('tick') || props.has('executeAtTick'));
 }
 
 function enclosingFunctionTypeParamNames(
   node: ts.Node,
   relPath: string,
-  sinkMap: Map<string, EventSinkSpec[]>,
+  registeredSinks: readonly EventSinkSpec[],
 ): Set<string> {
   const names = new Set<string>();
   let cur: ts.Node | undefined = node.parent;
@@ -315,7 +503,7 @@ function enclosingFunctionTypeParamNames(
       const sf = cur.getSourceFile();
       const fnName = getFunctionName(cur, sf);
       if (fnName) {
-        const spec = matchSinkForCall(fnName, relPath, sinkMap);
+        const spec = registeredSinks.find((s) => s.declFile === relPath && s.fnName === fnName);
         if (spec) {
           const p = cur.parameters[spec.typeArgIndex];
           if (p && ts.isIdentifier(p.name)) {
@@ -330,13 +518,21 @@ function enclosingFunctionTypeParamNames(
   return names;
 }
 
+function referencesAnyIdentifier(node: ts.Node, names: ReadonlySet<string>): boolean {
+  if (ts.isIdentifier(node) && names.has(node.text)) return true;
+  let hit = false;
+  ts.forEachChild(node, (c) => {
+    if (referencesAnyIdentifier(c, names)) hit = true;
+  });
+  return hit;
+}
+
 function findUnregisteredEventSinks(
   program: ts.Program,
   files: readonly string[],
   registeredSinks: readonly EventSinkSpec[],
 ): string[] {
   const checker = program.getTypeChecker();
-  const sinkMap = collectSinkMap(registeredSinks);
   const violations: string[] = [];
 
   for (const filePath of files) {
@@ -364,6 +560,21 @@ function findUnregisteredEventSinks(
     }
 
     const inspectFn = (node: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        isFileExportedDeclaration(node)
+      ) {
+        const bound = resolveSinkCallable(checker, node.initializer, registeredSinks);
+        if (bound && bound.preboundArgs.length <= bound.sink.typeArgIndex) {
+          const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+          violations.push(
+            `${relPath}:${line} unregistered exported bound sink alias "${node.name.text}"`,
+          );
+        }
+      }
+
       if (
         ts.isFunctionDeclaration(node) ||
         ts.isMethodDeclaration(node) ||
@@ -402,7 +613,7 @@ function findUnregisteredEventSinks(
           if (candidateParamNames.size > 0) {
             const sig = checker.getSignatureFromDeclaration(node);
             const retType = sig ? checker.getReturnTypeOfSignature(sig) : undefined;
-            const returnsEvent = isResolvedOrPendingReturnType(checker, retType);
+            let returnsEvent = isResolvedOrPendingReturnType(checker, retType);
 
             let usesParamAsEventType = false;
             let emitsEvent = false;
@@ -421,46 +632,37 @@ function findUnregisteredEventSinks(
                 const props = getPropertyExprMap(b);
                 if (isEventObjectLiteral(checker, b, props)) {
                   const typeExpr = props.get('type')!;
-                  const refsCandidateParam = (n: ts.Node): boolean => {
-                    if (ts.isIdentifier(n) && candidateParamNames.has(n.text)) return true;
-                    let hit = false;
-                    ts.forEachChild(n, (c) => {
-                      if (refsCandidateParam(c)) hit = true;
-                    });
-                    return hit;
-                  };
-                  if (refsCandidateParam(typeExpr)) {
+                  if (referencesAnyIdentifier(typeExpr, candidateParamNames)) {
                     usesParamAsEventType = true;
+                    const unwrappedParent = b.parent;
+                    if (ts.isReturnStatement(unwrappedParent) || (ts.isArrowFunction(node) && node.body === b)) {
+                      returnsEvent = true;
+                    }
                   }
                 }
               }
 
               if (ts.isCallExpression(b)) {
-                let callee: string | null = null;
-                let isEventsEmit = false;
-                if (ts.isIdentifier(b.expression)) callee = b.expression.text;
-                else if (ts.isPropertyAccessExpression(b.expression)) {
-                  callee = b.expression.name.text;
-                  const receiver = b.expression.expression.getText(sf);
-                  if (callee === 'emit' && (receiver.endsWith('.events') || receiver === 'events')) {
-                    isEventsEmit = true;
-                  }
-                }
-
-                if (isEventsEmit && b.arguments[0] && ts.isObjectLiteralExpression(b.arguments[0])) {
-                  const props = getPropertyExprMap(b.arguments[0]);
-                  if (isEventObjectLiteral(checker, b.arguments[0], props)) {
-                    emitsEvent = true;
-                  }
-                } else if (callee) {
-                  const sink = matchSinkForCall(callee, relPath, sinkMap);
-                  if (sink) {
-                    const arg = b.arguments[sink.typeArgIndex];
-                    if (arg && ts.isIdentifier(arg) && candidateParamNames.has(arg.text)) {
-                      usesParamAsEventType = true;
+                if (ts.isPropertyAccessExpression(unwrapExpression(b.expression))) {
+                  const pa = unwrapExpression(b.expression) as ts.PropertyAccessExpression;
+                  const receiver = pa.expression.getText(sf);
+                  if (
+                    pa.name.text === 'emit' &&
+                    (receiver.endsWith('.events') || receiver === 'events') &&
+                    b.arguments[0] &&
+                    ts.isObjectLiteralExpression(b.arguments[0])
+                  ) {
+                    const props = getPropertyExprMap(b.arguments[0]);
+                    if (isEventObjectLiteral(checker, b.arguments[0], props)) {
                       emitsEvent = true;
                     }
                   }
+                }
+
+                const resolvedCall = resolveSinkCall(checker, b, registeredSinks);
+                if (resolvedCall && resolvedCall.typeArg && referencesAnyIdentifier(resolvedCall.typeArg, candidateParamNames)) {
+                  usesParamAsEventType = true;
+                  emitsEvent = true;
                 }
               }
 
@@ -509,7 +711,6 @@ function scanEmittedEventTypes(
   const registeredSinks = options.registeredSinks ?? REGISTERED_EVENT_SINKS;
   const registeredPatterns = new Set(options.registeredPatterns ?? REGISTERED_EVENT_PATTERNS);
   const patternAliases = options.patternAliases ?? {};
-  const sinkMap = collectSinkMap(registeredSinks);
 
   const emittedTypes = new Set<string>();
   const emittersByType = new Map<string, Set<string>>();
@@ -557,43 +758,29 @@ function scanEmittedEventTypes(
 
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node)) {
-        let calleeName: string | null = null;
-        let isEventsBusEmit = false;
-        if (ts.isIdentifier(node.expression)) {
-          calleeName = node.expression.text;
-        } else if (ts.isPropertyAccessExpression(node.expression)) {
-          calleeName = node.expression.name.text;
-          const recv = node.expression.expression.getText(sf);
-          if (calleeName === 'emit' && (recv === 'events' || recv.endsWith('.events'))) {
-            isEventsBusEmit = true;
-          }
-        }
-
-        if (calleeName && !isEventsBusEmit) {
-          const sink = matchSinkForCall(calleeName, relPath, sinkMap);
-          if (sink) {
-            const sinkLabel =
-              sink.fnName === 'emitEvent'
-                ? 'store.emitEvent'
-                : sink.fnName === 'makeEvent'
-                  ? `makeEvent (${sink.declFile.split('/')[1]})`
-                  : sink.fnName;
-            const arg = node.arguments[sink.typeArgIndex];
-            const forwardedParamNames = enclosingFunctionTypeParamNames(node, relPath, sinkMap);
-            if (!arg) {
-              const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-              unresolvedDynamicCalls.push(`${relPath}:${line} (${sink.fnName}): missing type arg`);
-            } else if (ts.isIdentifier(arg) && forwardedParamNames.has(arg.text)) {
-              // Internal forwarding of a registered sink's own `type` parameter
-            } else if (
-              ts.isPropertyAccessExpression(arg) &&
-              arg.name.text === 'type' &&
-              isPendingEffectType(checker, checker.getTypeAtLocation(arg.expression))
-            ) {
-              // Relay of scheduled PendingEffect instances created via scanned PendingEffect literals
-            } else {
-              resolveAndRecord(sf, relPath, sinkLabel, arg);
-            }
+        const resolved = resolveSinkCall(checker, node, registeredSinks);
+        if (resolved) {
+          const { sink, typeArg } = resolved;
+          const sinkLabel =
+            sink.fnName === 'emitEvent'
+              ? 'store.emitEvent'
+              : sink.fnName === 'makeEvent'
+                ? `makeEvent (${sink.declFile.split('/')[1]})`
+                : sink.fnName;
+          const forwardedParamNames = enclosingFunctionTypeParamNames(node, relPath, registeredSinks);
+          if (!typeArg) {
+            const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+            unresolvedDynamicCalls.push(`${relPath}:${line} (${sink.fnName}): missing type arg`);
+          } else if (ts.isIdentifier(typeArg) && forwardedParamNames.has(typeArg.text)) {
+            // Internal forwarding of a registered sink's own `type` parameter
+          } else if (
+            ts.isPropertyAccessExpression(typeArg) &&
+            typeArg.name.text === 'type' &&
+            isPendingEffectType(checker, checker.getTypeAtLocation(typeArg.expression))
+          ) {
+            // Relay of scheduled PendingEffect instances created via scanned PendingEffect literals
+          } else {
+            resolveAndRecord(sf, relPath, sinkLabel, typeArg);
           }
         }
       }
@@ -602,13 +789,15 @@ function scanEmittedEventTypes(
         const props = getPropertyExprMap(node);
         if (isEventObjectLiteral(checker, node, props)) {
           const typeExpr = props.get('type')!;
-          const forwardedParamNames = enclosingFunctionTypeParamNames(node, relPath, sinkMap);
+          const forwardedParamNames = enclosingFunctionTypeParamNames(node, relPath, registeredSinks);
           if (ts.isIdentifier(typeExpr) && forwardedParamNames.has(typeExpr.text)) {
             // Parameterized body of a registered sink function
           } else {
-            const sinkLabel = props.has('executeAtTick')
-              ? 'PendingEffect literal'
-              : 'ResolvedEvent literal';
+            const ctxType = checker.getContextualType(node) ?? checker.getTypeAtLocation(node);
+            const sinkLabel =
+              props.has('executeAtTick') || isPendingEffectType(checker, ctxType)
+                ? 'PendingEffect literal'
+                : 'ResolvedEvent literal';
             resolveAndRecord(sf, relPath, sinkLabel, typeExpr);
           }
         }
@@ -684,6 +873,14 @@ function parseAppendixTableRows(markdown: string): {
   return { dataRowCount, rows, events, unbacktickedRows };
 }
 
+function assertCleanOverlayDiagnostics(program: ts.Program, filePath: string): void {
+  const sf = program.getSourceFile(filePath);
+  expect(sf).toBeDefined();
+  const diagnostics = ts.getPreEmitDiagnostics(program, sf);
+  const formatted = diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+  expect(formatted).toEqual([]);
+}
+
 describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
   let workspaceProgram: ts.Program;
   let scannedFiles: string[];
@@ -696,6 +893,14 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     workspaceScan = scanEmittedEventTypes(workspaceProgram, scannedFiles);
   }, 60_000);
 
+  it('resolves @ai-rpg-engine/* imports directly from src without relying on built dist declarations', () => {
+    const distFiles = workspaceProgram
+      .getSourceFiles()
+      .map((sf) => sf.fileName.replace(/\\/g, '/'))
+      .filter((fileName) => fileName.startsWith(repoRoot.replace(/\\/g, '/')) && /\/packages\/[^/]+\/dist\//.test(fileName));
+    expect(distFiles).toEqual([]);
+  });
+
   it('captures every emitted event type across all sinks, ResolvedEvent/PendingEffect literals, and TypeChecker-expanded unions', () => {
     expect(scannedFiles.length).toBeGreaterThan(0);
     expect(workspaceScan.unregisteredSinks).toEqual([]);
@@ -707,7 +912,6 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     expect(ENGINE_EVENT_TYPES).toHaveLength(workspaceScan.emittedTypes.size);
     expect([...ENGINE_EVENT_TYPES].sort()).toEqual([...workspaceScan.emittedTypes].sort());
 
-    // Restored & full-sink types must all be present
     for (const required of [
       'progression.node.unlocked',
       'rumor.belief.propagated',
@@ -732,6 +936,9 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
       expect(ENGINE_EVENT_TYPES).toContain(required);
     }
 
+    for (const hookEvent of CONSUMED_HOOK_EVENTS) {
+      expect(ENGINE_EVENT_TYPES).not.toContain(hookEvent);
+    }
     expect(ENGINE_EVENT_TYPES).not.toContain('combat.contact.missed');
     expect(ENGINE_EVENT_TYPES).not.toContain('world.zone.exited');
 
@@ -739,18 +946,20 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     expect(workspaceScan.emittedTypes.has(sample)).toBe(true);
   });
 
-  it('fails the unregistered-sink guard on a fixture emitter taking a type parameter or string and returning/emitting ResolvedEvent', () => {
+  it('fails the unregistered-sink guard on direct and generic forwarders returning or emitting ResolvedEvent', () => {
     const fixtureFile = resolve(repoRoot, 'packages/core/src/__fixture_unregistered_sink__.ts').replace(/\\/g, '/');
     const fixtureCode = `
       import type { ResolvedEvent } from './types.js';
+      import type { WorldStore } from './world.js';
       export function emitCustomWidgetEvent(type: string, tick: number): ResolvedEvent {
         return { id: 'e1', type, tick, payload: {} };
       }
-      export function forwardGenericEvent<T extends string>(store: { emitEvent(type: T, p: Record<string, unknown>): ResolvedEvent }, eventType: T): ResolvedEvent {
+      export function forwardGenericEvent<T extends string>(store: WorldStore, eventType: T): ResolvedEvent {
         return store.emitEvent(eventType, {});
       }
     `;
     const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, fixtureCode);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
     const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
     expect(fxViolations).toEqual(
       expect.arrayContaining([
@@ -760,17 +969,109 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     );
   });
 
+  it('catches fixture h: spread event literal overriding type dynamically', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/cli/src/__fixture_h__.ts').replace(/\\/g, '/');
+    const code = `
+      import type { ActionIntent, ResolvedEvent } from '@ai-rpg-engine/core';
+      import { makeEvent as mk } from '@ai-rpg-engine/modules';
+      export function h(action: ActionIntent, t: string): ResolvedEvent {
+        return { ...mk(action, 'x.y', {}), type: t };
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
+    expect(fxViolations).toEqual([expect.stringContaining('h')]);
+  });
+
+  it('catches fixture { ...ev, type: "lit" }: spread event literal overriding type statically', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/core/src/__fixture_spread_lit__.ts').replace(/\\/g, '/');
+    const code = `
+      import type { ResolvedEvent } from './types.js';
+      export function spreadLit(ev: ResolvedEvent): ResolvedEvent {
+        return { ...ev, type: 'lit' };
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
+    expect(fxScan.emittedTypes).toContain('lit');
+  });
+
+  it('catches fixture f: aliased makeEvent forwarder without return type annotation', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/cli/src/__fixture_f__.ts').replace(/\\/g, '/');
+    const code = `
+      import type { ActionIntent } from '@ai-rpg-engine/core';
+      import { makeEvent as mk } from '@ai-rpg-engine/modules';
+      export function f(action: ActionIntent, t: string) {
+        return mk(action, t, {});
+      }
+      export function callMk(action: ActionIntent) {
+        return mk(action, 'aliased.lit', {});
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
+    const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
+    expect(fxViolations).toEqual([expect.stringContaining('f')]);
+    expect(fxScan.emittedTypes).toContain('aliased.lit');
+  });
+
+  it('catches store.emitEvent.bind(store) literal calls and bound parameter forwarders', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/core/src/__fixture_bind__.ts').replace(/\\/g, '/');
+    const code = `
+      import type { WorldStore } from './world.js';
+      export function emitViaBound(store: WorldStore) {
+        const emitFn = store.emitEvent.bind(store);
+        emitFn('bound.alias.lit', {});
+        return store.emitEvent.bind(store)('bound.direct.lit', {});
+      }
+      export function forwardBound(store: WorldStore, t: string) {
+        const emitFn = store.emitEvent.bind(store);
+        return emitFn(t, {});
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
+    const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
+    expect(fxViolations).toEqual([expect.stringContaining('forwardBound')]);
+    expect(fxScan.emittedTypes).toContain('bound.alias.lit');
+    expect(fxScan.emittedTypes).toContain('bound.direct.lit');
+  });
+
+  it('catches element access store["emitEvent"](...) literal calls and parameter forwarders', () => {
+    const fixtureFile = resolve(repoRoot, 'packages/core/src/__fixture_elem__.ts').replace(/\\/g, '/');
+    const code = `
+      import type { WorldStore } from './world.js';
+      export function emitViaElem(store: WorldStore) {
+        return store['emitEvent']('elem.lit', {});
+      }
+      export function forwardElem(store: WorldStore, t: string) {
+        return store['emitEvent'](t, {});
+      }
+    `;
+    const fxProgram = createOverlayProgram(workspaceProgram, fixtureFile, code);
+    assertCleanOverlayDiagnostics(fxProgram, fixtureFile);
+    const fxViolations = findUnregisteredEventSinks(fxProgram, [fixtureFile], REGISTERED_EVENT_SINKS);
+    const fxScan = scanEmittedEventTypes(fxProgram, [fixtureFile]);
+    expect(fxViolations).toEqual([expect.stringContaining('forwardElem')]);
+    expect(fxScan.emittedTypes).toContain('elem.lit');
+  });
+
   it('expands new union members automatically via TypeChecker and fails on unresolved non-finite dynamic expressions unless registered as a pattern', () => {
-    const unionFixture = resolve(repoRoot, 'packages/core/src/__fixture_union_event__.ts').replace(/\\/g, '/');
+    const unionFixture = resolve(repoRoot, 'packages/cli/src/__fixture_union_event__.ts').replace(/\\/g, '/');
     const unionCode = `
-      import type { ActionIntent, ResolvedEvent } from './types.js';
+      import type { ActionIntent } from '@ai-rpg-engine/core';
+      import { makeEvent } from '@ai-rpg-engine/modules';
       type ExtendedResolution = 'completed' | 'abandoned' | 'betrayed' | 'forfeited';
-      declare function makeEvent(action: ActionIntent, type: string, payload: Record<string, unknown>): ResolvedEvent;
-      export function resolveCustom(action: ActionIntent, res: ExtendedResolution): ResolvedEvent {
+      export function resolveCustom(action: ActionIntent, res: ExtendedResolution) {
         return makeEvent(action, \`opportunity.\${res}\`, {});
       }
     `;
     const unionProgram = createOverlayProgram(workspaceProgram, unionFixture, unionCode);
+    assertCleanOverlayDiagnostics(unionProgram, unionFixture);
     const unionScan = scanEmittedEventTypes(unionProgram, [unionFixture]);
     expect(unionScan.unresolvedDynamicCalls).toEqual([]);
     expect([...unionScan.emittedTypes].sort()).toEqual([
@@ -781,15 +1082,16 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     ]);
     expect(ENGINE_EVENT_TYPES).not.toContain('opportunity.forfeited');
 
-    const dynFixture = resolve(repoRoot, 'packages/core/src/__fixture_dynamic_event__.ts').replace(/\\/g, '/');
+    const dynFixture = resolve(repoRoot, 'packages/cli/src/__fixture_dynamic_event__.ts').replace(/\\/g, '/');
     const dynCode = `
-      import type { ActionIntent, ResolvedEvent } from './types.js';
-      declare function makeEvent(action: ActionIntent, type: string, payload: Record<string, unknown>): ResolvedEvent;
-      export function tickCustom(action: ActionIntent, effect: string): ResolvedEvent {
+      import type { ActionIntent } from '@ai-rpg-engine/core';
+      import { makeEvent } from '@ai-rpg-engine/modules';
+      export function tickCustom(action: ActionIntent, effect: string) {
         return makeEvent(action, \`status.periodic.\${effect}\`, {});
       }
     `;
     const dynProgram = createOverlayProgram(workspaceProgram, dynFixture, dynCode);
+    assertCleanOverlayDiagnostics(dynProgram, dynFixture);
     const failScan = scanEmittedEventTypes(dynProgram, [dynFixture]);
     expect(failScan.unresolvedDynamicCalls).toEqual([
       expect.stringContaining('status.periodic.<effect>'),
@@ -802,7 +1104,7 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     expect([...okScan.emittedTypes]).toEqual(['status.periodic.<effect>']);
   });
 
-  it('matches all data rows and full Source attribution in docs/handbook/appendix-a-event-vocabulary.md', () => {
+  it('matches all data rows, full Source attribution, and consumed hook notes in docs/handbook/appendix-a-event-vocabulary.md', () => {
     const raw = readFileSync(
       resolve(repoRoot, 'docs/handbook/appendix-a-event-vocabulary.md'),
       'utf8',
@@ -827,18 +1129,22 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     expect(resourceChangedRow?.source).toContain('hazard-interpreter');
     expect(resourceChangedRow?.source).toContain('status-effects');
     expect(resourceChangedRow?.source).toContain('starter-fantasy (content)');
+
+    for (const hookEvent of CONSUMED_HOOK_EVENTS) {
+      expect(parsed.events).not.toContain(hookEvent);
+      expect(raw).toContain(`\`${hookEvent}\``);
+    }
   });
 
-  it('keeps the Starlight handbook mirror in exact parity with ENGINE_EVENT_TYPES, row count, and Source column', () => {
+  it('keeps the Starlight handbook mirror in exact parity with ENGINE_EVENT_TYPES, row count, Source column, and consumed hook notes', () => {
     const canonical = parseAppendixTableRows(
       readFileSync(resolve(repoRoot, 'docs/handbook/appendix-a-event-vocabulary.md'), 'utf8'),
     );
-    const mirror = parseAppendixTableRows(
-      readFileSync(
-        resolve(repoRoot, 'site/src/content/docs/handbook/appendix-a-event-vocabulary.md'),
-        'utf8',
-      ),
+    const mirrorRaw = readFileSync(
+      resolve(repoRoot, 'site/src/content/docs/handbook/appendix-a-event-vocabulary.md'),
+      'utf8',
     );
+    const mirror = parseAppendixTableRows(mirrorRaw);
 
     expect(mirror.dataRowCount).toBeGreaterThan(0);
     expect(mirror.unbacktickedRows).toEqual([]);
@@ -849,6 +1155,11 @@ describe('ENGINE_EVENT_TYPES full-sink vocabulary contract', () => {
     expect(mirror.events).toContain('progression.node.unlocked');
     expect(mirror.events).toContain('rumor.belief.propagated');
     expect(mirror.events).toContain('audio.cue.requested');
+
+    for (const hookEvent of CONSUMED_HOOK_EVENTS) {
+      expect(mirror.events).not.toContain(hookEvent);
+      expect(mirrorRaw).toContain(`\`${hookEvent}\``);
+    }
   });
 
   it('counts and flags table data rows that omit a backticked first cell', () => {

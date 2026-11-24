@@ -208,31 +208,66 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 0,
-      "changed": 33,
+      "added": 2,
+      "changed": 16,
       "moved": 0,
-      "parts": 10,
+      "parts": 9,
       "removed": 0
     },
     "items": [
       {
-        "kind": "landing",
-        "sentence": "packages/cli/src/__fixtures__/c1-forge-manifest.json is now also read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.",
+        "kind": "door",
+        "sentence": "CI runs 1 more file than before.",
         "subjects": [
-          "packages/cli/src/__fixtures__/c1-forge-manifest.json",
-          "packages/cli/src/c4-content-intake.test.ts",
-          "packages/cli/src/validate.test.ts"
+          ".github/workflows/ci.yml"
         ]
       },
       {
+        "kind": "door",
+        "sentence": "Release runs 1 more file than before.",
+        "subjects": [
+          ".github/workflows/release.yml"
+        ]
+      },
+      {
+        "kind": "landing",
+        "sentence": "docs/handbook/appendix-a-event-vocabulary.md is now read by packages/core/src/event-vocabulary.test.ts.",
+        "subjects": [
+          "docs/handbook/appendix-a-event-vocabulary.md",
+          "packages/core/src/event-vocabulary.test.ts"
+        ]
+      },
+      {
+        "kind": "landing",
+        "sentence": "package.json is now also read by .github/workflows/release.yml and scripts/gates.test.ts.",
+        "subjects": [
+          "package.json",
+          ".github/workflows/release.yml",
+          "scripts/gates.test.ts"
+        ]
+      },
+      {
+        "kind": "landing",
+        "sentence": "packages/ is now also read by packages/core/src/event-vocabulary.test.ts.",
+        "subjects": [
+          "packages/",
+          "packages/core/src/event-vocabulary.test.ts"
+        ]
+      },
+      {
+        "kind": "landing",
+        "sentence": "And 18 more new writers and readers of places.",
+        "subjects": []
+      },
+      {
         "kind": "counts",
-        "sentence": "33 files changed content, across 10 parts.",
+        "sentence": "2 files added and 16 changed content, across 9 parts.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1",
-      "generatedAt": "2026-11-24T11:46:59.864Z"
+      "commit": "c44ca4db94a580b633aa80d9121fec2fce5acbab",
+      "generatedAt": "2026-11-24T12:35:45.809Z"
     },
     "unchanged": false
   },
@@ -298,29 +333,29 @@
       "shared": 10
     },
     {
-      "a": "packages/ollama/src/cli-run.test.ts",
-      "b": "packages/ollama/src/index.ts",
-      "either": 17,
+      "a": "packages/sidecar/src/protocol.ts",
+      "b": "packages/sidecar/src/server.ts",
+      "either": 18,
       "partLabels": [
-        "ollama",
-        "ollama"
+        "sidecar",
+        "sidecar"
       ],
       "parts": [
-        "ollama",
-        "ollama"
+        "sidecar",
+        "sidecar"
       ],
       "relation": "inside",
-      "shared": 10
+      "shared": 11
     }
   ],
   "changesTogetherNote": [
     "12 files changed together with their own tests, as expected.",
-    "Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
+    "Window: 180 days; a pair counts from 10 shared commits, since 52 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
   ],
   "changesTogetherWithTests": 12,
-  "commit": "c44ca4db94a580b633aa80d9121fec2fce5acbab",
+  "commit": "c678bc7ee4d869df08e91d8e3c2f9e669b37f437",
   "defaultBranch": "main",
-  "derived": "40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
+  "derived": "40 parts, mostly TypeScript (801 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
     {
       "builds": [
@@ -390,7 +425,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 32
+          "files": 34
         },
         {
           "boundary": "docs",
@@ -689,8 +724,8 @@
         "scripts/gates.test.ts",
         "templates/starter/src/starter.test.ts"
       ],
-      "runsCount": 394,
-      "runsMore": 391,
+      "runsCount": 395,
+      "runsMore": 392,
       "sends": [
         "uploads coverage to Codecov"
       ],
@@ -769,7 +804,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 32
+          "files": 34
         },
         {
           "boundary": "docs",
@@ -1068,8 +1103,8 @@
         "scripts/gates.test.ts",
         "templates/starter/src/starter.test.ts"
       ],
-      "runsCount": 393,
-      "runsMore": 390,
+      "runsCount": 394,
+      "runsMore": 391,
       "sends": [
         "publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false)"
       ],
@@ -1167,7 +1202,7 @@
         {
           "boundary": "core",
           "depth": 1,
-          "files": 15
+          "files": 16
         },
         {
           "boundary": "equipment",
@@ -1323,7 +1358,7 @@
         {
           "boundary": "core",
           "depth": 4,
-          "files": 15
+          "files": 16
         },
         {
           "boundary": "character-profile",
@@ -1567,7 +1602,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-11-24T12:35:45.809Z",
+  "generatedAt": "2026-11-24T13:33:16.359Z",
   "limits": [
     "5 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://framing.gd`; `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; and 2 more.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
@@ -1576,9 +1611,9 @@
     "16 writes and 13 reads go to the directory the command is run in or a path their caller passes, not to this repository.",
     "12 writes and 9 reads go to the directory the command is run in, not to this repository.",
     "6 writes and 3 reads go to a temporary directory, not to this repository.",
-    "2 commands are built at run time and not followed, 1 of them in tests.",
-    "CI runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435.",
-    "Release runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434."
+    "3 commands are built at run time and not followed, 2 of them in tests.",
+    "CI runs or checks 436 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 436.",
+    "Release runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435."
   ],
   "mainDoor": ".github/workflows/ci.yml",
   "partLabels": {
@@ -1834,7 +1869,7 @@
   ],
   "summary": null,
   "summaryFrom": null,
-  "testFiles": 392,
+  "testFiles": 393,
   "testedBy": {
     "asset-registry": 6,
     "audio-director": 3,
@@ -1843,7 +1878,7 @@
     "character-profile": 12,
     "cli": 44,
     "content-schema": 190,
-    "core": 281,
+    "core": 282,
     "equipment": 159,
     "image-gen": 6,
     "ledger-adapter": 17,
