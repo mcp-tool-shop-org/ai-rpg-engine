@@ -375,4 +375,20 @@ describe('runValidate', () => {
     expect(runValidate(['--help'], { log: helpOut.log, error: () => {} })).toBe(0);
     expect(helpOut.text()).toContain('--unresolved-ai-profile fail|warn');
   });
+
+  it('exits 0 on the World Forge companion-roles fixture (passive + follower) under default fail mode', () => {
+    const packPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '__fixtures__/forge-companion-roles-pack.json',
+    );
+    const manPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '__fixtures__/forge-companion-roles-manifest.json',
+    );
+    const out = capture();
+    const errOut = capture();
+    const code = runValidate([packPath, '--manifest', manPath], { log: out.log, error: errOut.log });
+    expect(code, errOut.text()).toBe(0);
+    expect(out.text()).toContain('Content valid');
+  });
 });

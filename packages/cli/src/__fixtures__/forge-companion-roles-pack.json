@@ -1,0 +1,221 @@
+{
+  "schemaVersion": "1.0.0",
+  "entities": [
+    {
+      "id": "sanctuary-pilgrim",
+      "type": "npc",
+      "name": "Suspicious Pilgrim",
+      "tags": [
+        "pilgrim",
+        "suspicious"
+      ],
+      "aiProfile": "passive",
+      "baseStats": {
+        "vigor": 3,
+        "instinct": 3,
+        "will": 3
+      },
+      "baseResources": {
+        "hp": 12
+      }
+    },
+    {
+      "id": "sanctuary-merchant",
+      "type": "npc",
+      "name": "Corin the Factor",
+      "tags": [
+        "merchant",
+        "trader"
+      ],
+      "aiProfile": "passive",
+      "baseStats": {
+        "vigor": 3,
+        "instinct": 4,
+        "will": 4
+      },
+      "baseResources": {
+        "hp": 14
+      }
+    },
+    {
+      "id": "sanctuary-elder",
+      "type": "npc",
+      "name": "Elder Sable",
+      "tags": [
+        "quest-giver"
+      ],
+      "aiProfile": "passive",
+      "baseStats": {
+        "vigor": 2,
+        "instinct": 4,
+        "will": 5
+      },
+      "baseResources": {
+        "hp": 10
+      }
+    },
+    {
+      "id": "sanctuary-aldric",
+      "type": "npc",
+      "name": "Brother Aldric",
+      "tags": [
+        "recruitable",
+        "companion",
+        "clergy",
+        "ally"
+      ],
+      "aiProfile": "follower",
+      "baseStats": {
+        "vigor": 3,
+        "instinct": 2,
+        "will": 4
+      },
+      "baseResources": {
+        "hp": 12,
+        "stamina": 6
+      }
+    },
+    {
+      "id": "sanctuary-maren",
+      "type": "npc",
+      "name": "Sister Maren",
+      "tags": [
+        "recruitable",
+        "companion",
+        "clergy",
+        "healer"
+      ],
+      "aiProfile": "follower",
+      "baseStats": {
+        "vigor": 2,
+        "instinct": 3,
+        "will": 5
+      },
+      "baseResources": {
+        "hp": 10,
+        "stamina": 6
+      }
+    },
+    {
+      "id": "sanctuary-cutthroat",
+      "type": "enemy",
+      "name": "Crypt Stalker",
+      "tags": [
+        "hostile"
+      ],
+      "aiProfile": "aggressive",
+      "baseStats": {
+        "vigor": 4,
+        "instinct": 4,
+        "will": 3
+      },
+      "baseResources": {
+        "hp": 16
+      }
+    },
+    {
+      "id": "sanctuary-warden",
+      "type": "enemy",
+      "name": "Ash Ghoul",
+      "tags": [
+        "hostile",
+        "boss",
+        "elite",
+        "undead"
+      ],
+      "aiProfile": "territorial",
+      "baseStats": {
+        "vigor": 6,
+        "instinct": 4,
+        "will": 3
+      },
+      "baseResources": {
+        "hp": 25,
+        "stamina": 10
+      }
+    }
+  ],
+  "placements": [
+    {
+      "entityId": "sanctuary-pilgrim",
+      "zoneId": "sanctuary-entrance"
+    },
+    {
+      "entityId": "sanctuary-merchant",
+      "zoneId": "sanctuary-entrance"
+    },
+    {
+      "entityId": "sanctuary-elder",
+      "zoneId": "sanctuary-nave"
+    },
+    {
+      "entityId": "sanctuary-aldric",
+      "zoneId": "sanctuary-nave"
+    },
+    {
+      "entityId": "sanctuary-maren",
+      "zoneId": "sanctuary-vestry"
+    },
+    {
+      "entityId": "sanctuary-cutthroat",
+      "zoneId": "sanctuary-crypt"
+    },
+    {
+      "entityId": "sanctuary-warden",
+      "zoneId": "sanctuary-crypt"
+    }
+  ],
+  "zones": [
+    {
+      "id": "sanctuary-entrance",
+      "name": "Sanctuary Entrance",
+      "tags": [
+        "safe"
+      ],
+      "neighbors": [
+        "sanctuary-nave"
+      ],
+      "light": 7,
+      "noise": 3
+    },
+    {
+      "id": "sanctuary-nave",
+      "name": "Sanctuary Nave",
+      "tags": [
+        "interior"
+      ],
+      "neighbors": [
+        "sanctuary-entrance",
+        "sanctuary-vestry"
+      ],
+      "light": 5,
+      "noise": 2
+    },
+    {
+      "id": "sanctuary-vestry",
+      "name": "Sanctuary Vestry",
+      "tags": [
+        "interior"
+      ],
+      "neighbors": [
+        "sanctuary-nave",
+        "sanctuary-crypt"
+      ],
+      "light": 4,
+      "noise": 2
+    },
+    {
+      "id": "sanctuary-crypt",
+      "name": "Sanctuary Crypt",
+      "tags": [
+        "crypt",
+        "dark"
+      ],
+      "neighbors": [
+        "sanctuary-vestry"
+      ],
+      "light": 2,
+      "noise": 1
+    }
+  ]
+}

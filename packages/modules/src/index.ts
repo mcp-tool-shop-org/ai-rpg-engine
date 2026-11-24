@@ -31,6 +31,7 @@ export {
   territorialProfile,
   calculatingProfile,
   passiveProfile,
+  followerProfile,
   BUILTIN_INTENT_PROFILES,
   COGNITION_PROFILES_FORMULA,
   getRegisteredIntentProfiles,

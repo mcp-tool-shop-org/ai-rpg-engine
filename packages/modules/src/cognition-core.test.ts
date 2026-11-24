@@ -19,6 +19,7 @@ import {
   territorialProfile,
   calculatingProfile,
   passiveProfile,
+  followerProfile,
   BUILTIN_INTENT_PROFILES,
   resolveIntentProfile,
   getRegisteredIntentProfiles,
@@ -992,10 +993,178 @@ describe('Passive profile', () => {
   });
 });
 
+describe('Follower profile', () => {
+  const linearZones = [
+    { id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] },
+    { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a', 'c'] },
+    { id: 'c', roomId: 'test', name: 'C', tags: [] as string[], neighbors: ['b'] },
+    { id: 'island', roomId: 'test', name: 'Island', tags: [] as string[], neighbors: [] as string[] },
+  ];
+
+  it('is registered in BUILTIN_INTENT_PROFILES and getRegisteredIntentProfiles for an engine with cognition-core', () => {
+    expect(BUILTIN_INTENT_PROFILES.map((p) => p.id)).toContain('follower');
+    expect(resolveIntentProfile('follower')?.id).toBe('follower');
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a')],
+      zones: zonesWithExit,
+    });
+    const registeredIds = getRegisteredIntentProfiles(engine).map((p) => p.id);
+    expect(registeredIds).toContain('follower');
+  });
+
+  it('proposes no hostile intent when a visible hostile is in view', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, createCombatCore({ disengageChance: () => 100 }), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeAIEntity('raider', 'Raider', 'a'),
+        makeAIEntity('aldric', 'Brother Aldric', 'a', {
+          type: 'npc',
+          tags: ['recruitable', 'companion'],
+          ai: { profileId: 'follower', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'aldric');
+    setBelief(cog, 'raider', 'hostile', true, 1.0, 'observed', 0);
+    setBelief(cog, 'player', 'hostile', true, 1.0, 'observed', 0);
+    cog.suspicion = 80;
+
+    const offensiveVerbs = new Set(['attack', 'strike', 'shoot', 'cast']);
+    for (const morale of [80, 70, 50, 35, 25]) {
+      cog.morale = morale;
+      const sel = selectActionForEntity(engine.world, 'aldric');
+      expect(sel).not.toBeNull();
+      expect(sel!.requestedProfileId).toBe('follower');
+      expect(sel!.profileId).toBe('follower');
+      expect(sel!.usedFallback).toBe(false);
+      expect(sel!.verb).toBe('inspect');
+      expect(sel!.options.some((o) => offensiveVerbs.has(o.verb))).toBe(false);
+    }
+
+    // Even when a hostile is in view and the player is in another zone, follower moves rather than attacking.
+    engine.store.state.entities.player.zoneId = 'b';
+    engine.store.state.locationId = 'b';
+    const followSel = selectActionForEntity(engine.world, 'aldric');
+    expect(followSel).not.toBeNull();
+    expect(followSel!.profileId).toBe('follower');
+    expect(followSel!.usedFallback).toBe(false);
+    expect(followSel!.verb).toBe('move');
+    expect(followSel!.targetIds).toEqual(['b']);
+    expect(followSel!.options.some((o) => offensiveVerbs.has(o.verb))).toBe(false);
+  });
+
+  it('moves one step along a neighbor path toward the player zone when apart, and idles in the player zone or when unreachable', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, createCognitionCore()],
+      entities: [
+        makePlayer('c'),
+        makeAIEntity('aldric', 'Brother Aldric', 'a', {
+          type: 'npc',
+          tags: ['recruitable', 'companion'],
+          ai: { profileId: 'follower', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: linearZones,
+    });
+
+    const step1 = selectActionForEntity(engine.world, 'aldric');
+    expect(step1).not.toBeNull();
+    expect(step1!.profileId).toBe('follower');
+    expect(step1!.usedFallback).toBe(false);
+    expect(step1!.verb).toBe('move');
+    expect(step1!.targetIds).toEqual(['b']);
+
+    engine.submitActionAs('aldric', step1!.verb, { targetIds: step1!.targetIds });
+    expect(engine.world.entities.aldric.zoneId).toBe('b');
+
+    const step2 = selectActionForEntity(engine.world, 'aldric');
+    expect(step2).not.toBeNull();
+    expect(step2!.profileId).toBe('follower');
+    expect(step2!.verb).toBe('move');
+    expect(step2!.targetIds).toEqual(['c']);
+
+    engine.submitActionAs('aldric', step2!.verb, { targetIds: step2!.targetIds });
+    expect(engine.world.entities.aldric.zoneId).toBe('c');
+
+    const inSameZone = selectActionForEntity(engine.world, 'aldric');
+    expect(inSameZone).not.toBeNull();
+    expect(inSameZone!.profileId).toBe('follower');
+    expect(inSameZone!.verb).toBe('inspect');
+
+    // Unreachable zone or missing destination zone falls back to idle/inspect rather than moving illegally.
+    engine.store.state.entities.aldric.zoneId = 'island';
+    const isolated = selectActionForEntity(engine.world, 'aldric');
+    expect(isolated).not.toBeNull();
+    expect(isolated!.profileId).toBe('follower');
+    expect(isolated!.verb).toBe('inspect');
+
+    engine.store.state.entities.aldric.zoneId = 'a';
+    engine.store.state.entities.player.zoneId = 'nowhere';
+    const missingTarget = selectActionForEntity(engine.world, 'aldric');
+    expect(missingTarget).not.toBeNull();
+    expect(missingTarget!.verb).toBe('inspect');
+  });
+
+  it('after morale collapse, follower takes FLEEING via cognition-core and disengages (and yields no options when cornered)', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, createCombatCore({ disengageChance: () => 100 }), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeAIEntity('aldric', 'Brother Aldric', 'a', {
+          type: 'npc',
+          tags: ['recruitable', 'companion'],
+          stats: { vigor: 3, instinct: 4, will: 3 },
+          resources: { hp: 20, maxHp: 20, stamina: 5 },
+          ai: { profileId: 'follower', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'aldric');
+    setBelief(cog, 'raider', 'hostile', true, 1.0, 'observed', 0);
+    cog.morale = 25;
+
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.damage.applied',
+      actorId: 'raider',
+      payload: { targetId: 'aldric', damage: 15, previousHp: 20, currentHp: 5 },
+    });
+
+    expect(hasStatus(engine.world.entities.aldric, COMBAT_STATES.FLEEING)).toBe(true);
+
+    const sel = selectActionForEntity(engine.world, 'aldric');
+    expect(sel).not.toBeNull();
+    expect(sel!.profileId).toBe('follower');
+    expect(sel!.usedFallback).toBe(false);
+    expect(sel!.verb).toBe('disengage');
+    expect(sel!.options[0].priority).toBe(100);
+    expect(sel!.reason).toBe('disengage: fleeing');
+
+    const events = engine.submitActionAs('aldric', sel!.verb);
+    expect(events.some((e) => e.type === 'combat.disengage.success')).toBe(true);
+    expect(engine.world.entities.aldric.zoneId).toBe('b');
+
+    // Cornered fleeing follower with no exit yields null options.
+    engine.store.state.zones = { corner: { id: 'corner', roomId: 'test', name: 'Corner', tags: [], neighbors: [] } };
+    engine.store.state.entities.aldric.zoneId = 'corner';
+    expect(resolveIntentProfile('follower')).toBe(followerProfile);
+    expect(selectIntent(engine.world.entities.aldric, cog, engine.world, followerProfile)).toBeNull();
+    expect(selectActionForEntity(engine.world, 'aldric')).toBeNull();
+  });
+});
+
 describe('Built-in intent profile resolution', () => {
-  it('exposes all five built-ins with stable ids', () => {
+  it('exposes all six built-ins with stable ids', () => {
     expect(BUILTIN_INTENT_PROFILES.map((p) => p.id)).toEqual([
-      'aggressive', 'cautious', 'territorial', 'calculating', 'passive',
+      'aggressive', 'cautious', 'territorial', 'calculating', 'passive', 'follower',
     ]);
   });
 
@@ -1005,6 +1174,7 @@ describe('Built-in intent profile resolution', () => {
     expect(resolveIntentProfile('territorial')).toBe(territorialProfile);
     expect(resolveIntentProfile('calculating')).toBe(calculatingProfile);
     expect(resolveIntentProfile('passive')).toBe(passiveProfile);
+    expect(resolveIntentProfile('follower')).toBe(followerProfile);
     expect(resolveIntentProfile('no-such-profile')).toBeUndefined();
   });
 

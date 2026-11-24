@@ -12,6 +12,7 @@ import type { Engine, EntityState, WorldState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import {
   selectActionForEntity,
+  getRegisteredIntentProfiles,
   ABILITY_CATALOG_FORMULA,
   selectBestAction,
   getPartyState,
@@ -58,6 +59,38 @@ export function listHostilesInPlayerZone(world: WorldState): EntityState[] {
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+/**
+ * The entities driven by `runNpcTurns`:
+ * - every living hostile (`enemy`/`hostile` tag) in the player's zone,
+ * - every living `passive` entity (`ai.profileId === 'passive'`) in the player's
+ *   zone (idles peacefully unless FLEEING after morale collapse), and
+ * - every living `follower` entity (`ai.profileId === 'follower'`) anywhere in
+ *   the world so followers walk one step toward the player's zone when apart
+ *   and idle or flee when in combat.
+ *
+ * Sorted by entity id for byte-deterministic acting order.
+ */
+export function listTurnActors(world: WorldState): EntityState[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+  const playerZone = player.zoneId ?? world.locationId;
+
+  return Object.values(world.entities)
+    .filter((e) => {
+      if (e.id === world.playerId || (e.resources.hp ?? 0) <= 0) return false;
+      const profileId = e.ai?.profileId;
+      if (profileId === 'follower') return true;
+      const inPlayerZone = (e.zoneId ?? world.locationId) === playerZone;
+      if (!inPlayerZone) return false;
+      return (
+        e.tags.includes('enemy') ||
+        e.tags.includes('hostile') ||
+        profileId === 'passive'
+      );
+    })
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 /** What one NPC did on its turn — returned for tests and optional debug output. */
 export type NpcTurnResult = {
   actorId: string;
@@ -74,9 +107,10 @@ export type NpcTurnResult = {
 };
 
 /**
- * Run one NPC action for every living hostile in the player's zone.
+ * Run one AI turn for every living hostile, in-zone `passive` NPC, or
+ * `follower` entity via `selectActionForEntity`.
  *
- * Per hostile:
+ * Per actor:
  *  1. `selectActionForEntity` resolves the entity's `ai.profileId` (unknown ids
  *     fall back to 'aggressive', so a content typo degrades to sensible
  *     behavior, not a frozen NPC). Null — missing/non-AI/downed entity — skips.
@@ -84,9 +118,9 @@ export type NpcTurnResult = {
  *     so the action's actorId is the NPC: its attacks damage the player, its
  *     moves move IT (the Stage A submitActionAs fix — pinned by test).
  *  3. Both steps are guarded: a throwing advisor or verb handler logs one
- *     bounded line and the loop continues with the next hostile.
+ *     bounded line and the loop continues with the next actor.
  *
- * The hostile roster is snapshotted before any NPC acts (this player-action's
+ * The actor roster is snapshotted before any NPC acts (this player-action's
  * "round"), then each entry is re-checked against live state right before it
  * acts: an NPC defeated by a companion/reactive effect mid-round loses its
  * turn, and the round stops early if the player is downed — the defeat screen
@@ -100,7 +134,8 @@ export function runNpcTurns(
   const results: NpcTurnResult[] = [];
 
   const playerId = engine.world.playerId;
-  const roster = listHostilesInPlayerZone(engine.world).map((e) => e.id);
+  const profiles = getRegisteredIntentProfiles(engine);
+  const roster = listTurnActors(engine.world).map((e) => e.id);
 
   for (const entityId of roster) {
     // Player downed mid-round → stop; the endgame screen takes over.
@@ -115,7 +150,7 @@ export function runNpcTurns(
     // 1. Selection — guarded: a throwing profile must not kill the round.
     let selection: ReturnType<typeof selectActionForEntity>;
     try {
-      selection = selectActionForEntity(engine.world, entityId);
+      selection = selectActionForEntity(engine.world, entityId, { profiles });
     } catch (err) {
       log(`  (${entity.name} hesitates — its instincts failed: ${err instanceof Error ? err.message : String(err)})`);
       continue;
@@ -213,7 +248,9 @@ function listActiveCompanionsInPlayerZone(world: WorldState): EntityState[] {
       (e): e is EntityState =>
         !!e &&
         (e.resources.hp ?? 0) > 0 &&
-        (e.zoneId ?? world.locationId) === playerZone,
+        (e.zoneId ?? world.locationId) === playerZone &&
+        e.ai?.profileId !== 'follower' &&
+        e.ai?.profileId !== 'passive',
     )
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
