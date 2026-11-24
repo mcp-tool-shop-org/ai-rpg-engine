@@ -4,7 +4,7 @@
 // a stale mirror goes unnoticed. capabilities.hashes=false is the off switch.
 
 import { describe, it, expect } from 'vitest';
-import { SidecarClient } from './client.js';
+import { SidecarClient, type SidecarClientOptions } from './client.js';
 import { ERROR_CODES, METHODS, NOTIFICATIONS, type RpcMessage, type StatePatch } from './protocol.js';
 import { snapshotDelta, stateHash } from './serializer.js';
 import type { WorldState } from '@ai-rpg-engine/core';
@@ -17,7 +17,7 @@ const world = {
   eventLog: [],
 } as unknown as WorldState;
 
-function loopback(hashState?: (state: unknown) => string): {
+function loopback(hashStateOrOptions?: ((state: unknown) => string) | SidecarClientOptions): {
   client: SidecarClient;
   replyWith: (handler: (msg: RpcMessage) => RpcMessage | void) => void;
 } {
@@ -25,7 +25,7 @@ function loopback(hashState?: (state: unknown) => string): {
   const client = new SidecarClient((msg) => {
     const reply = handler?.(msg);
     if (reply) client.handle(reply);
-  }, hashState);
+  }, hashStateOrOptions);
   return {
     client,
     replyWith(h) {
@@ -268,6 +268,91 @@ describe('F-071522b2 — SidecarClient drops pre-baseline ticks', () => {
     await client.snapshot();
     expect((client.mirroredState as { ghost?: boolean }).ghost).toBeUndefined();
     expect((client.mirroredState as WorldState).locationId).toBe('chapel');
+  });
+});
+
+describe('digest_spec_version enforcement in SidecarClient', () => {
+  it('disables canonicalHashes verification with one clear warning when server digest_spec_version mismatches', async () => {
+    const warnings: string[] = [];
+    const { client, replyWith } = loopback({ onWarning: (w) => warnings.push(w) });
+    const hash = stateHash(world);
+    const delta = snapshotDelta(world);
+    replyWith((msg) => {
+      if (msg.method === METHODS.INITIALIZE) {
+        return {
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            serverName: 'old-sidecar',
+            engineVersion: '3.12.0',
+            digest_spec_version: 1,
+            capabilities: { preview: true, hashes: true, replay: true, snapshot: true, canonicalHashes: true },
+            tick: 0,
+          },
+        };
+      }
+      if (msg.method === METHODS.SNAPSHOT) {
+        return {
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            tick: 0,
+            hash,
+            canonicalHash: 'deadbeefdeadbeefdeadbeefdeadbeef',
+            snapshotSeq: 1,
+            delta,
+          },
+        };
+      }
+      return undefined;
+    });
+
+    await client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+    expect(client.canonicalHashesActive).toBe(false);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('digest_spec_version mismatch');
+    expect(client.warningMessages).toEqual(warnings);
+
+    await client.snapshot();
+    client.handle({
+      jsonrpc: '2.0',
+      method: NOTIFICATIONS.TICK,
+      params: {
+        tick: 1,
+        hash,
+        canonicalHash: 'cafebabecafebabecafebabecafebabe',
+        snapshotSeq: 1,
+        events: [],
+        delta: [],
+      },
+    });
+    expect(client.stalenessReports).toEqual([]);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('disables canonicalHashes with one warning when an older server omits digest_spec_version', async () => {
+    const warnings: string[] = [];
+    const { client, replyWith } = loopback({ onWarning: (w) => warnings.push(w) });
+    const hash = stateHash(world);
+    const delta = snapshotDelta(world);
+    replyWith((msg) => {
+      if (msg.method === METHODS.INITIALIZE) return initOk(msg);
+      if (msg.method === METHODS.SNAPSHOT) {
+        return {
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: { tick: 0, hash, canonicalHash: '0000', snapshotSeq: 1, delta },
+        };
+      }
+      return undefined;
+    });
+
+    await client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+    expect(client.canonicalHashesActive).toBe(false);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('server=missing');
+    await client.snapshot();
+    expect(client.stalenessReports).toEqual([]);
   });
 });
 

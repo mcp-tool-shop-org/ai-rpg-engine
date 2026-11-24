@@ -23,6 +23,7 @@ import {
 } from '@ai-rpg-engine/core';
 import {
   ALL_METHODS,
+  DIGEST_SPEC_VERSION,
   ERROR_CODES,
   METHODS,
   METHOD_PARAMS,
@@ -45,7 +46,18 @@ import {
   type TickNotification,
   type WireEvent,
 } from './protocol.js';
-import { canonicalStateHash, diffState, projectState, snapshotDelta, stateHash, toWireEvent } from './serializer.js';
+import {
+  canonicalStateHash,
+  diffState,
+  projectState,
+  quantize,
+  sanitizeDiagnosticMessage,
+  snapshotDelta,
+  stateHash,
+  StateDigestError,
+  toWireEvent,
+  validateDigestState,
+} from './serializer.js';
 import { MessageTooLargeError, type RpcMessage } from './framing.js';
 import { FeltPresenter } from './felt.js';
 
@@ -104,6 +116,34 @@ type QueuedWrite = {
   seq: number;
   run: () => void;
 };
+
+type PreparedRebase = {
+  nextEmitted: string[];
+  nextLastState: WorldState;
+  nextSnapshotSeq: number;
+  hash: string;
+  canonicalHash?: string;
+  tickResult?: SubmitActionResult;
+};
+
+function buildProjectedDigest(
+  world: WorldState,
+  view: SnapshotView,
+  includeCanonical: boolean,
+): {
+  projected: unknown;
+  hash: string;
+  canonicalHash?: string;
+  nextLastState: WorldState;
+} {
+  const projected = projectState(world, view);
+  validateDigestState(projected, '$', { canonical: includeCanonical });
+  const quantized = quantize(projected);
+  const hash = stateHash(quantized as WorldState);
+  const canonicalHash = includeCanonical ? canonicalStateHash(quantized) : undefined;
+  const nextLastState = structuredClone(projected) as WorldState;
+  return { projected, hash, ...(canonicalHash !== undefined ? { canonicalHash } : {}), nextLastState };
+}
 
 type SimGate = {
   closed: boolean;
@@ -317,7 +357,11 @@ export class SidecarServer {
       this.dispatch(name, params, id, hasId);
     } catch (err) {
       if (hasId) {
-        this.fail(id, ERROR_CODES.INTERNAL_ERROR, err instanceof Error ? err.message : String(err));
+        if (err instanceof StateDigestError) {
+          this.fail(id, ERROR_CODES.STATE_DIGEST_INVALID, err.message, err.toJSON());
+        } else {
+          this.fail(id, ERROR_CODES.INTERNAL_ERROR, err instanceof Error ? err.message : String(err));
+        }
       }
     }
   }
@@ -343,6 +387,7 @@ export class SidecarServer {
         const result: InitializeResult = {
           serverName: this.serverName,
           engineVersion: this.engineVersion,
+          digest_spec_version: DIGEST_SPEC_VERSION,
           capabilities: this.capabilities,
           tick: this.engine.store.tick,
         };
@@ -368,24 +413,29 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, view.message);
           return;
         }
-        this.snapshotView = view.view;
         const state = this.engine.world as WorldState;
-        const projected = projectState(state, this.snapshotView);
+        const includeCanonical = this.clientCapabilities.canonicalHashes === true;
+        const digest = buildProjectedDigest(state, view.view, includeCanonical);
+        const delta = snapshotDelta(digest.projected);
+        const nextEventIds = (state.eventLog ?? []).map((e) => e.id);
+        const nextSnapshotSeq = this.snapshotSeq + 1;
         // SNAPSHOT is a resync: the next incremental diff must start from this
         // projection, not construct-time lastState (F-98b60cd0) and not from
-        // keys the client omitted (F-decfe897).
-        this.lastState = structuredClone(projected) as WorldState;
-        for (const e of state.eventLog ?? []) this.emitted.add(e.id);
-        this.snapshotSeq += 1;
+        // keys the client omitted (F-decfe897). Session bookkeeping advances only
+        // after validation, quantization, hashing, and delta construction succeed.
+        this.snapshotView = view.view;
+        this.lastState = digest.nextLastState;
+        for (const eid of nextEventIds) this.emitted.add(eid);
+        this.snapshotSeq = nextSnapshotSeq;
         this.hasSnapshotted = true;
         const result: SnapshotResult = {
           tick: this.engine.store.tick,
-          hash: stateHash(projected),
-          snapshotSeq: this.snapshotSeq,
-          delta: snapshotDelta(projected),
+          hash: digest.hash,
+          snapshotSeq: nextSnapshotSeq,
+          delta,
         };
-        if (this.clientCapabilities.canonicalHashes) {
-          result.canonicalHash = canonicalStateHash(projected);
+        if (digest.canonicalHash !== undefined) {
+          result.canonicalHash = digest.canonicalHash;
         }
         if (hasId) this.reply(id, result);
         return;
@@ -398,11 +448,16 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
           return;
         }
-        const events =
+        if (parsed.options.parameters !== undefined) {
+          validateDigestState(parsed.options.parameters, '$.parameters', {
+            canonical: this.clientCapabilities.canonicalHashes === true,
+          });
+        }
+        const result = this.runWorldMutation(() =>
           parsed.actorId && typeof this.engine.submitActionAs === 'function'
             ? this.engine.submitActionAs(parsed.actorId, parsed.verb, parsed.options)
-            : this.engine.submitAction(parsed.verb, parsed.options);
-        const result = this.commit(events);
+            : this.engine.submitAction(parsed.verb, parsed.options),
+        );
         if (hasId) this.reply(id, result satisfies SubmitActionResult);
         this.pushTick(result);
         this.onWorldCommitted?.();
@@ -420,8 +475,10 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"rounds" must be an integer in [1, 1000].');
           return;
         }
-        for (let i = 0; i < rounds; i++) this.advanceRound(this.engine);
-        const result = this.commit([]);
+        const result = this.runWorldMutation(() => {
+          for (let i = 0; i < rounds; i++) this.advanceRound(this.engine);
+          return [];
+        });
         if (hasId) this.reply(id, result);
         this.pushTick(result);
         this.onWorldCommitted?.();
@@ -433,6 +490,11 @@ export class SidecarServer {
         if (!parsed.ok) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
           return;
+        }
+        if (parsed.options.parameters !== undefined) {
+          validateDigestState(parsed.options.parameters, '$.parameters', {
+            canonical: this.clientCapabilities.canonicalHashes === true,
+          });
         }
         if (hasId) this.reply(id, this.preview(parsed.verb, params));
         return;
@@ -533,25 +595,65 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"serialized" must be a non-empty string.');
           return;
         }
+        const includeCanonical = this.clientCapabilities.canonicalHashes === true;
+        let loaded: Engine;
+        let selfDigest: PreparedRebase;
+        let peerPlans: Array<
+          | { kind: 'rebase'; peer: SidecarServer; prepared: PreparedRebase }
+          | { kind: 'skip'; peer: SidecarServer; err: StateDigestError }
+        >;
         try {
-          this.restoreFromSerialized(params.serialized);
+          loaded = this.deserializeCandidate(params.serialized);
+          validateDigestState(loaded.store.state, '$', { canonical: includeCanonical });
+          selfDigest = this.prepareRebase(loaded.world as WorldState, loaded.store.tick);
+          peerPlans = [];
+          for (const peer of this.gate.servers) {
+            if (peer === this) continue;
+            try {
+              peerPlans.push({
+                kind: 'rebase',
+                peer,
+                prepared: peer.prepareRebase(loaded.world as WorldState, loaded.store.tick),
+              });
+            } catch (err) {
+              if (err instanceof StateDigestError && !includeCanonical) {
+                peerPlans.push({ kind: 'skip', peer, err });
+              } else {
+                throw err;
+              }
+            }
+          }
         } catch (err) {
           if (hasId) {
-            const message =
-              err instanceof SaveLoadError || err instanceof Error ? err.message : String(err);
-            this.fail(id, ERROR_CODES.INVALID_PARAMS, `load refused: ${message}`);
+            if (err instanceof StateDigestError) {
+              this.fail(id, ERROR_CODES.STATE_DIGEST_INVALID, `load refused: ${err.message}`, err.toJSON());
+            } else {
+              const message =
+                err instanceof SaveLoadError || err instanceof Error ? err.message : String(err);
+              this.fail(id, ERROR_CODES.INVALID_PARAMS, `load refused: ${message}`);
+            }
           }
           return;
         }
-        this.rebaseAllSessions();
-        const projected = projectState(this.engine.world, this.snapshotView);
+        // Commit point: swap Engine and apply every peer's rebase only after
+        // candidate deserialization, requester digest rules, and canonical peer digests succeed.
+        this.applyRestoredEngine(loaded);
+        this.applyPreparedRebase(selfDigest);
+        for (const plan of peerPlans) {
+          if (plan.kind === 'rebase') {
+            plan.peer.applyPreparedRebase(plan.prepared);
+          } else {
+            process.stderr.write(`[sidecar] peer rebase skipped: ${sanitizeDiagnosticMessage(plan.err.message, 256)}\n`);
+            plan.peer.invalidateIncompatibleRebase();
+          }
+        }
         const result: LoadResult = {
           tick: this.engine.store.tick,
-          hash: stateHash(projected as WorldState),
+          hash: selfDigest.hash,
           snapshotSeq: this.snapshotSeq,
         };
-        if (this.clientCapabilities.canonicalHashes) {
-          result.canonicalHash = canonicalStateHash(projected);
+        if (selfDigest.canonicalHash !== undefined) {
+          result.canonicalHash = selfDigest.canonicalHash;
         }
         if (hasId) this.reply(id, result);
         return;
@@ -800,40 +902,83 @@ export class SidecarServer {
     return true;
   }
 
+  /** Execute a world mutation atomically with digest validation and commit rollback. */
+  private runWorldMutation(mutate: () => readonly ResolvedEvent[]): SubmitActionResult {
+    const includeCanonical = this.clientCapabilities.canonicalHashes === true;
+    validateDigestState(this.engine.world, '$', { canonical: includeCanonical });
+    const state = this.engine.store.state as unknown as Record<string, unknown>;
+    const preWorld = structuredClone(state);
+    const rng = this.engine.store?.rng;
+    const hasRng = typeof rng?.getState === 'function' && typeof rng?.setState === 'function';
+    const preRng = hasRng ? rng.getState() : 0;
+    const engineWithLog = this.engine as unknown as { actionLog?: ActionIntent[] };
+    const preActionLogLen = Array.isArray(engineWithLog.actionLog) ? engineWithLog.actionLog.length : -1;
+    try {
+      const direct = mutate();
+      validateDigestState(this.engine.world, '$', { canonical: includeCanonical });
+      return this.commit(direct);
+    } catch (err) {
+      for (const key of Object.keys(state)) {
+        if (!(key in preWorld)) delete state[key];
+      }
+      Object.assign(state, preWorld);
+      if (hasRng) rng.setState(preRng);
+      if (preActionLogLen >= 0 && Array.isArray(engineWithLog.actionLog)) {
+        engineWithLog.actionLog.length = preActionLogLen;
+      }
+      throw err;
+    }
+  }
+
   /** Fold newly emitted events into a tick result, deduplicated by event id. */
   private commit(direct: readonly ResolvedEvent[]): SubmitActionResult {
     const log = (this.engine.world.eventLog ?? []) as ResolvedEvent[];
+    const seen = new Set(this.emitted);
+    const freshIds: string[] = [];
     const freshRaw: ResolvedEvent[] = [];
     for (const e of log) {
-      if (this.emitted.has(e.id)) continue;
-      this.emitted.add(e.id);
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      freshIds.push(e.id);
       freshRaw.push(e);
     }
     // `direct` is what submitAction returned. Anything it produced is already in
     // the log, so it is only used as a tie-break when a pack emits outside the
     // log — the dedup by id is what makes re-emission idempotent (GGPO).
     for (const e of direct) {
-      if (this.emitted.has(e.id)) continue;
-      this.emitted.add(e.id);
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      freshIds.push(e.id);
       freshRaw.push(e);
     }
 
-    const projected = projectState(this.engine.world, this.snapshotView);
-    const delta = diffState(this.lastState, projected);
-    this.lastState = structuredClone(projected) as WorldState;
+    const digest = buildProjectedDigest(
+      this.engine.world as WorldState,
+      this.snapshotView,
+      this.clientCapabilities.canonicalHashes === true,
+    );
+    const delta = diffState(this.lastState, digest.projected);
+    const events = this.presentWire(freshRaw);
+    const felt = this.clientCapabilities.audio
+      ? this.felt.present(this.engine.world, freshRaw)
+      : undefined;
+
+    // Commit bookkeeping only after validation, quantization, hashing, and delta build succeed.
+    for (const id of freshIds) this.emitted.add(id);
+    this.lastState = digest.nextLastState;
 
     const result: SubmitActionResult = {
       tick: this.engine.store.tick,
-      hash: stateHash(projected),
-      events: this.presentWire(freshRaw),
+      hash: digest.hash,
+      events,
       delta,
       snapshotSeq: this.snapshotSeq,
     };
-    if (this.clientCapabilities.canonicalHashes) {
-      result.canonicalHash = canonicalStateHash(projected);
+    if (digest.canonicalHash !== undefined) {
+      result.canonicalHash = digest.canonicalHash;
     }
-    if (this.clientCapabilities.audio) {
-      result.felt = this.felt.present(this.engine.world, freshRaw);
+    if (felt !== undefined) {
+      result.felt = felt;
     }
     return result;
   }
@@ -877,15 +1022,18 @@ export class SidecarServer {
     return visible.map(toWireEvent);
   }
 
-  private restoreFromSerialized(serialized: string): void {
+  private deserializeCandidate(serialized: string): Engine {
     const modules =
       typeof this.engine.moduleManager?.getModules === 'function'
         ? [...this.engine.moduleManager.getModules()]
         : [];
-    const loaded = Engine.deserialize(serialized, {
+    return Engine.deserialize(serialized, {
       modules,
       ruleset: this.engine.ruleset,
     });
+  }
+
+  private applyRestoredEngine(loaded: Engine): void {
     const restored = loaded.store;
     (restored as { events: (typeof restored)['events'] }).events = this.engine.store.events;
     (this.engine as { store: typeof restored }).store = restored;
@@ -893,42 +1041,70 @@ export class SidecarServer {
     (this.engine as unknown as { actionLog: ActionIntent[] }).actionLog = [...loaded.getActionLog()];
   }
 
-  private rebaseAllSessions(): void {
-    for (const peer of this.gate.servers) peer.rebaseAfterLoad();
+  private prepareRebase(world: WorldState, tick: number): PreparedRebase {
+    const digest = buildProjectedDigest(
+      world,
+      this.snapshotView,
+      this.clientCapabilities.canonicalHashes === true,
+    );
+    const nextEmitted = (world.eventLog ?? []).map((e) => e.id);
+    const nextSnapshotSeq = this.snapshotSeq + 1;
+    let tickResult: SubmitActionResult | undefined;
+    if (!this.closed && !this.gate.closed && this.hasSnapshotted) {
+      tickResult = {
+        tick,
+        hash: digest.hash,
+        events: [],
+        delta: snapshotDelta(digest.projected),
+        snapshotSeq: nextSnapshotSeq,
+        ...(digest.canonicalHash !== undefined ? { canonicalHash: digest.canonicalHash } : {}),
+      };
+    }
+    return {
+      nextEmitted,
+      nextLastState: digest.nextLastState,
+      nextSnapshotSeq,
+      hash: digest.hash,
+      ...(digest.canonicalHash !== undefined ? { canonicalHash: digest.canonicalHash } : {}),
+      tickResult,
+    };
+  }
+
+  private applyPreparedRebase(prepared: PreparedRebase): void {
+    this.emitted.clear();
+    for (const id of prepared.nextEmitted) this.emitted.add(id);
+    this.lastState = prepared.nextLastState;
+    this.snapshotSeq = prepared.nextSnapshotSeq;
+    this.packIntake = undefined;
+    if (prepared.tickResult) {
+      this.pushTick(prepared.tickResult);
+    }
+  }
+
+  private invalidateIncompatibleRebase(): void {
+    this.emitted.clear();
+    this.snapshotSeq += 1;
+    this.hasSnapshotted = false;
+    this.packIntake = undefined;
   }
 
   /**
    * After LOAD: rebuild emitted, lastState, bump snapshotSeq, and push a
    * snapshot-shaped baseline so every live mirror rebases (including omitEventLog).
+   * Validates and hashes projected state before updating session bookkeeping.
    * Also drops this session's packIntake (F-9bb888dc, composes F-7d41ae63):
    * unlike packId/playerId/locationId, which are read live off
    * `this.engine.world` at every initialize, packIntake is boot-time-captured
    * constructor state describing the pack that produced the PRE-load world.
    * A LOAD can swap in a save from an unrelated (or absent) content pack, so
    * that summary must not survive to describe a world it never described.
-   * This runs for every peer sharing the gate (rebaseAllSessions), including
+   * This runs for every peer sharing the gate, including
    * one that has not yet called initialize — closing the hole for a session
    * still mid-connect at LOAD time, not only for the LOAD-issuing session.
    */
   rebaseAfterLoad(): void {
-    this.emitted.clear();
-    for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
-    const projected = projectState(this.engine.world, this.snapshotView);
-    this.lastState = structuredClone(projected) as WorldState;
-    this.snapshotSeq += 1;
-    this.packIntake = undefined;
-    if (this.closed || this.gate.closed || !this.hasSnapshotted) return;
-    const result: SubmitActionResult = {
-      tick: this.engine.store.tick,
-      hash: stateHash(projected as WorldState),
-      events: [],
-      delta: snapshotDelta(projected),
-      snapshotSeq: this.snapshotSeq,
-    };
-    if (this.clientCapabilities.canonicalHashes) {
-      result.canonicalHash = canonicalStateHash(projected);
-    }
-    this.pushTick(result);
+    const prepared = this.prepareRebase(this.engine.world as WorldState, this.engine.store.tick);
+    this.applyPreparedRebase(prepared);
   }
 
   /**
@@ -1003,10 +1179,16 @@ export class SidecarServer {
    * Catch this session up after another session committed against the shared
    * Engine. Diffs vs this session's lastState so each client gets the delta
    * that matches its own mirror — not the origin's. Withheld until SNAPSHOT.
+   * Refuses per peer without throwing into the writer's turn or halting other peers.
    */
   replicatePeerCommit(): void {
     if (this.closed || this.gate.closed || !this.initialized || !this.hasSnapshotted) return;
-    this.pushTick(this.commit([]));
+    try {
+      this.pushTick(this.commit([]));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[sidecar] peer tick skipped: ${sanitizeDiagnosticMessage(detail, 256)}\n`);
+    }
   }
 
   private reply(id: unknown, result: unknown): void {

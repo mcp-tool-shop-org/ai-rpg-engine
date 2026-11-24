@@ -5,13 +5,14 @@
 #
 # Staleness: position-check (server tick+hash vs last recorded position) always.
 # When initialize requested canonicalHashes, also recompute canonicalStateHash
-# (sorted keys, integers stay integers) — never Godot's JSON.stringify, which
-# emits 5.0 and alphabetizes keys.
+# (sorted ASCII keys, null keys retained, every number scaled by 1e6 rounded
+# half-away-from-zero as plain decimal integer digits — never Godot's
+# JSON.stringify or float-to-text formatting).
 extends RefCounted
 class_name SidecarAttachClient
 
 const MAX_MESSAGE_BYTES := 16 * 1024 * 1024
-const WIRE_PRECISION := 6
+const DIGEST_SPEC_VERSION := 2
 
 const METHOD_INITIALIZE := "initialize"
 const METHOD_SNAPSHOT := "snapshot"
@@ -39,6 +40,8 @@ var applied_snapshot_seq: int = 0
 var last_tick: int = -1
 var last_hash: String = ""
 var canonical_hashes: bool = false
+var server_digest_spec_version: int = 0
+var digest_version_warnings: Array[String] = []
 var writes: bool = true
 ## Reject in-flight RPCs after this many ms. 0 = wait indefinitely (JS default 30000).
 var request_timeout_ms: int = 30000
@@ -163,8 +166,16 @@ func _on_framing_error(kind: String, detail: String) -> void:
 	push_warning("[sidecar] framing error: %s: %s" % [kind, detail])
 
 
+func _normalize_rpc_id(id: Variant) -> Variant:
+	if typeof(id) == TYPE_FLOAT:
+		var f := float(id)
+		if f == floor(f):
+			return int(f)
+	return id
+
+
 func _pending_method(id: Variant) -> String:
-	var rec: Variant = _pending.get(id, null)
+	var rec: Variant = _pending.get(_normalize_rpc_id(id), null)
 	if typeof(rec) == TYPE_DICTIONARY:
 		return str(rec.get("method", ""))
 	return str(rec) if rec != null else ""
@@ -214,7 +225,7 @@ func _on_message(msg: Dictionary) -> void:
 	if msg.has("method"):
 		_handle_notification(str(msg["method"]), msg.get("params", {}))
 		return
-	var id: Variant = msg.get("id", null)
+	var id: Variant = _normalize_rpc_id(msg.get("id", null))
 	var method: String = _pending_method(id)
 	_pending.erase(id)
 	if msg.has("error"):
@@ -225,7 +236,24 @@ func _on_message(msg: Dictionary) -> void:
 			_flush_queued_ticks()
 		return
 	var result: Variant = msg.get("result", {})
-	if method == METHOD_SNAPSHOT:
+	if method == METHOD_INITIALIZE:
+		var has_ver := false
+		if typeof(result) == TYPE_DICTIONARY and result.has("digest_spec_version"):
+			var raw_ver: Variant = result["digest_spec_version"]
+			if typeof(raw_ver) == TYPE_INT or typeof(raw_ver) == TYPE_FLOAT:
+				var ver_f := float(raw_ver)
+				if ver_f == floor(ver_f):
+					has_ver = true
+					server_digest_spec_version = int(ver_f)
+		if not has_ver:
+			server_digest_spec_version = 0
+		if canonical_hashes and (not has_ver or server_digest_spec_version != DIGEST_SPEC_VERSION):
+			canonical_hashes = false
+			var got_label := str(server_digest_spec_version) if has_ver else "missing"
+			var warn_msg := "SidecarAttachClient: digest_spec_version mismatch (client=%d, server=%s); disabling canonicalHashes verification" % [DIGEST_SPEC_VERSION, got_label]
+			digest_version_warnings.append(warn_msg)
+			push_warning(warn_msg)
+	elif method == METHOD_SNAPSHOT:
 		_apply_snapshot(result)
 	elif method == METHOD_SUBMIT_ACTION or method == METHOD_ADVANCE or method == METHOD_LOAD:
 		if typeof(result) == TYPE_DICTIONARY:
@@ -294,7 +322,18 @@ func _note_position(tick_n: int, hash: String) -> void:
 
 
 func _check_canonical(tick_n: int, expected: String) -> void:
-	var actual := canonical_state_hash(mirrored_state)
+	var res := try_canonical_state_hash(mirrored_state)
+	if not bool(res.get("ok", false)):
+		stale.emit({
+			"tick": tick_n,
+			"expected": expected,
+			"actual": "",
+			"kind": "canonical_error",
+			"code": str(res.get("code", "CANONICAL_ERROR")),
+			"message": str(res.get("message", "canonical hashing failed")),
+		})
+		return
+	var actual := str(res["hash"])
 	if actual != expected:
 		stale.emit({ "tick": tick_n, "expected": expected, "actual": actual, "kind": "canonical" })
 
@@ -363,76 +402,139 @@ static func _resolve_parent(root: Variant, path: Array) -> Variant:
 	return node
 
 
+static func _fail_canonical(err: Variant, code: String, msg: String) -> Variant:
+	if typeof(err) == TYPE_DICTIONARY:
+		var err_dict := err as Dictionary
+		if not err_dict.has("ok") or bool(err_dict.get("ok", true)):
+			err_dict["ok"] = false
+			err_dict["code"] = code
+			err_dict["message"] = msg
+	push_error("SidecarAttachClient: " + msg)
+	return null
+
+
+static func try_canonical_json(value: Variant) -> Dictionary:
+	var err := { "ok": true }
+	var out: Variant = _write_canonical(value, err)
+	if out == null or not bool(err.get("ok", true)):
+		return {
+			"ok": false,
+			"code": str(err.get("code", "CANONICAL_ERROR")),
+			"message": str(err.get("message", "canonical JSON serialization failed")),
+		}
+	return { "ok": true, "json": str(out) }
+
+
 static func canonical_json(value: Variant) -> String:
-	return _write_canonical(_quantize(value))
+	var res := try_canonical_json(value)
+	return str(res["json"]) if bool(res.get("ok", false)) else ""
+
+
+static func try_canonical_state_hash(state: Variant) -> Dictionary:
+	var res := try_canonical_json(state)
+	if not bool(res.get("ok", false)):
+		return res
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(str(res["json"]).to_utf8_buffer())
+	return { "ok": true, "hash": ctx.finish().hex_encode().substr(0, 32) }
 
 
 static func canonical_state_hash(state: Variant) -> String:
-	var ctx := HashingContext.new()
-	ctx.start(HashingContext.HASH_SHA256)
-	ctx.update(canonical_json(state).to_utf8_buffer())
-	return ctx.finish().hex_encode().substr(0, 32)
+	var res := try_canonical_state_hash(state)
+	return str(res["hash"]) if bool(res.get("ok", false)) else ""
 
 
-static func _quantize(value: Variant) -> Variant:
-	match typeof(value):
-		TYPE_FLOAT, TYPE_INT:
-			if typeof(value) == TYPE_INT or value == floor(value):
-				return int(value)
-			var factor := pow(10.0, WIRE_PRECISION)
-			return round(float(value) * factor) / factor
-		TYPE_ARRAY:
-			var out: Array = []
-			for item in value:
-				out.append(_quantize(item))
-			return out
-		TYPE_DICTIONARY:
-			var keys: Array = (value as Dictionary).keys()
-			keys.sort()
-			var out := {}
-			for k in keys:
-				var v: Variant = (value as Dictionary)[k]
-				if v == null:
-					continue
-				out[str(k)] = _quantize(v)
-			return out
-		_:
-			return value
+static func _escape_json_codepoints(cps: Array, err: Variant = null) -> Variant:
+	var out := "\""
+	for cp_v in cps:
+		var cp := int(cp_v)
+		match cp:
+			0x22:
+				out += "\\\""
+			0x5C:
+				out += "\\\\"
+			0x08:
+				out += "\\b"
+			0x0C:
+				out += "\\f"
+			0x0A:
+				out += "\\n"
+			0x0D:
+				out += "\\r"
+			0x09:
+				out += "\\t"
+			_:
+				if cp == 0x0000:
+					return _fail_canonical(err, "NUL_CHARACTER", "NUL/lone-surrogate rule (NUL_CHARACTER): U+0000 is invalid in canonical JSON")
+				elif cp < 0 or cp > 0x10FFFF:
+					return _fail_canonical(err, "INVALID_CODEPOINT", "invalid Unicode scalar %d in canonical JSON" % cp)
+				elif cp >= 0xD800 and cp <= 0xDFFF:
+					return _fail_canonical(err, "LONE_SURROGATE", "NUL/lone-surrogate rule (LONE_SURROGATE): lone surrogate U+%04X is invalid in canonical JSON" % cp)
+				elif cp < 0x20:
+					out += "\\u%04x" % cp
+				else:
+					out += char(cp)
+	out += "\""
+	return out
 
 
-static func _write_canonical(value: Variant) -> String:
+static func _escape_json_string(s: String, err: Variant = null) -> Variant:
+	var cps: Array = []
+	for i in range(s.length()):
+		cps.append(s.unicode_at(i))
+	return _escape_json_codepoints(cps, err)
+
+
+static func _write_canonical(value: Variant, err: Variant = null) -> Variant:
 	match typeof(value):
 		TYPE_NIL:
 			return "null"
 		TYPE_BOOL:
 			return "true" if value else "false"
-		TYPE_INT:
-			return str(int(value))
-		TYPE_FLOAT:
-			if value == floor(value):
-				return str(int(value))
-			var s := "%.*f" % [WIRE_PRECISION, float(value)]
-			while s.ends_with("0"):
-				s = s.substr(0, s.length() - 1)
-			if s.ends_with("."):
-				s += "0"
-			return s
+		TYPE_INT, TYPE_FLOAT:
+			var f := float(value)
+			if is_nan(f) or is_inf(f):
+				return _fail_canonical(err, "NON_FINITE_NUMBER", "JSON-number rule (NON_FINITE_NUMBER): non-finite number is invalid in canonical JSON")
+			var scaled: float = f * 1e6
+			if is_nan(scaled) or is_inf(scaled) or absf(scaled) > 9007199254740991.0 or absf(roundf(scaled)) > 9007199254740991.0:
+				return _fail_canonical(err, "UNSAFE_SCALED_INTEGER", "integer-range rule (UNSAFE_SCALED_INTEGER): scaled number exceeds safe integer bound (2^53 - 1)")
+			var rounded: int = int(roundf(scaled))
+			return "0" if rounded == 0 else str(rounded)
 		TYPE_STRING:
-			return JSON.stringify(value)
+			return _escape_json_string(value, err)
 		TYPE_ARRAY:
 			var parts: PackedStringArray = PackedStringArray()
 			for item in value:
-				parts.append(_write_canonical(item))
+				var written: Variant = _write_canonical(item, err)
+				if written == null:
+					return null
+				parts.append(str(written))
 			return "[" + ",".join(parts) + "]"
 		TYPE_DICTIONARY:
-			var keys: Array = (value as Dictionary).keys()
-			keys.sort()
+			var pairs: Array = []
+			for k in (value as Dictionary).keys():
+				var k_str := str(k)
+				for ki in range(k_str.length()):
+					var kcp := k_str.unicode_at(ki)
+					if kcp == 0x0000:
+						return _fail_canonical(err, "NUL_CHARACTER", "ASCII-key rule (NUL_CHARACTER): object key contains U+0000")
+					if kcp > 0x7F:
+						return _fail_canonical(err, "NON_ASCII_KEY", "ASCII-key rule (NON_ASCII_KEY): object key contains non-ASCII character U+%04X" % kcp)
+				pairs.append([k_str, k])
+			pairs.sort_custom(func(a: Array, b: Array) -> bool: return String(a[0]) < String(b[0]))
 			var parts: PackedStringArray = PackedStringArray()
-			for k in keys:
-				var v: Variant = (value as Dictionary)[k]
-				if v == null:
-					continue
-				parts.append(JSON.stringify(str(k)) + ":" + _write_canonical(v))
+			for pair in pairs:
+				var k_str: String = pair[0]
+				var orig_k: Variant = pair[1]
+				var v: Variant = (value as Dictionary)[orig_k]
+				var ek: Variant = _escape_json_string(k_str, err)
+				if ek == null:
+					return null
+				var ev: Variant = _write_canonical(v, err)
+				if ev == null:
+					return null
+				parts.append(str(ek) + ":" + str(ev))
 			return "{" + ",".join(parts) + "}"
 		_:
-			return "null"
+			return _fail_canonical(err, "UNSUPPORTED_VALUE_TYPE", "JSON-value rule (UNSUPPORTED_VALUE_TYPE): unsupported Variant type %d in canonical JSON" % typeof(value))

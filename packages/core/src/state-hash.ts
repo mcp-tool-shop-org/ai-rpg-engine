@@ -33,8 +33,8 @@ export function canonicalizeForHash(value: unknown): unknown {
 
 /**
  * Deterministic identity of a world: sha256 of canonical JSON, truncated to
- * 32 hex chars (same width as the sidecar legacy hash, different contract —
- * sorted keys + quantized numbers).
+ * 32 hex chars. Computes a core-local hash over `WorldState` without taking
+ * a `@ai-rpg-engine/sidecar` dependency.
  */
 export function stateHash(world: WorldState): string {
   return createHash('sha256')
@@ -43,5 +43,11 @@ export function stateHash(world: WorldState): string {
     .slice(0, 32);
 }
 
-/** Alias matching the capability-negotiated name from the 2026-07-29 ruling. */
+/** Descriptive alias for {@link stateHash} over core world state. */
+export const worldStateHash = stateHash;
+
+/**
+ * @deprecated Use {@link stateHash} or {@link worldStateHash} for core world state hashing,
+ * or `canonicalStateHash` from `@ai-rpg-engine/sidecar` for the cross-language wire digest.
+ */
 export const canonicalStateHash = stateHash;

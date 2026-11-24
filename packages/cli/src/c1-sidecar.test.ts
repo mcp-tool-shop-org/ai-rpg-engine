@@ -15,6 +15,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as path from 'node:path';
 import {
+  DIGEST_SPEC_VERSION,
   MessageReader,
   encodeMessage,
   METHODS,
@@ -151,6 +152,7 @@ describe('C1/P3 — a scripted session over the wire, against a spawned process'
       .initialize()
       .then((result) => {
         expect(result.serverName).toContain(PACK_ID);
+        expect(result.digest_spec_version).toBe(DIGEST_SPEC_VERSION);
         expect(result.capabilities).toEqual({ preview: true, hashes: true, replay: true, snapshot: true });
         expect(typeof result.tick).toBe('number');
         expect(result).not.toHaveProperty('protocolVersion');

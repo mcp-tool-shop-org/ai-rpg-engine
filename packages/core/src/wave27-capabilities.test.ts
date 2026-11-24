@@ -6,7 +6,7 @@ import { Engine } from './engine.js';
 import { WorldStore } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { createTestEngine } from './test-harness.js';
-import { stateHash, canonicalStateHash, canonicalizeForHash } from './state-hash.js';
+import { stateHash, worldStateHash, canonicalStateHash, canonicalizeForHash } from './state-hash.js';
 import type { ActionIntent, EngineModule, ResolvedEvent, WorldState } from './types.js';
 
 const manifest = {
@@ -77,6 +77,7 @@ describe('F-45f80b2b — canonical stateHash + Engine.present', () => {
     expect(JSON.stringify(canonicalizeForHash(a))).toBe(JSON.stringify(canonicalizeForHash(b)));
     const engine = new Engine({ manifest, seed: 7 });
     expect(engine.hash()).toBe(stateHash(engine.world));
+    expect(worldStateHash(engine.world)).toBe(engine.hash());
     expect(canonicalStateHash(engine.world)).toBe(engine.hash());
     expect(engine.hash()).toMatch(/^[0-9a-f]{32}$/);
   });

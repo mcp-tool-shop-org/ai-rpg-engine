@@ -1485,3 +1485,111 @@ describe('Step 1 Route E — 13 world-forge C4 keys declared, dropped as evaluat
   });
 });
 
+describe('applyContentPack — JSON state validation & upfront clone guard', () => {
+  it('allows canonical-only edge cases (non-ASCII keys, >9e9 numbers, NUL, lone surrogates) through content intake', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      zones: [{ id: 'clean-zone', name: 'Clean' }],
+      entities: [
+        {
+          id: 'npc-edge',
+          type: 'npc',
+          name: 'Npc',
+          custom: {
+            ['caf\u00e9']: 1,
+            gold: 1e10,
+            nul: 'a\u0000b',
+            surrogate: 'x\ud800y',
+          },
+        },
+      ],
+    } as unknown as ContentPack);
+
+    expect(r.ok).toBe(true);
+    expect(r.applied.zones).toBe(1);
+    expect(r.applied.entities).toBe(1);
+    expect(engine.world.zones['clean-zone']).toBeDefined();
+    expect(engine.world.entities['npc-edge']).toBeDefined();
+  });
+
+  it('refuses non-JSON values introduced by a pack (NaN) or channel (bigint) and rolls back applied writes', () => {
+    const engineNaN = bootEngine();
+    let resNaN!: ReturnType<typeof applyContentPack>;
+    expect(() => {
+      resNaN = applyContentPack(
+        engineNaN,
+        {
+          zones: [{ id: 'clean-zone', name: 'Clean' }],
+          entities: [
+            {
+              id: 'npc-bad',
+              type: 'npc',
+              name: 'Npc',
+              custom: { hp: Number.NaN },
+            },
+          ],
+        } as unknown as ContentPack,
+        { prevalidated: true },
+      );
+    }).not.toThrow();
+
+    expect(resNaN.ok).toBe(false);
+    expect(resNaN.errors.some((e) => e.code === 'NON_FINITE_NUMBER')).toBe(true);
+    expect(engineNaN.world.zones['clean-zone']).toBeUndefined();
+    expect(engineNaN.world.entities['npc-bad']).toBeUndefined();
+    expect(resNaN.applied.zones).toBeUndefined();
+    expect(resNaN.applied.entities).toBeUndefined();
+
+    const engineBig = bootEngine();
+    const resBig = applyContentPack(
+      engineBig,
+      {
+        zones: [{ id: 'clean-zone', name: 'Clean' }],
+        districts: [{ id: 'd1', name: 'District', zoneIds: ['clean-zone'], tags: [] }],
+      },
+      {
+        channels: [
+          {
+            key: 'districts',
+            apply: (target) => {
+              target.world.globals.big = 42n as unknown as never;
+              return { applied: 1 };
+            },
+          },
+        ],
+      },
+    );
+    expect(resBig.ok).toBe(false);
+    expect(resBig.errors.some((e) => e.code === 'UNSUPPORTED_VALUE_TYPE')).toBe(true);
+    expect(engineBig.world.zones['clean-zone']).toBeUndefined();
+    expect(engineBig.world.globals.big).toBeUndefined();
+    expect(resBig.applied).toEqual({});
+  });
+
+  it('refuses pre-existing closure or uncloneable (WeakMap) world state upfront without applying anything', () => {
+    const fnEngine = bootEngine();
+    fnEngine.world.globals.fn = (() => 1) as unknown as never;
+    const fnResult = applyContentPack(fnEngine, {
+      zones: [{ id: 'clean-zone', name: 'Clean' }],
+      entities: [{ id: 'npc-1', type: 'npc', name: 'One' }],
+    } as unknown as ContentPack);
+    expect(fnResult.ok).toBe(false);
+    expect(fnResult.errors.some((e) => e.code === 'UNSUPPORTED_VALUE_TYPE')).toBe(true);
+    expect(fnResult.applied).toEqual({});
+    expect(fnEngine.world.zones['clean-zone']).toBeUndefined();
+    expect(fnEngine.world.entities['npc-1']).toBeUndefined();
+
+    const wmEngine = bootEngine();
+    wmEngine.world.globals.handle = new WeakMap() as unknown as never;
+    const wmResult = applyContentPack(wmEngine, {
+      zones: [{ id: 'clean-zone', name: 'Clean' }],
+      entities: [{ id: 'npc-1', type: 'npc', name: 'One' }],
+    } as unknown as ContentPack);
+    expect(wmResult.ok).toBe(false);
+    expect(wmResult.errors.some((e) => e.code === 'UNCLONEABLE_WORLD_STATE')).toBe(true);
+    expect(wmResult.applied).toEqual({});
+    expect(wmEngine.world.zones['clean-zone']).toBeUndefined();
+    expect(wmEngine.world.entities['npc-1']).toBeUndefined();
+  });
+});
+

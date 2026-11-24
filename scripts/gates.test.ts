@@ -269,6 +269,15 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     );
   });
 
+  it('ci.yml godot-digest disables checkout credentials, checks --import SCRIPT ERROR, and asserts exact vector count', () => {
+    const godot = ci.slice(ci.indexOf('godot-digest:'), ci.indexOf('docker-smoke:'));
+    expect(godot).toContain('persist-credentials: false');
+    expect(godot).toContain('/tmp/godot-import.log');
+    expect(godot).toMatch(/grep -Eq 'SCRIPT ERROR' \/tmp\/godot-import\.log/);
+    expect(godot).toContain('EXPECTED_COUNT=$((VECTOR_LINES + 5))');
+    expect(godot).toContain('grep -Fxq "DIGEST_VECTORS_OK count=${EXPECTED_COUNT}" /tmp/godot-digest.log');
+  });
+
   it('ci.yml docker-smoke job loads the image and docker-runs --help (no push)', () => {
     expect(ci).toMatch(/docker-smoke:/);
     expect(ci).toContain('docker/setup-buildx-action@');

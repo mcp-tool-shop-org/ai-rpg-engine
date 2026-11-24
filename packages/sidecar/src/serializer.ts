@@ -11,27 +11,53 @@
 
 import { createHash } from 'node:crypto';
 import type { SnapshotView, StatePatch, WireEvent } from './protocol.js';
-import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
+import {
+  assertAsciiKey,
+  assertJsonRuntimeValue,
+  assertValidDigestString,
+  DIGEST_SCALE,
+  escapeDiagnosticText,
+  roundHalfAwayFromZero,
+  sanitizeDiagnosticMessage,
+  scaleDigestNumber,
+  StateDigestError,
+  validateDigestState,
+  validateJsonState,
+  WIRE_PRECISION,
+  type DigestValidationOptions,
+  type ResolvedEvent,
+  type StateDigestErrorCode,
+  type WorldState,
+} from '@ai-rpg-engine/core';
 
-/**
- * Decimal places kept for a non-integer crossing the wire.
- *
- * The sim's own arithmetic is untouched — this is the WIRE's precision, and it
- * exists so two clients on different platforms cannot render subtly different
- * numbers from the same tick. Integers (which is nearly everything: this engine's
- * doctrine is small-integer damage) pass through exactly.
- */
-export const WIRE_PRECISION = 6;
+export {
+  WIRE_PRECISION,
+  DIGEST_SCALE,
+  StateDigestError,
+  validateDigestState,
+  validateJsonState,
+  escapeDiagnosticText,
+  sanitizeDiagnosticMessage,
+  roundHalfAwayFromZero,
+  type DigestValidationOptions,
+  type StateDigestErrorCode,
+};
 
 /** Quantize one value for the wire. Recursive over plain objects and arrays. */
 export function quantize(value: unknown): unknown {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return null; // NaN/Infinity are not JSON values
-    if (Number.isInteger(value)) return value;
-    const factor = 10 ** WIRE_PRECISION;
-    return Math.round(value * factor) / factor;
+    if (Number.isInteger(value)) return Object.is(value, -0) ? 0 : value;
+    return roundHalfAwayFromZero(value * DIGEST_SCALE) / DIGEST_SCALE;
   }
-  if (Array.isArray(value)) return value.map(quantize);
+  if (Array.isArray(value)) {
+    const out: unknown[] = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const elem = value[i];
+      out[i] = elem === undefined ? null : quantize(elem);
+    }
+    return out;
+  }
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const k of Object.keys(value as Record<string, unknown>).sort()) {
@@ -237,39 +263,49 @@ export function stateHash(state: WorldState | unknown): string {
 }
 
 /**
- * Canonical JSON for a quantized value. Integers stay integers (`5`, never
- * `5.0`); non-integers are `WIRE_PRECISION` with trailing zeros stripped;
- * object keys are sorted. A Godot host implements this encoder rather than
- * `JSON.stringify`, which alphabetizes keys AND emits `5.0`.
+ * Canonical pre-image JSON for cross-language state digests (v2).
+ *
+ * Every number is scaled by 1e6 in IEEE-754 binary64, rounded half away from
+ * zero, and formatted as plain decimal integer digits (`-0` writes as `0`),
+ * bypassing float-to-text formatting in every language. Object keys must be
+ * ASCII, `null` keys are retained, arrays walk by index (mapping holes to
+ * `null`), NUL / lone surrogates and non-JSON runtime types are refused, and
+ * keys are sorted lexicographically by code unit order.
  */
 export function canonicalJson(value: unknown): string {
-  return writeCanonical(quantize(value));
+  return writeCanonical(value, '$');
 }
 
-function writeCanonical(value: unknown): string {
-  if (value === null) return 'null';
+function writeCanonical(value: unknown, path: string): string {
+  if (value === null || value === undefined) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
+  assertJsonRuntimeValue(value, path);
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return 'null';
-    if (Object.is(value, -0)) return '0';
-    if (Number.isInteger(value)) return String(value);
-    let s = value.toFixed(WIRE_PRECISION);
-    s = s.replace(/0+$/, '');
-    if (s.endsWith('.')) s += '0';
-    return s;
+    return String(scaleDigestNumber(value, path));
   }
-  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'string') {
+    assertValidDigestString(value, path);
+    return JSON.stringify(value);
+  }
   if (Array.isArray(value)) {
-    return `[${value.map(writeCanonical).join(',')}]`;
+    const items: string[] = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const elem = value[i];
+      items[i] = elem === undefined ? 'null' : writeCanonical(elem, `${path}[${i}]`);
+    }
+    return `[${items.join(',')}]`;
   }
   if (typeof value === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>).sort();
+    const obj = value as Record<string, unknown>;
+    const rawKeys = Object.keys(obj);
+    for (const k of rawKeys) assertAsciiKey(k, path);
+    const keys = rawKeys.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     const parts: string[] = [];
     for (const k of keys) {
-      const v = (value as Record<string, unknown>)[k];
+      const v = obj[k];
       if (v === undefined) continue;
-      parts.push(`${JSON.stringify(k)}:${writeCanonical(v)}`);
+      parts.push(`${JSON.stringify(k)}:${writeCanonical(v, `${path}.${k}`)}`);
     }
     return `{${parts.join(',')}}`;
   }

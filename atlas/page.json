@@ -3,6 +3,7 @@
     ".claude/",
     ".github/",
     "dogfood/",
+    "fixtures/",
     "root",
     "site/"
   ],
@@ -208,21 +209,21 @@
   "changes": {
     "fileCounts": {
       "added": 0,
-      "changed": 68,
+      "changed": 16,
       "moved": 0,
-      "parts": 35,
+      "parts": 8,
       "removed": 0
     },
     "items": [
       {
         "kind": "counts",
-        "sentence": "Nothing structural changed since 2026-11-12; 68 files changed content.",
+        "sentence": "Nothing structural changed since 2026-11-24; 16 files changed content.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "685bfb210ff51a584ce7a07e15120816f8e6a261",
-      "generatedAt": "2026-11-12T00:55:52.300Z"
+      "commit": "faade5449afc222ecea8ffbb028df996e25d55da",
+      "generatedAt": "2026-11-24T10:50:57.357Z"
     },
     "unchanged": true
   },
@@ -304,13 +305,13 @@
     }
   ],
   "changesTogetherNote": [
-    "11 files changed together with their own tests, as expected.",
+    "12 files changed together with their own tests, as expected.",
     "Window: 180 days; a pair counts from 10 shared commits, since 51 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
   ],
-  "changesTogetherWithTests": 11,
-  "commit": "ae7219349365109436077f8df2e2e94dceb65289",
+  "changesTogetherWithTests": 12,
+  "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1",
   "defaultBranch": "main",
-  "derived": "39 parts, mostly TypeScript (797 files), JavaScript (13), CSS (2), GDScript (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
+  "derived": "40 parts, mostly TypeScript (799 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
     {
       "builds": [
@@ -380,7 +381,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 31
+          "files": 32
         },
         {
           "boundary": "docs",
@@ -440,7 +441,7 @@
         {
           "boundary": "sidecar",
           "depth": 0,
-          "files": 19
+          "files": 20
         },
         {
           "boundary": "soundpack-core",
@@ -679,15 +680,15 @@
         "scripts/gates.test.ts",
         "templates/starter/src/starter.test.ts"
       ],
-      "runsCount": 393,
-      "runsMore": 390,
+      "runsCount": 394,
+      "runsMore": 391,
       "sends": [
         "uploads coverage to Codecov"
       ],
       "stages": [],
       "triggers": [
         "on a pull request",
-        "on a push touching 16 paths",
+        "on a push touching 17 paths",
         "or by hand"
       ]
     },
@@ -759,7 +760,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 31
+          "files": 32
         },
         {
           "boundary": "docs",
@@ -819,7 +820,7 @@
         {
           "boundary": "sidecar",
           "depth": 0,
-          "files": 19
+          "files": 20
         },
         {
           "boundary": "soundpack-core",
@@ -1058,8 +1059,8 @@
         "scripts/gates.test.ts",
         "templates/starter/src/starter.test.ts"
       ],
-      "runsCount": 392,
-      "runsMore": 389,
+      "runsCount": 393,
+      "runsMore": 390,
       "sends": [
         "publishes workspace packages to npm and a container image (on a run by hand, only with dry_run false)"
       ],
@@ -1157,7 +1158,7 @@
         {
           "boundary": "core",
           "depth": 1,
-          "files": 14
+          "files": 15
         },
         {
           "boundary": "equipment",
@@ -1313,7 +1314,7 @@
         {
           "boundary": "core",
           "depth": 4,
-          "files": 14
+          "files": 15
         },
         {
           "boundary": "character-profile",
@@ -1557,9 +1558,9 @@
       ]
     }
   ],
-  "generatedAt": "2026-11-21T12:04:43.452Z",
+  "generatedAt": "2026-11-24T11:46:59.864Z",
   "limits": [
-    "3 imports could not be resolved: `packages/cli/src/external-pack.ts` imports a path built at run time; `packages/pack-registry/src/discover.ts` imports a path built at run time; `packages/pack-registry/src/starter-readme-usage.test.ts` imports a path built at run time.",
+    "5 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://framing.gd`; `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; and 2 more.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
     "1 write goes to places this repository does not track, so it is not listed as generated.",
     "7 writes and 112 reads go to a path their caller passes, not to this repository.",
@@ -1567,8 +1568,8 @@
     "12 writes and 9 reads go to the directory the command is run in, not to this repository.",
     "6 writes and 3 reads go to a temporary directory, not to this repository.",
     "2 commands are built at run time and not followed, 1 of them in tests.",
-    "CI runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434.",
-    "Release runs or checks 433 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 433."
+    "CI runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435.",
+    "Release runs or checks 434 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 434."
   ],
   "mainDoor": ".github/workflows/ci.yml",
   "partLabels": {
@@ -1585,6 +1586,7 @@
     "docs": "docs",
     "dogfood": "dogfood",
     "equipment": "equipment",
+    "fixtures": "fixtures",
     "image-gen": "image-gen",
     "ledger-adapter": "ledger-adapter",
     "modules": "modules",
@@ -1612,7 +1614,7 @@
     "starter-zombie": "starter-zombie",
     "terminal-ui": "terminal-ui"
   },
-  "parts": 39,
+  "parts": 40,
   "readers": [
     {
       "readers": [],
@@ -1823,7 +1825,7 @@
   ],
   "summary": null,
   "summaryFrom": null,
-  "testFiles": 391,
+  "testFiles": 392,
   "testedBy": {
     "asset-registry": 6,
     "audio-director": 3,
@@ -1832,7 +1834,7 @@
     "character-profile": 12,
     "cli": 44,
     "content-schema": 190,
-    "core": 280,
+    "core": 281,
     "equipment": 159,
     "image-gen": 6,
     "ledger-adapter": 17,
@@ -1842,7 +1844,7 @@
     "presentation": 6,
     "rumor-system": 3,
     "scripts": 1,
-    "sidecar": 15,
+    "sidecar": 16,
     "soundpack-core": 8,
     "starter": 3,
     "starter-bounty-hunter": 34,

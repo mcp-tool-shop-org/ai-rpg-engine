@@ -32,7 +32,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "cf61ffd04047d855ea4b002fe61db768e46866c7746276efdb7440e1e8fe7a72",
+          "hash": "fb9ad95f01a90a0dd208cd164967b309fdb19218a73750228cdd5ac5fe873204",
           "path": ".github/workflows/ci.yml"
         },
         {
@@ -3638,7 +3638,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "a578c25d67cceffecfde3fd693307034726252ab0f8cea671b838ea7fdeefc64",
+          "hash": "b3ffb45665fcaaa348b928efcb356f0b1c8bff7aa151da074f7737c3036d71e3",
           "importsFiles": [
             "packages/sidecar/src/index.ts"
           ],
@@ -6648,7 +6648,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "5cbfdc5c4f2391062a9a596fbb96d95feb01554bec7ac552788036c2d9a9e482",
+          "hash": "812a7a799487244e53a6b3d02c180b8ce77c59c51d5ce8fa0f0af8eb76248af7",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts"
@@ -6675,16 +6675,31 @@
           "failurePaths": [
             {
               "in": "applyContentPack",
-              "kind": "catch",
-              "line": 630
+              "kind": "throw",
+              "line": 641
             },
             {
               "in": "applyContentPack",
               "kind": "catch",
-              "line": 1018
+              "line": 644
+            },
+            {
+              "in": "applyContentPack",
+              "kind": "catch",
+              "line": 1056
+            },
+            {
+              "in": "applyContentPack",
+              "kind": "catch",
+              "line": 1076
+            },
+            {
+              "in": "applyContentPack",
+              "kind": "throw",
+              "line": 1085
             }
           ],
-          "hash": "3ebdc957c3b3b6d504194271bf600e9b78edbb2db1778c354407d8c218cb9ca3",
+          "hash": "814c41e6c4f85cd67400a78b22078a3535e1e4adf0b96477efd7d4e9c88b132c",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/refs.ts",
@@ -6972,7 +6987,7 @@
             "validateStatusPackAgainstRuleset",
             "validateZoneDefinition"
           ],
-          "hash": "9b58893af1178fc41627b8604366d57347fc4f471c257176574d96ed163f8ebc",
+          "hash": "5497bd85d8348d7b5331c08f5bcbfc0f54ebcd33933087db89d6821aab1821f9",
           "importsFiles": [
             "packages/content-schema/src/schemas.ts"
           ],
@@ -7303,7 +7318,7 @@
           "path": "packages/core/src/id.ts"
         },
         {
-          "hash": "a1461f7452e69815548bbc03788e70d62647f55cdff9f8e3b83dfcd76e9e31e6",
+          "hash": "ad67450e1c2bca886441bfb3f46c1486f28d253b01468e02ced4db3841cd389d",
           "importOrder": [
             "packages/core/src/types.ts",
             "packages/core/src/id.ts",
@@ -7316,6 +7331,7 @@
             "packages/core/src/formulas.ts",
             "packages/core/src/channels.ts",
             "packages/core/src/state-hash.ts",
+            "packages/core/src/state-digest.ts",
             "packages/core/src/engine.ts",
             "packages/core/src/test-harness.ts"
           ],
@@ -7329,6 +7345,7 @@
             "packages/core/src/manifest.ts",
             "packages/core/src/modules.ts",
             "packages/core/src/rng.ts",
+            "packages/core/src/state-digest.ts",
             "packages/core/src/state-hash.ts",
             "packages/core/src/test-harness.ts",
             "packages/core/src/types.ts",
@@ -7345,6 +7362,7 @@
             "packages/core/src/manifest.ts",
             "packages/core/src/modules.ts",
             "packages/core/src/rng.ts",
+            "packages/core/src/state-digest.ts",
             "packages/core/src/state-hash.ts",
             "packages/core/src/test-harness.ts",
             "packages/core/src/types.ts",
@@ -7573,10 +7591,68 @@
         },
         {
           "exports": [
+            "assertAsciiKey",
+            "assertFiniteJsonNumber",
+            "assertJsonRuntimeValue",
+            "assertValidDigestString",
+            "escapeDiagnosticText",
+            "roundHalfAwayFromZero",
+            "sanitizeDiagnosticMessage",
+            "scaleDigestNumber",
+            "validateDigestState",
+            "validateJsonState"
+          ],
+          "failurePaths": [
+            {
+              "in": "assertValidDigestString",
+              "kind": "throw",
+              "line": 182
+            },
+            {
+              "in": "assertValidDigestString",
+              "kind": "throw",
+              "line": 196
+            },
+            {
+              "in": "assertValidDigestString",
+              "kind": "throw",
+              "line": 205
+            },
+            {
+              "in": "assertAsciiKey",
+              "kind": "throw",
+              "line": 223
+            },
+            {
+              "in": "assertAsciiKey",
+              "kind": "throw",
+              "line": 232
+            },
+            {
+              "in": "assertJsonRuntimeValue",
+              "kind": "throw",
+              "line": 247
+            },
+            {
+              "in": "assertFiniteJsonNumber",
+              "kind": "throw",
+              "line": 260
+            },
+            {
+              "in": "scaleDigestNumber",
+              "kind": "throw",
+              "line": 280
+            }
+          ],
+          "hash": "38a0a6b309a1a29baf5089f4934de49db27771129c837f05237d8f1848a1991d",
+          "path": "packages/core/src/state-digest.ts"
+        },
+        {
+          "exports": [
             "canonicalizeForHash",
             "stateHash"
           ],
-          "hash": "3b7f725d251638117407e98e93d281b9c7bb6de3562aaa6cdaa92098327b7121",
+          "hash": "26ca0ee38f48bb7d0ff20872a95596f5f80095c3d9e68df6f8c7294ae178766e",
           "importsFiles": [
             "packages/core/src/types.ts"
           ],
@@ -7628,7 +7704,7 @@
           "path": "packages/core/src/types.ts"
         },
         {
-          "hash": "96fd6b30819148ff7b636920aebe556da697973679277e39de4fa9c6ec1b9fcb",
+          "hash": "3eaf3a25e6678a37bda61411a4efc7b8da0a9f912dec3be795fb08c49940c12a",
           "importOrder": [
             "packages/core/src/engine.ts",
             "packages/core/src/world.ts",
@@ -7800,7 +7876,7 @@
       "testRunners": [
         "vitest"
       ],
-      "testedBy": 280,
+      "testedBy": 281,
       "unresolvedSites": 0
     },
     {
@@ -7888,7 +7964,7 @@
           "path": "docs/composition-model.md"
         },
         {
-          "hash": "d629bd1ba4cf7f4e397aca064221766dcde6ca8f18a38e052620bffcf9d83380",
+          "hash": "88915d44abebe489a240c4f6124922394a647d658492ca2eb31d0e367770e664",
           "path": "docs/contract-v1/CONTRACT.md"
         },
         {
@@ -8286,7 +8362,7 @@
           "path": "docs/handbook/65-consequences-that-leave-marks.md"
         },
         {
-          "hash": "2f3ad2d68085c2129aa1adb9ef0beb258822af1ca6c633526bbb39d3a1c1ca0c",
+          "hash": "b40ecb13896c4e4e23fd392de85583c4fcd662e3b3e414b19d3916f0268baff7",
           "path": "docs/handbook/66-visual-clients.md"
         },
         {
@@ -8759,6 +8835,45 @@
       ],
       "testedBy": 159,
       "unresolvedSites": 0
+    },
+    {
+      "dynamicReads": 0,
+      "dynamicSpawns": 0,
+      "dynamicSpawnsInTests": 0,
+      "dynamicWrites": 0,
+      "entryPoints": [],
+      "externals": 0,
+      "files": [
+        {
+          "hash": "55e9efe757f419b4ece203e1759dd22adc577ccb7c4e4127e9a8a3c8d41f3066",
+          "path": "fixtures/state_digest_vectors.jsonl"
+        },
+        {
+          "hash": "ffe3c9a9611fcbd8d68eb7966e09a96e7189f4f0ca7d481ffab2970dc157808f",
+          "path": "fixtures/verify_state_digest_vectors.gd"
+        }
+      ],
+      "globs": [
+        "fixtures/**"
+      ],
+      "importConfidence": "low",
+      "name": "fixtures",
+      "origin": "authored",
+      "role": "data",
+      "testedBy": 0,
+      "unresolvedNamed": [
+        {
+          "path": "fixtures/verify_state_digest_vectors.gd",
+          "specifier": "res://sidecar_client.gd",
+          "why": "other"
+        },
+        {
+          "path": "fixtures/verify_state_digest_vectors.gd",
+          "specifier": "res://framing.gd",
+          "why": "other"
+        }
+      ],
+      "unresolvedSites": 2
     },
     {
       "dynamicReads": 0,
@@ -18627,7 +18742,7 @@
           "path": ".gitignore"
         },
         {
-          "hash": "bb201307ccbd7171a8ee36750cc7b538055b5756975af782108ec2afb9dc740c",
+          "hash": "41467e4901568d28985595d78931c5599cb6ef53daeb0308515e7b6215574d1c",
           "path": "CHANGELOG.md"
         },
         {
@@ -18647,35 +18762,35 @@
           "path": "PHILOSOPHY.md"
         },
         {
-          "hash": "85a416de0c1189e581d3454d19223838f1af63c80d156c2fe2df144795bf8f16",
+          "hash": "4ff022297da470756432268f296df52b3b3efd63e5250edd576e6d01dd8e0701",
           "path": "README.es.md"
         },
         {
-          "hash": "36a76921108f9aef126700b237d016ba9f85be0bf6c6d9641aafe487f738b7cc",
+          "hash": "084410479701eef39e71100bb6b4eaa583f9ef64a4dda2d1e9408c72b02b671e",
           "path": "README.fr.md"
         },
         {
-          "hash": "e841815e75e2dba1960897d7a7e7f245b2b87bd624403cc0ba377b0f9f5f779f",
+          "hash": "902bd1ff989086640303640cf01d5677fb773ef69dbde5d720b4cdb047ffbc2a",
           "path": "README.hi.md"
         },
         {
-          "hash": "b835c844b6adf263fbd0461ec2e7b8af726b080524073cfa88b5a0832889c2f9",
+          "hash": "3c7f3341ed8a7c6b6281995ad3565ae32f7520bef4067ac7704402c98633194e",
           "path": "README.it.md"
         },
         {
-          "hash": "9b5a544e5bf8185f7bbaa006649110d0898b0a07687710b80a242bf80ae7c328",
+          "hash": "a960406327035b8df2915600270f79fca1535532cc7e9b3197a04ae21cc2e828",
           "path": "README.ja.md"
         },
         {
-          "hash": "1968e3fc22eaf9df77e419006766a262d56cbb2cecd83ad7562e373b80888640",
+          "hash": "7cd276f8a32b0eba044cedcc2566cbae960bd841127742a2cfe919106fe589c9",
           "path": "README.md"
         },
         {
-          "hash": "6915f00a5910bc070bbfc90576b99f8eaf683b68292a7bd059816e83725c5a73",
+          "hash": "4003981d63e9a91bfd96d8e0c343f27865de658aedf7831e4a071348f5e1950e",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "55f51c589c5de0809e01154eb9f2686455b4e866f290bffd05c298f80ecb5342",
+          "hash": "9f692ab22f21e1039b6fc7c39a3bde5e099f7f8b1d51b1d3bf8ba79d40b3b0a6",
           "path": "README.zh.md"
         },
         {
@@ -18683,7 +18798,7 @@
           "path": "SCORECARD.md"
         },
         {
-          "hash": "431116a90a5ff24f5e970fbcd67354858409de60c44bdb976e83d23aaf909188",
+          "hash": "0a7553b5b729d4f09b06870c7775e0b444fd90e1480373ad4c02a529ab0d57f2",
           "path": "SECURITY.md"
         },
         {
@@ -18970,7 +19085,7 @@
           "sequences": []
         },
         {
-          "hash": "07eca2eff0e5aa365542e316a313045411c572dabd3dbd6f8a4c87d155813fc3",
+          "hash": "4bce9c11ded16563c6db6ac2a75191a2ea0a264fa294549988d0acffd3ea0ab0",
           "importsFiles": [
             "vitest.config.ts"
           ],
@@ -19057,7 +19172,7 @@
           "path": "packages/sidecar/LICENSE"
         },
         {
-          "hash": "82a5c1b6eb031a262bdd25b5a49ffc59d7dcf2c3d7d17d6bea176487c04c8c47",
+          "hash": "b0610526f14a06f7a192c352d8a806cc1e5b81ab14fab2973b584fdebbf8c7a2",
           "path": "packages/sidecar/README.md"
         },
         {
@@ -19091,9 +19206,11 @@
             "save",
             "shutdown",
             "snapshot",
-            "submit_action"
+            "submit_action",
+            "try_canonical_json",
+            "try_canonical_state_hash"
           ],
-          "hash": "acb91917c2317c10e49cde212d17ca02814f045bc8f63bae2ba9b843cec04d77",
+          "hash": "0bd7ba97630d08cde4a471cefd7a08a6bc31b0b932da2c89b6de8f578649ef98",
           "importsFiles": [
             "packages/sidecar/gdscript/framing.gd"
           ],
@@ -19104,7 +19221,7 @@
           "path": "packages/sidecar/package.json"
         },
         {
-          "hash": "2e9bec386a881a97a5a0d86f949fe4c254ea77a3a88ef3d0330b7c37f28674c0",
+          "hash": "64bc9873620c9ccc28570332a0b5d4cf44840723baedfbfed5b392e389c6cc8b",
           "importOrder": [
             "packages/sidecar/src/client.ts",
             "packages/sidecar/src/protocol.ts",
@@ -19121,7 +19238,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "6b423cf4bdbb5b8a8f777f2312b581e264bb097853acd53456e8fee03cee7acb",
+          "hash": "f50d8ddfee83997a9aa1081b778efabf3b6544ae3a5bd59919283ce3b7b51e6d",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/framing.ts",
@@ -19186,9 +19303,10 @@
           "path": "packages/sidecar/src/framing.ts"
         },
         {
-          "hash": "4d6ee3c1820eff00d9d1c255467f5c5ee68ab83b426f3525759a2a3890fee1e3",
+          "hash": "eea36d5cb86aedc59265d616f252ad83f1303ef75a8602f74a0515578f0a0ea9",
           "importsFiles": [
-            "packages/sidecar/src/framing.ts"
+            "packages/sidecar/src/framing.ts",
+            "packages/sidecar/src/protocol.ts"
           ],
           "names": [
             "packages/sidecar/gdscript/framing.gd",
@@ -19240,17 +19358,17 @@
             {
               "in": "assertNotReserved",
               "kind": "throw",
-              "line": 320
+              "line": 335
             }
           ],
-          "hash": "386089620723722d1344220ac747d8dbeb2cec4f290cdd78fd49cbf6a13d344d",
+          "hash": "2558a7a7df9a6950d1ba54aa22765ad60663b5442f20c0d637c69e27db1c4758",
           "importsFiles": [
             "packages/sidecar/src/framing.ts"
           ],
           "path": "packages/sidecar/src/protocol.ts"
         },
         {
-          "hash": "cee9de29993b8576a6654d3ed46ea95413962b6fd6d05afc03def361a28a0d14",
+          "hash": "8b3f5d4f7fc2a4afa086fe51796a3021fc953276849673cc18a05770eb9770ec",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/serializer.ts"
@@ -19270,7 +19388,7 @@
             "stateHash",
             "toWireEvent"
           ],
-          "hash": "cb01e5617cd6d89d0e1bae10e6b5243f4c34fe122c6700c17db24b52709be748",
+          "hash": "8f0e8169af516ac392b01e63bd90e95115d0ebf56958c47d9e6fe5dfa173a266",
           "importOrder": [
             "packages/sidecar/src/protocol.ts",
             "packages/core/src/index.ts"
@@ -19282,7 +19400,7 @@
           "path": "packages/sidecar/src/serializer.ts"
         },
         {
-          "hash": "557618a890e1c2a3c4c09a5a6e7002b5ec8e4f926308adcadeb0370b522a938b",
+          "hash": "a63c94cccbfc47ce77a36f3f7c94038e7484563cb0c84835c2f8f0be1e32e28f",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/client.ts",
@@ -19310,30 +19428,55 @@
             {
               "in": "handle",
               "kind": "catch",
-              "line": 318
+              "line": 358
             },
             {
               "in": "dispatch",
               "kind": "catch",
-              "line": 538
+              "line": 618
+            },
+            {
+              "in": "dispatch",
+              "kind": "throw",
+              "line": 622
+            },
+            {
+              "in": "dispatch",
+              "kind": "catch",
+              "line": 626
             },
             {
               "in": "preview",
               "kind": "throw",
-              "line": 589
+              "line": 691
+            },
+            {
+              "in": "runWorldMutation",
+              "kind": "catch",
+              "line": 920
+            },
+            {
+              "in": "runWorldMutation",
+              "kind": "throw",
+              "line": 929
+            },
+            {
+              "in": "replicatePeerCommit",
+              "kind": "catch",
+              "line": 1188
             },
             {
               "in": "outbound",
               "kind": "catch",
-              "line": 1030
+              "line": 1212
             },
             {
               "in": "outbound",
               "kind": "throw",
-              "line": 1049
+              "line": 1231
             }
           ],
-          "hash": "b96178786f1a50d9eabb6c98649c685cd91436907412f1d74bc059ea715777d8",
+          "hash": "828606590ab5dfd83528df1fb9018efec53fb0ca489b90e5f9c0e5687aa4f36a",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/protocol.ts",
@@ -19392,6 +19535,14 @@
           "path": "packages/sidecar/src/socket.ts"
         },
         {
+          "hash": "2b93f3659a72c55a3acc6c79856077a6e9011cb93029c1f36c7318c59fb54ab8",
+          "importsFiles": [
+            "packages/sidecar/src/serializer.ts"
+          ],
+          "path": "packages/sidecar/src/state-digest-vectors.test.ts",
+          "testFramework": "vitest"
+        },
+        {
           "hash": "e64996540a021e08f7a374c88969e08554d7b32381a48231dca84802c8834e2d",
           "importOrder": [
             "packages/core/src/index.ts",
@@ -19444,7 +19595,7 @@
       "testRunners": [
         "vitest"
       ],
-      "testedBy": 15,
+      "testedBy": 16,
       "unresolvedSites": 0
     },
     {
@@ -19741,7 +19892,7 @@
           "path": "site/src/content/docs/handbook/65-consequences-that-leave-marks.md"
         },
         {
-          "hash": "5e15d1aeac2ae6e994d8c62c74556cf933930c63054371d638ffd1f4b76cab2f",
+          "hash": "b392aaa51e6b139ff309f5c7c18512e3efb826243e6b56ef98ed60757f780082",
           "path": "site/src/content/docs/handbook/66-visual-clients.md"
         },
         {
@@ -19765,7 +19916,7 @@
           "path": "site/src/content/docs/handbook/beginners.md"
         },
         {
-          "hash": "db1522c5453d991e1efd678905df111efce19ee5e04a8ad77f16a7343d158767",
+          "hash": "7ddbdf5c29e06253d4274e248520644c16da9c762a5c5ff7e361316e79251ecd",
           "path": "site/src/content/docs/handbook/index.md"
         },
         {
@@ -23779,6 +23930,38 @@
         },
         {
           "dir": "",
+          "job": "godot-digest",
+          "programs": [
+            "1",
+            "cat",
+            "chmod",
+            "curl",
+            "echo",
+            "grep",
+            "mkdir",
+            "mv",
+            "sha256sum",
+            "unzip"
+          ],
+          "step": "Install and verify Godot 4.7.2 (pinned sha256)"
+        },
+        {
+          "dir": "",
+          "job": "godot-digest",
+          "programs": [
+            "1",
+            "cp",
+            "echo",
+            "grep",
+            "mkdir",
+            "printf",
+            "tee",
+            "timeout"
+          ],
+          "step": "Run GDScript canonical digest vectors (headless)"
+        },
+        {
+          "dir": "",
           "job": "docker-smoke",
           "programs": [
             "docker"
@@ -23848,6 +24031,22 @@
         },
         {
           "basis": "declared",
+          "name": "godot-digest",
+          "runsOn": [
+            {
+              "labels": [
+                "ubuntu-latest"
+              ],
+              "platform": {
+                "cpu": "x64",
+                "libc": "glibc",
+                "os": "linux"
+              }
+            }
+          ]
+        },
+        {
+          "basis": "declared",
           "name": "docker-smoke",
           "runsOn": [
             {
@@ -23870,6 +24069,22 @@
         "docs/contract-v1/rng-audit.json"
       ],
       "mentions": [
+        {
+          "job": "godot-digest",
+          "path": "fixtures/state_digest_vectors.jsonl"
+        },
+        {
+          "job": "godot-digest",
+          "path": "fixtures/verify_state_digest_vectors.gd"
+        },
+        {
+          "job": "godot-digest",
+          "path": "packages/sidecar/gdscript/framing.gd"
+        },
+        {
+          "job": "godot-digest",
+          "path": "packages/sidecar/gdscript/sidecar_client.gd"
+        },
         {
           "job": "build-and-test",
           "path": "tsconfig.tests.json"
@@ -23920,7 +24135,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 31
+          "files": 32
         },
         {
           "boundary": "docs",
@@ -23980,7 +24195,7 @@
         {
           "boundary": "sidecar",
           "depth": 0,
-          "files": 19
+          "files": 20
         },
         {
           "boundary": "soundpack-core",
@@ -25498,7 +25713,7 @@
           "via": "eslint eslint.config.js"
         }
       ],
-      "runsCount": 434,
+      "runsCount": 435,
       "runsCut": true,
       "secrets": [],
       "sends": {
@@ -25522,7 +25737,7 @@
         },
         {
           "config": "vitest.config.ts",
-          "files": 388,
+          "files": 389,
           "job": "build-and-test",
           "runner": "vitest",
           "step": "13",
@@ -25533,7 +25748,7 @@
         {
           "config": "vitest.config.ts",
           "coverage": true,
-          "files": 388,
+          "files": 389,
           "job": "build-and-test",
           "junit": true,
           "runner": "vitest",
@@ -25555,6 +25770,7 @@
             "docs/examples/**",
             "docs/mixed-game-viability-proof.ts",
             "eslint.config.js",
+            "fixtures/**",
             "package-lock.json",
             "package.json",
             "packages/**",
@@ -26126,7 +26342,7 @@
         {
           "boundary": "core",
           "depth": 0,
-          "files": 31
+          "files": 32
         },
         {
           "boundary": "docs",
@@ -26186,7 +26402,7 @@
         {
           "boundary": "sidecar",
           "depth": 0,
-          "files": 19
+          "files": 20
         },
         {
           "boundary": "soundpack-core",
@@ -27714,7 +27930,7 @@
           "via": "eslint eslint.config.js"
         }
       ],
-      "runsCount": 433,
+      "runsCount": 434,
       "runsCut": true,
       "secrets": [
         "GITHUB_TOKEN"
@@ -27733,7 +27949,7 @@
       "tests": [
         {
           "config": "vitest.config.ts",
-          "files": 388,
+          "files": 389,
           "job": "npm",
           "runner": "vitest",
           "step": "8",
@@ -27798,7 +28014,7 @@
             "file": "packages/core/src/index.ts",
             "from": "packages/cli/src/bin.ts"
           },
-          "files": 14
+          "files": 15
         },
         {
           "boundary": "equipment",
@@ -28074,7 +28290,7 @@
             "file": "packages/core/src/index.ts",
             "from": "packages/ollama/src/replay-producer.ts"
           },
-          "files": 14
+          "files": 15
         },
         {
           "boundary": "character-profile",
@@ -29169,8 +29385,8 @@
   ],
   "engine": "1.26.0",
   "generatedFrom": {
-    "commit": "ae7219349365109436077f8df2e2e94dceb65289",
-    "tracked": 1386
+    "commit": "3c05846ed5f0b8b6343b84c123be8fe4137defa1",
+    "tracked": 1390
   },
   "landings": [
     {
@@ -30094,6 +30310,38 @@
         }
       ],
       "target": "dogfood/roadmap/swarm-1788226678-0c6b.1.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
+        {
+          "by": "packages/sidecar/src/state-digest-vectors.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "fixtures/state_digest_vectors.jsonl",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
+        {
+          "by": "packages/sidecar/src/gdscript-kit.test.ts",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "fixtures/verify_state_digest_vectors.gd",
       "writers": []
     },
     {
@@ -31462,6 +31710,10 @@
     {
       "readers": [
         {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
+        {
           "by": "packages/sidecar/src/gdscript-kit.test.ts",
           "call": "readFileSync",
           "confidence": "ast",
@@ -31473,6 +31725,10 @@
     },
     {
       "readers": [
+        {
+          "by": ".github/workflows/ci.yml",
+          "confidence": "config"
+        },
         {
           "by": "packages/sidecar/src/gdscript-kit.test.ts",
           "call": "readFileSync",
@@ -32050,7 +32306,7 @@
   "overlaps": [],
   "submodules": [],
   "symlinks": [],
-  "testFiles": 391,
+  "testFiles": 392,
   "unassigned": [],
   "workspaces": [
     "packages/asset-registry",
