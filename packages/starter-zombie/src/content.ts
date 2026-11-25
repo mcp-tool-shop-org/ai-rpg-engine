@@ -13,7 +13,7 @@ export const manifest: GameManifest = {
   id: 'ashfall-dead',
   title: 'Ashfall Dead',
   version: '4.0.0',
-  engineVersion: '>=3.8.0 <4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   ruleset: 'zombie-minimal',
   modules: [
     'traversal-core',
@@ -745,7 +745,7 @@ export const packMeta: PackMetadata = {
   difficulty: 'intermediate',
   tones: ['tense', 'gritty'],
   tags: ['zombie', 'survival', 'scavenging', 'infection'],
-  engineVersion: '>=3.8.0 <4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   version: '4.0.0',
   description: 'Survive in a zombie-ravaged city. Manage infection, scavenge supplies, and make impossible choices about who lives.',
   narratorTone: 'survival horror, desperate, tense, bleak',

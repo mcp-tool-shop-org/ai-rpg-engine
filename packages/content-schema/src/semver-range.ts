@@ -208,7 +208,7 @@ export function satisfiesRange(version: string | SemVer, range: string): boolean
     throw new SemVerError({
       code: 'SEMVER_RANGE_INVALID',
       message: 'Range must be a non-empty string.',
-      hint: 'Use a range like ">=3.8.0 <4.0.0", "^3.8.0", or "3.x".',
+      hint: 'Use a range like ">=4.0.0 <5.0.0", "^4.0.0", or "4.x".',
     });
   }
   if (range.includes(' - ')) {

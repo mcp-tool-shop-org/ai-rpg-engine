@@ -10,7 +10,7 @@ export type GameManifest = {
   title: string;
   version: string;
   /**
-   * The engine versions this pack supports — a semver RANGE (">=3.8.0 <4.0.0"),
+   * The engine versions this pack supports — a semver RANGE (">=4.0.0 <5.0.0"),
    * checked by the load gate. A bare version is accepted as an exact match and
    * advised against: C0 found `engineVersion: '2.0.0'` hardcoded in the exporter
    * and read by nothing, so eight minor releases of drift went unnoticed

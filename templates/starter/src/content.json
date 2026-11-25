@@ -7,7 +7,7 @@
     "difficulty": "beginner",
     "tones": ["heroic"],
     "tags": ["starter"],
-    "engineVersion": ">=3.8.0 <4.0.0",
+    "engineVersion": ">=4.0.0 <5.0.0",
     "version": "0.1.0",
     "description": "A brief description of your game. One to three sentences that appear as the listing subtitle.",
     "narratorTone": "A short narrator-voice note."
@@ -16,7 +16,7 @@
     "id": "my-game",
     "title": "My Game",
     "version": "0.1.0",
-    "engineVersion": ">=3.8.0 <4.0.0",
+    "engineVersion": ">=4.0.0 <5.0.0",
     "ruleset": "my-game",
     "modules": ["traversal-core", "status-core", "combat-core"],
     "contentPacks": ["my-game"]

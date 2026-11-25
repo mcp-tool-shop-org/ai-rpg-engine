@@ -17,6 +17,7 @@ A major release, because every `canonicalHash` value changes: the canonical pre-
 - **`ApplyContentPackResult.warnings`** is a new required field.
 - **`DialogueNode.speaker`** is now optional.
 - **`buildNarrationPlan` without a player id** sets no zone-entry cue.
+- **Content packs must declare a range that includes 4.x.** The load gate refuses a pack whose `manifest.engineVersion` excludes the running engine, so a pack stamped `>=3.8.0 <4.0.0` no longer loads. Re-export World Forge packs with World Forge 4.11.0 or later, which stamps `>=4.0.0 <5.0.0`; for a hand-written pack, change the range. The built-in starters and `templates/starter` now declare `>=4.0.0 <5.0.0`, and the gate's hint suggests a range up to the running engine's next major.
 
 ### For integrators
 

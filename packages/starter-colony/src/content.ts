@@ -13,7 +13,7 @@ export const manifest: GameManifest = {
   id: 'signal-loss',
   title: 'Signal Loss',
   version: '4.0.0',
-  engineVersion: '>=3.8.0 <4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   ruleset: 'colony-minimal',
   modules: [
     'traversal-core',
@@ -688,7 +688,7 @@ export const packMeta: PackMetadata = {
   difficulty: 'advanced',
   tones: ['tense', 'atmospheric'],
   tags: ['colony', 'alien', 'management', 'first-contact', 'power'],
-  engineVersion: '>=3.8.0 <4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   version: '4.0.0',
   description: 'Command a struggling colony on an alien world. Manage dwindling power, navigate political fractures, and investigate a signal from beneath the surface.',
   narratorTone: 'hard sci-fi, clinical, tense, vast',

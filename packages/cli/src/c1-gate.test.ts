@@ -344,7 +344,7 @@ describe('C1/P2 — the forge export, gated live', () => {
 
   it('the repaired manifest declares a range this engine satisfies', () => {
     const manifest = forgeManifest();
-    expect(manifest.engineVersion).toBe('>=3.8.0 <4.0.0');
+    expect(manifest.engineVersion).toBe('>=4.0.0 <5.0.0');
     const r = runLoadGate(fixturePack(), {
       engineVersion: ENGINE_VERSION,
       registeredModuleIds: registeredIds(),
