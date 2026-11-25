@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 A major release, because every `canonicalHash` value changes: the canonical pre-image now scales numbers to integers (`digest_spec_version: 2`). It also adds two built-in AI intent profiles (`passive` and `follower`, six in all), the sidecar's `sim/resyncRequired` notice after a load, whole-world checks on every sidecar write, and player-only zone-entry presentation.
 
 **Upgrading from 3.x:**
-- **Hashes.** Recompute any stored `canonicalHash` and update clients to `digest_spec_version: 2`. `stateHash` is unchanged. `canonicalStateHash` is now `worldStateHash`; the old name stays as a deprecated alias.
+- **Hashes.** Recompute any stored `canonicalHash` and update clients to `digest_spec_version: 2`. `stateHash` is unchanged. In `@ai-rpg-engine/core`, the `canonicalStateHash` alias is now `worldStateHash`; the old core name stays as a deprecated alias. The sidecar's own `canonicalStateHash` (the cross-language wire digest) keeps its name.
 - **Unresolved AI profiles are refused by default** in `sidecar --content`, `validate` and starter `createGame`. Pass `--unresolved-ai-profile warn` to keep loading with warnings.
 - **`ApplyContentPackResult.warnings`** is a new required field.
 - **`DialogueNode.speaker`** is now optional.
