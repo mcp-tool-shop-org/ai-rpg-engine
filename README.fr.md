@@ -37,7 +37,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mon
 
 ---
 
-## État actuel (v4.0.0)
+## État actuel
 
 **Ce qui fonctionne et est testé :**
 - Le cœur de simulation : ticks déterministes, RNG à graine, rejeu identique octet pour octet, et sauvegarde et reprise

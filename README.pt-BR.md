@@ -37,7 +37,7 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 
 ---
 
-## Status atual (v4.0.0)
+## Status atual
 
 **O que funciona e está testado:**
 - O núcleo de simulação: ticks determinísticos, RNG com semente, replay idêntico byte a byte, e salvar e retomar

@@ -37,7 +37,7 @@ This is a **composition engine**, not a finished game. The 12 starter worlds are
 
 ---
 
-## Current Status (v4.0.0)
+## Current Status
 
 **What works and is tested:**
 - The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume

@@ -37,7 +37,7 @@ Este es un **motor de composición**, no un juego terminado. Los 12 mundos inici
 
 ---
 
-## Estado actual (v4.0.0)
+## Estado actual
 
 **Lo que funciona y está probado:**
 - El núcleo de simulación: ticks deterministas, RNG con semilla, repetición idéntica byte a byte, y guardar y reanudar
