@@ -66,7 +66,7 @@ Each starter pack exports a `packMeta: PackMetadata` with structured fields:
 | difficulty | PackDifficulty | beginner, intermediate, or advanced |
 | tones | PackTone[] | Narrative tone descriptors |
 | tags | string[] | Free-form tags for search |
-| engineVersion | string | Minimum engine version (semver) |
+| engineVersion | string | Engine versions the pack supports, a semver range such as `>=4.0.0 <5.0.0` |
 | version | string | Pack version |
 | description | string | Short description (1-3 sentences) — listing subtitle |
 | narratorTone | string | Tone string for the narrator |

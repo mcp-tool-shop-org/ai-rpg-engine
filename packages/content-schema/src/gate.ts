@@ -21,12 +21,21 @@
 import { createHash } from 'node:crypto';
 import type { ContentPack } from './refs.js';
 import type { ValidationError } from './validate.js';
-import { satisfiesRange, isBareVersion, SemVerError } from './semver-range.js';
+import { satisfiesRange, isBareVersion, parseVersion, SemVerError } from './semver-range.js';
 
-/** The next major after a version string, e.g. "4.0.0" -> "5.0.0"; "the next major" when it cannot be parsed. */
-function nextMajor(version: string): string {
-  const major = Number.parseInt(String(version).split('.')[0] ?? '', 10);
-  return Number.isFinite(major) ? `${major + 1}.0.0` : 'the next major';
+/**
+ * A range suggestion for a pack that declares none: from the running engine's
+ * release (major.minor.patch, prerelease dropped) up to its next major. Built from
+ * parseVersion so a "v" prefix or a prerelease never produces a range the engine
+ * itself would fail; an unparseable version gets a generic example instead.
+ */
+function suggestedRange(engineVersion: string): string {
+  try {
+    const v = parseVersion(engineVersion);
+    return `>=${v.major}.${v.minor}.${v.patch} <${v.major + 1}.0.0`;
+  } catch {
+    return '>=4.0.0 <5.0.0';
+  }
 }
 
 // --- The allowlist --------------------------------------------------------
@@ -350,7 +359,7 @@ function checkEngineVersion(ctx: GateContext): GateCheckResult {
       expected: `a semver range satisfied by ${ctx.engineVersion}`,
       actual: 'no engineVersion in the manifest',
       message: 'Content pack does not declare which engine versions it supports.',
-      hint: `Set manifest.engineVersion to a range, e.g. ">=${ctx.engineVersion} <${nextMajor(ctx.engineVersion)}".`,
+      hint: `Set manifest.engineVersion to a range, e.g. "${suggestedRange(ctx.engineVersion)}".`,
     };
   }
   if (typeof claimed !== 'string') {

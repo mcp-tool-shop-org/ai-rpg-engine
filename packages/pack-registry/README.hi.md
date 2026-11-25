@@ -66,7 +66,7 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 | कठिनाई | PackDifficulty | शुरुआती, मध्यवर्ती या उन्नत |
 | टोन | PackTone[] | कथात्मक टोन विवरण |
 | टैग | string[] | खोज के लिए स्वतंत्र टैग |
-| engineVersion | string | न्यूनतम इंजन संस्करण (सेमवर्) |
+| engineVersion | string | पैक जिन इंजन संस्करणों का समर्थन करता है, एक semver रेंज, जैसे `>=4.0.0 <5.0.0` |
 | version | string | पैक संस्करण |
 | description | string | संक्षिप्त विवरण (1-3 वाक्य) — सूची का उपशीर्षक |
 | narratorTone | string | वक्ता के लिए टोन स्ट्रिंग |

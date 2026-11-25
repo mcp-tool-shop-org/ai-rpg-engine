@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ContentPack } from './refs.js';
 import { runLoadGate } from './gate.js';
+import { satisfiesRange } from './semver-range.js';
 
-// The missing-engineVersion hint names the range a pack should declare. It derives
-// the upper bound from the running engine's major instead of a hard-coded "<4.0.0",
-// which every 4.x engine would otherwise print as advice no 4.x pack could follow.
+// The missing-engineVersion hint names the range a pack should declare. It is
+// built from the parsed engine version: from that release up to the next major,
+// so the suggestion is always a range the running engine itself satisfies.
 const emptyPack = {} as ContentPack;
 
 function engineVersionHint(engineVersion: string): string {
@@ -14,13 +15,24 @@ function engineVersionHint(engineVersion: string): string {
   return check?.hint ?? '';
 }
 
+function suggested(hint: string): string {
+  return /e\.g\. "([^"]+)"/.exec(hint)?.[1] ?? '';
+}
+
 describe('load gate engine-version hint', () => {
-  it('suggests a range ending at the next major of the running engine', () => {
+  it('suggests a range from the running release up to its next major', () => {
     expect(engineVersionHint('4.0.0')).toContain('">=4.0.0 <5.0.0"');
-    expect(engineVersionHint('12.3.4')).toContain('<13.0.0"');
+    expect(engineVersionHint('12.3.4')).toContain('">=12.3.4 <13.0.0"');
   });
 
-  it('falls back to words when the engine version has no numeric major', () => {
-    expect(engineVersionHint('dev')).toContain('<the next major"');
+  it('drops a prerelease and a "v" prefix, so the engine satisfies its own suggestion', () => {
+    expect(suggested(engineVersionHint('4.0.0-rc.1'))).toBe('>=4.0.0 <5.0.0');
+    expect(suggested(engineVersionHint('v4.1.2'))).toBe('>=4.1.2 <5.0.0');
+    expect(satisfiesRange('4.1.2', suggested(engineVersionHint('v4.1.2')))).toBe(true);
+  });
+
+  it('falls back to a generic example when the engine version does not parse', () => {
+    expect(suggested(engineVersionHint('dev'))).toBe('>=4.0.0 <5.0.0');
+    expect(suggested(engineVersionHint('4abc'))).toBe('>=4.0.0 <5.0.0');
   });
 });

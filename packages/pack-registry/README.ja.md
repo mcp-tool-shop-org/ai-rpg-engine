@@ -66,7 +66,7 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 | difficulty | PackDifficulty | 初心者、中級者、または上級者 |
 | tones | PackTone[] | 物語の雰囲気の説明 |
 | tags | string[] | 検索用の自由形式タグ |
-| engineVersion | string | 最小エンジンバージョン（セマンティックバージョニング） |
+| engineVersion | string | パックが対応するエンジンのバージョン。`>=4.0.0 <5.0.0` のような semver の範囲 |
 | version | string | パックのバージョン |
 | description | string | 短い説明（1〜3文）— 一覧のサブタイトル |
 | narratorTone | string | ナレーターの雰囲気（文字列） |
