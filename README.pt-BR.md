@@ -12,7 +12,7 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# Motor de RPG com IA
+# AI RPG Engine
 
 Um conjunto de ferramentas TypeScript para criar simulações de RPG determinísticas. Você define atributos, escolhe módulos, conecta uma pilha de combate e cria conteúdo. O motor gerencia o estado, eventos, RNG, resolução de ações e tomada de decisões pela IA. Cada execução é reproduzível.
 
@@ -46,7 +46,7 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 - Todos os 12 mundos iniciais, jogáveis hoje com `run`
 - Pacotes do World Forge, carregados como conteúdo
 - O host Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), por meio do sidecar, com sinais de áudio `felt`
-- A camada opcional de livro-razão na testnet do XRPL
+- A camada de livro-razão na testnet do XRPL, ativada só se você escolher (opt-in)
 
 **O que ainda está bruto ou incompleto:**
 - O estúdio de design com IA (Ollama) é opcional e menos testado que o núcleo de simulação
@@ -162,17 +162,17 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | Camada | Função |
 |-------|------|
-| **Core Runtime** | Motor determinístico — estado do mundo, eventos, ações, ticks, RNG, reprodução |
-| **Modules** | Mais de 30 sistemas compostos — combate, percepção, cognição, facções, travessia, companheiros, etc. |
-| **Content** | Entidades, zonas, diálogos, itens, habilidades, status — criados pelo autor |
-| **AI Studio** | Camada Ollama opcional — criação de protótipos, crítica, análise de equilíbrio, ajuste, experimentos |
+| **Núcleo de Execução** | Motor determinístico — estado do mundo, eventos, ações, ticks, RNG, reprodução |
+| **Módulos** | Mais de 30 sistemas compostos — combate, percepção, cognição, facções, travessia, companheiros, etc. |
+| **Conteúdo** | Entidades, zonas, diálogos, itens, habilidades, status — criados pelo autor |
+| **Estúdio de IA** | Camada Ollama opcional — criação de protótipos, crítica, análise de equilíbrio, ajuste, experimentos |
 
 ---
 
 ## O adaptador do livro-razão XRPL (opcional)
 
 `@ai-rpg-engine/ledger-adapter` é um pacote **opcional** que associa a
-**camada de itens negociáveis pertencente ao jogador** de um jogo — o saldo e o inventário de itens consumíveis de `coin` que já são movimentados pelos verbos `trade-core`/`buy`/`sell` — à **testnet XRPL**, para que
+**camada de itens negociáveis pertencente ao jogador** de um jogo — o saldo de `coin` e o inventário de itens consumíveis que os verbos `buy`/`sell` do `trade-core` já movimentam — à **testnet XRPL**, para que
 esses ativos possam ser lastreados por tokens reais registrados no livro-razão e liquidados em pontos de verificação.
 A ausência de um adaptador corresponde exatamente ao motor offline que está disponível atualmente.
 
@@ -180,15 +180,15 @@ A ausência de um adaptador corresponde exatamente ao motor offline que está di
 
 - Ele **nunca é invocado dentro do tick determinístico** — apenas em **checkpoints** (salvar, entrada na cidade/mercado, fim do capítulo).
 - Nada em `@ai-rpg-engine/core` ou `@ai-rpg-engine/modules` o importa (sua única dependência do motor é um `import type` em tempo de compilação).
-- **Uma execução é idêntica, com ou sem ele.** Um teste de firewall executa o loop de comerciante `starter-pirate` `createGame()` real em dois motores — um com o adaptador habilitado e liquidando em um checkpoint — e afirma que os dois mundos são profundamente iguais. A reprodução com a semente 0 não é afetada.
+- **Uma execução é idêntica byte a byte, com ou sem ele.** Um teste de firewall executa o loop de comerciante `starter-pirate` `createGame()` real em dois motores — um com o adaptador habilitado e liquidando em um checkpoint — e afirma que os dois mundos são profundamente iguais. A reprodução com a semente 0 não é afetada.
 
 **Níveis de integração — um jogo o incorpora tão profundamente quanto seu design desejar.** O firewall é uma *fronteira de determinismo*, não uma regra anti-integração; a invariante acima se mantém em todos os níveis:
 
 | Nível | O que depende do adaptador | Se encaixa |
 |-------|-----------------------------|------|
-| **L0 — External observer** | Nada dentro do jogo; o adaptador é anexado externamente em checkpoints e o jogo não tem conhecimento disso. | Retrofit de um jogo existente (a demonstração de pirata lançada). |
+| **L0 — Observador externo** | Nada dentro do jogo; o adaptador é anexado externamente em checkpoints e o jogo não tem conhecimento disso. | Retrofit de um jogo existente (a demonstração de pirata lançada). |
 | **L1 — Checkpoints acionados pelo jogo** | O próprio fluxo de salvamento/cidade/progressão meta do jogo chama o adaptador em momentos definidos. | Um jogo que deseja momentos de livro-razão deliberados. |
-| **L2 — Ledger-native design** | A economia ou a identidade do jogo é projetada *em torno* da propriedade na cadeia. | Um jogo de comerciante com foco no livro-razão. |
+| **L2 — Design nativo no livro-razão** | A economia ou a identidade do jogo é projetada *em torno* da propriedade na cadeia (emissor persistente, mercados reais). | Um jogo de comerciante com foco no livro-razão. |
 
 A distinção que mantém a reprodução segura **não** é "qual pacote importa o adaptador", mas "a chamada está dentro do tick". Um pacote de jogo pode importar e acionar o adaptador livremente, desde que cada chamada ocorra em um checkpoint fora do loop de reprodução acionado pela semente.
 
@@ -257,7 +257,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI: execute jogos, crie modelos iniciais, inspecione salvamentos |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderizador de terminal e camada de entrada |
 | [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | Início mercantil — o pacote de referência para o adaptador do livro-razão, sem dependência dele |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Início de ladrão — perseguição como o loop e qual metade da cidade abrirá uma porta para você |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Mundo inicial de caçador de ladrões — perseguição como o loop e qual metade da cidade abrirá uma porta para você |
 | [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Opcional** — liquidação opcional na testnet XRPL para a camada comercial de propriedade do jogador (moeda/inventário/comércio), por meio de um escrow de token XLS-85 em pontos de verificação, totalmente fora do núcleo determinístico |
 
 ### Exemplos de Início
@@ -275,7 +275,7 @@ Os 12 mundos iniciais são **exemplos de composição** — eles demonstram como
 | [`starter-colony`](packages/starter-colony) | Colônia de ficção científica | Gargalos, zonas de emboscada |
 | [`starter-ronin`](packages/starter-ronin) | Japão feudal | Passagens escondidas, múltiplas funções de protetor |
 | [`starter-merchant`](packages/starter-merchant) | Mercantil | Obrigação como o loop, combate com preço como penalidade |
-| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | Perseguição | Caça a pessoas por dinheiro; a violência é alta, não proibida |
+| [`starter-bounty-hunter`](packages/starter-bounty-hunter) | Perseguição | Caça a pessoas por dinheiro; a violência faz barulho, não é proibida |
 | [`starter-vampire`](packages/starter-vampire) | Horror de vampiro | Recurso de sangue, manipulação social |
 | [`starter-gladiator`](packages/starter-gladiator) | Gladiador histórico | Combate na arena, favor da multidão |
 
@@ -285,19 +285,19 @@ Os 12 mundos iniciais são **exemplos de composição** — eles demonstram como
 
 | Recurso | Descrição |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crie um novo jogo — CLI ou rota de modelo manual |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Crie seu próprio jogo, combinando módulos do motor |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Resolução de regras por entidade — combate com estilos de jogo mistos, `applyProfile`, modelos de perfil, a CLI `profile` |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Liquidação opcional no livro-razão — o firewall de determinismo, níveis de integração L0/L1/L2, modos de jogo, mecanismos de segurança e a demonstração de pirata testada ao vivo |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco ações, estados em um piscar de olhos |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack passo a passo, mapeamento de atributos, perfis de recursos |
-| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | Hosts do tipo "sidecar", carga "felt", porto dimétrico do Godot — a apresentação pode ser enganosa, a ocupação permanece como um ID de zona |
-| [Handbook](site/src/content/docs/handbook/index.md) | Manual abrangente — todos os sistemas, mais 4 apêndices |
-| [Composition Model](docs/composition-model.md) | As 6 camadas reutilizáveis e como elas se combinam |
-| [Examples](docs/examples/) | Exemplos TypeScript executáveis (verificados por tipo + testados em comportamento no CI) — festa mista por entidade, perfis compartilhados, entre mundos, do zero |
-| [Design Document](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ação, verdade versus apresentação |
-| [Philosophy](PHILOSOPHY.md) | Mundos determinísticos, design orientado por evidências, IA como assistente |
-| [Changelog](CHANGELOG.md) | Histórico de lançamentos |
+| [Crie Seu Próprio Mundo Inicial](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crie um novo jogo — CLI ou rota de modelo manual |
+| [Guia de Composição](site/src/content/docs/handbook/57-composition-guide.md) | Crie seu próprio jogo, combinando módulos do motor |
+| [Perfis Plug-in](site/src/content/docs/handbook/59-plugin-profiles.md) | Resolução de regras por entidade — combate com estilos de jogo mistos, `applyProfile`, modelos de perfil, a CLI `profile` |
+| [Adaptador do Livro-Razão XRPL](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Liquidação opcional no livro-razão — o firewall de determinismo, níveis de integração L0/L1/L2, modos de jogo, mecanismos de segurança e a demonstração de pirata testada ao vivo |
+| [Visão Geral do Combate](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco ações, estados em um piscar de olhos |
+| [Guia do Autor do Pacote](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack passo a passo, mapeamento de atributos, perfis de recursos |
+| [Clientes Visuais](site/src/content/docs/handbook/66-visual-clients.md) | Hosts do tipo "sidecar", carga "felt", porto dimétrico do Godot — a apresentação pode ser enganosa, a ocupação permanece como um ID de zona |
+| [Manual](site/src/content/docs/handbook/index.md) | Manual abrangente — todos os sistemas, mais 4 apêndices |
+| [Modelo de Composição](docs/composition-model.md) | As 6 camadas reutilizáveis e como elas se combinam |
+| [Exemplos](docs/examples/) | Exemplos TypeScript executáveis (verificados por tipo + testados em comportamento no CI) — grupo misto por entidade, perfis compartilhados, entre mundos, do zero |
+| [Documento de Design](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ação, verdade versus apresentação |
+| [Filosofia](PHILOSOPHY.md) | Mundos determinísticos, design orientado por evidências, IA como assistente |
+| [Histórico de Lançamentos](CHANGELOG.md) | Histórico de lançamentos |
 
 ---
 
@@ -313,7 +313,7 @@ O histórico completo de versões está em [CHANGELOG.md](CHANGELOG.md).
 
 v3.12 fechou o contrato "felt" e o primeiro host de desenho. O que resta é um trabalho de ciclo posterior, não sobras deste.
 
-- Um ambiente de família próspera (a ponte de tom e o lançamento por zona; o CORE ainda não tem um tronco próspero)
+- Uma trilha ambiente da família de tom próspero (a ponte de tom e o sorteio por zona já foram lançados; o CORE ainda não tem uma faixa-base próspera)
 - Multijogador — dois jogadores *humanos* compartilhando um mundo (uma camada de rede, deliberadamente adiada; perfis compartilhados de um único controlador são lançados hoje como [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
 - Substituições de fórmula serializáveis — ajuste de fórmula por perfil (bloqueado em uma DSL de fórmula; os perfis carregam mapeamentos de atributos hoje, não closures)
 
@@ -327,7 +327,7 @@ O esquema, o carregador `applyProfile`, a resolução de habilidades por entidad
 
 ## Filosofia
 
-O Motor de RPG de IA é construído em torno de três ideias:
+O AI RPG Engine é construído em torno de três ideias:
 
 1. **Mundos determinísticos** — os resultados da simulação devem ser reproduzíveis.
 2. **Design orientado por evidências** — a mecânica do mundo deve ser testada por meio de simulação.
@@ -341,7 +341,7 @@ Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para obter a explicação completa.
 
 O motor principal é uma **biblioteca de simulação exclusivamente local**: sem telemetria, sem rede, sem informações confidenciais. Os arquivos de salvamento são armazenados em `.ai-rpg-engine/` apenas quando solicitado explicitamente. Duas camadas **opcionais** adicionam um caminho de saída, e apenas quando você as ativa:
 
-- A camada de IA (`@ai-rpg-engine/ollama`) comunica-se com um daemon Ollama **local**; sua opção de adesão `webfetch` (para RAG) é restrita por um mecanismo de proteção contra SSRF (bloqueia loopback/link-local/CGNAT/metadados da nuvem e IPv6-tunnelled equivalentes).
+- A camada de IA (`@ai-rpg-engine/ollama`) comunica-se com um daemon Ollama **local**; sua opção de adesão `webfetch` (para RAG) é restrita por um mecanismo de proteção contra SSRF (bloqueia loopback/link-local/CGNAT/metadados da nuvem e equivalentes tunelados via IPv6).
 - A camada de registro (`@ai-rpg-engine/ledger-adapter`) acessa a **testnet XRPL** — e apenas a testnet: uma proteção estrutural **impossível de ser implementada na mainnet por meio de código** (não uma flag de configuração) rejeita qualquer host que não seja da testnet durante a construção. As chaves da carteira são armazenadas em um arquivo de segredos ignorado pelo Git, nunca em um arquivo de salvamento, e o núcleo determinístico nunca importa o adaptador.
 
 Consulte [SECURITY.md](SECURITY.md) para obter detalhes.

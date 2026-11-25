@@ -1,0 +1,431 @@
+{
+  "version": 1,
+  "pins": {
+    "01c0bbaf4a40bb10:fr": {
+      "lang": "fr",
+      "source": "- It is **never invoked inside the deterministic tick** — only at **checkpoints**\n  (save, town/market entry, chapter break).\n- Nothing in `@ai-rpg-engine/core` or `@ai-rpg-engine/modules` imports it (its\n  only engine dependency is a compile-time `import type`).\n- **A run is byte-identical with or without it.** A firewall test runs the real\n  `starter-pirate` `createGame()` merchant loop on two engines — one with the\n  adapter enabled and settling at a checkpoint — and asserts the two worlds are\n  deep-equal. Seed-0 replay is untouched.",
+      "translation": "- Il n’est **jamais invoqué à l’intérieur du cycle déterministe** — uniquement aux **points de contrôle** (sauvegarde, entrée dans une ville/un marché, fin de chapitre).\n- Rien dans `@ai-rpg-engine/core` ou `@ai-rpg-engine/modules` ne l’importe (sa seule dépendance au moteur est une `import type` au moment de la compilation).\n- **Une exécution est identique au niveau des octets, avec ou sans lui.** Un test de pare-feu exécute la boucle marchande réelle `starter-pirate` `createGame()` sur deux moteurs — l’un avec l’adaptateur activé et réglant à un point de contrôle — et affirme que les deux mondes sont profondément égaux. La relecture avec la graine 0 n’est pas affectée.",
+      "pinnedAt": "2026-11-25T00:55:41.350Z"
+    },
+    "01c0bbaf4a40bb10:it": {
+      "lang": "it",
+      "source": "- It is **never invoked inside the deterministic tick** — only at **checkpoints**\n  (save, town/market entry, chapter break).\n- Nothing in `@ai-rpg-engine/core` or `@ai-rpg-engine/modules` imports it (its\n  only engine dependency is a compile-time `import type`).\n- **A run is byte-identical with or without it.** A firewall test runs the real\n  `starter-pirate` `createGame()` merchant loop on two engines — one with the\n  adapter enabled and settling at a checkpoint — and asserts the two worlds are\n  deep-equal. Seed-0 replay is untouched.",
+      "translation": "- Non viene mai invocato all'interno del tick deterministico, ma solo ai **checkpoint** (salvataggio, ingresso in città/mercato, fine del capitolo).\n- Nulla in `@ai-rpg-engine/core` o `@ai-rpg-engine/modules` lo importa (la sua unica dipendenza dal motore è un `import type` in fase di compilazione).\n- **Un'esecuzione è identica a livello di byte con o senza di esso.** Un test del firewall esegue il ciclo del mercante `starter-pirate` `createGame()` reale su due motori, uno con l'adattatore abilitato e che si regola a un checkpoint, e verifica che i due mondi siano identici. Il replay con seme 0 non viene modificato.",
+      "pinnedAt": "2026-11-25T00:55:41.604Z"
+    },
+    "01c0bbaf4a40bb10:pt": {
+      "lang": "pt",
+      "source": "- It is **never invoked inside the deterministic tick** — only at **checkpoints**\n  (save, town/market entry, chapter break).\n- Nothing in `@ai-rpg-engine/core` or `@ai-rpg-engine/modules` imports it (its\n  only engine dependency is a compile-time `import type`).\n- **A run is byte-identical with or without it.** A firewall test runs the real\n  `starter-pirate` `createGame()` merchant loop on two engines — one with the\n  adapter enabled and settling at a checkpoint — and asserts the two worlds are\n  deep-equal. Seed-0 replay is untouched.",
+      "translation": "- Ele **nunca é invocado dentro do tick determinístico** — apenas em **checkpoints** (salvar, entrada na cidade/mercado, fim do capítulo).\n- Nada em `@ai-rpg-engine/core` ou `@ai-rpg-engine/modules` o importa (sua única dependência do motor é um `import type` em tempo de compilação).\n- **Uma execução é idêntica byte a byte, com ou sem ele.** Um teste de firewall executa o loop de comerciante `starter-pirate` `createGame()` real em dois motores — um com o adaptador habilitado e liquidando em um checkpoint — e afirma que os dois mundos são profundamente iguais. A reprodução com a semente 0 não é afetada.",
+      "pinnedAt": "2026-11-25T00:55:41.860Z"
+    },
+    "04cb0e2395d341fc:zh": {
+      "lang": "zh",
+      "source": "Cue scheduling, priority, ducking, cooldown logic",
+      "translation": "提示音调度、优先级、音量闪避（压低背景音）、冷却逻辑",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "0eca549434136c5c:es": {
+      "lang": "es",
+      "source": "Runnable TypeScript examples (type-checked + behavior-tested in CI) — per-entity mixed party, shared profiles, cross-world, from scratch",
+      "translation": "Ejemplos ejecutables de TypeScript (verificados por tipo y probados en cuanto a comportamiento en CI): grupo mixto por entidad, perfiles compartidos, entre mundos, desde cero.",
+      "pinnedAt": "2026-11-25T00:55:41.214Z"
+    },
+    "0eca549434136c5c:pt": {
+      "lang": "pt",
+      "source": "Runnable TypeScript examples (type-checked + behavior-tested in CI) — per-entity mixed party, shared profiles, cross-world, from scratch",
+      "translation": "Exemplos TypeScript executáveis (verificados por tipo + testados em comportamento no CI) — grupo misto por entidade, perfis compartilhados, entre mundos, do zero",
+      "pinnedAt": "2026-11-25T00:55:41.861Z"
+    },
+    "11ed61cf5d9329bf:fr": {
+      "lang": "fr",
+      "source": "Five actions (attack, guard, disengage, brace, reposition), four combat states (guarded, off-balance, exposed, fleeing), four engagement states (engaged, protected, backline, isolated). Three stat dimensions drive every formula so a quick duelist plays differently from a heavy bruiser or a composed sentinel.",
+      "translation": "Cinq actions (attaque, garde, désengagement, préparation, repositionnement), quatre états de combat (en garde, déséquilibré, exposé, en fuite), quatre états d’engagement (engagé, protégé, en ligne arrière, isolé). Trois dimensions statistiques déterminent chaque formule, de sorte qu’un duelliste rapide joue différemment d’un combattant lourd ou d’un sentinelle calme.",
+      "pinnedAt": "2026-11-25T00:55:41.350Z"
+    },
+    "17841ad08928d2d0:pt": {
+      "lang": "pt",
+      "source": "The game's economy or identity is designed *around* on-chain ownership (persistent issuer, real markets).",
+      "translation": "A economia ou a identidade do jogo é projetada *em torno* da propriedade na cadeia (emissor persistente, mercados reais).",
+      "pinnedAt": "2026-11-25T00:55:41.860Z"
+    },
+    "17841ad08928d2d0:zh": {
+      "lang": "zh",
+      "source": "The game's economy or identity is designed *around* on-chain ownership (persistent issuer, real markets).",
+      "translation": "游戏的经济或身份围绕链上所有权进行设计（持久发行方、真实市场）。",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "1b9b260016435fd1:es": {
+      "lang": "es",
+      "source": "**What works and is tested:**\n- The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume\n- Party combat: ally targeting, status effects, area attacks that spare allies, and enemies that act on their own AI intent profiles\n- A world that reacts: factions, rumors, a trade economy, companions, named NPCs with their own goals, and consequences for what you do\n- All 12 starter worlds, playable today with `run`\n- World Forge packs, loaded as content\n- The Godot 4 host [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), through the sidecar, with `felt` audio cues\n- The opt-in XRPL testnet ledger layer",
+      "translation": "**Lo que funciona y está probado:**\n- El núcleo de simulación: ticks deterministas, RNG con semilla, repetición idéntica byte a byte, y guardar y reanudar\n- Combate en grupo: objetivos aliados, efectos de estado, ataques de área que no dañan a los aliados, y enemigos que actúan según sus propios perfiles de intención de IA\n- Un mundo que reacciona: facciones, rumores, una economía comercial, compañeros, PNJ con nombre y objetivos propios, y consecuencias por lo que haces\n- Los 12 mundos iniciales, jugables hoy con `run`\n- Paquetes de World Forge, cargados como contenido\n- El host de Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), a través del sidecar, con señales de audio `felt`\n- La capa de libro mayor en la testnet de XRPL, que solo se activa si la eliges (opt-in)",
+      "pinnedAt": "2026-11-25T00:55:41.210Z"
+    },
+    "1b9b260016435fd1:fr": {
+      "lang": "fr",
+      "source": "**What works and is tested:**\n- The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume\n- Party combat: ally targeting, status effects, area attacks that spare allies, and enemies that act on their own AI intent profiles\n- A world that reacts: factions, rumors, a trade economy, companions, named NPCs with their own goals, and consequences for what you do\n- All 12 starter worlds, playable today with `run`\n- World Forge packs, loaded as content\n- The Godot 4 host [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), through the sidecar, with `felt` audio cues\n- The opt-in XRPL testnet ledger layer",
+      "translation": "**Ce qui fonctionne et est testé :**\n- Le cœur de simulation : ticks déterministes, RNG à graine, rejeu identique octet pour octet, et sauvegarde et reprise\n- Le combat en groupe : ciblage des alliés, effets de statut, attaques de zone qui épargnent les alliés, et ennemis qui agissent selon leurs propres profils d'intention d'IA\n- Un monde qui réagit : factions, rumeurs, économie marchande, compagnons, PNJ nommés avec leurs propres objectifs, et conséquences de vos actes\n- Les 12 mondes de départ, jouables dès aujourd'hui avec `run`\n- Les packs World Forge, chargés comme contenu\n- L'hôte Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), via le sidecar, avec les signaux audio `felt`\n- La couche de registre sur le testnet XRPL, activée seulement si vous le choisissez (opt-in)",
+      "pinnedAt": "2026-11-25T00:55:41.347Z"
+    },
+    "1b9b260016435fd1:it": {
+      "lang": "it",
+      "source": "**What works and is tested:**\n- The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume\n- Party combat: ally targeting, status effects, area attacks that spare allies, and enemies that act on their own AI intent profiles\n- A world that reacts: factions, rumors, a trade economy, companions, named NPCs with their own goals, and consequences for what you do\n- All 12 starter worlds, playable today with `run`\n- World Forge packs, loaded as content\n- The Godot 4 host [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), through the sidecar, with `felt` audio cues\n- The opt-in XRPL testnet ledger layer",
+      "translation": "**Cosa funziona ed è testato:**\n- Il nucleo di simulazione: tick deterministici, RNG con seme, replay identico byte per byte, e salvataggio e ripresa\n- Il combattimento di gruppo: bersagli alleati, effetti di stato, attacchi ad area che risparmiano gli alleati, e nemici che agiscono secondo i propri profili di intenzione IA\n- Un mondo che reagisce: fazioni, voci, un'economia commerciale, compagni, PNG con nome e obiettivi propri, e conseguenze per ciò che fai\n- Tutti i 12 mondi iniziali, giocabili oggi con `run`\n- I pacchetti World Forge, caricati come contenuto\n- L'host Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), tramite il sidecar, con i segnali audio `felt`\n- Il livello di registro sulla testnet XRPL, attivo solo se lo scegli (opt-in)",
+      "pinnedAt": "2026-11-25T00:55:41.601Z"
+    },
+    "1b9b260016435fd1:pt": {
+      "lang": "pt",
+      "source": "**What works and is tested:**\n- The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume\n- Party combat: ally targeting, status effects, area attacks that spare allies, and enemies that act on their own AI intent profiles\n- A world that reacts: factions, rumors, a trade economy, companions, named NPCs with their own goals, and consequences for what you do\n- All 12 starter worlds, playable today with `run`\n- World Forge packs, loaded as content\n- The Godot 4 host [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), through the sidecar, with `felt` audio cues\n- The opt-in XRPL testnet ledger layer",
+      "translation": "**O que funciona e está testado:**\n- O núcleo de simulação: ticks determinísticos, RNG com semente, replay idêntico byte a byte, e salvar e retomar\n- Combate em grupo: alvos aliados, efeitos de status, ataques em área que poupam os aliados, e inimigos que agem segundo os próprios perfis de intenção de IA\n- Um mundo que reage: facções, rumores, uma economia de comércio, companheiros, NPCs nomeados com objetivos próprios, e consequências pelo que você faz\n- Todos os 12 mundos iniciais, jogáveis hoje com `run`\n- Pacotes do World Forge, carregados como conteúdo\n- O host Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), por meio do sidecar, com sinais de áudio `felt`\n- A camada de livro-razão na testnet do XRPL, ativada só se você escolher (opt-in)",
+      "pinnedAt": "2026-11-25T00:55:41.857Z"
+    },
+    "1b9b260016435fd1:zh": {
+      "lang": "zh",
+      "source": "**What works and is tested:**\n- The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume\n- Party combat: ally targeting, status effects, area attacks that spare allies, and enemies that act on their own AI intent profiles\n- A world that reacts: factions, rumors, a trade economy, companions, named NPCs with their own goals, and consequences for what you do\n- All 12 starter worlds, playable today with `run`\n- World Forge packs, loaded as content\n- The Godot 4 host [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), through the sidecar, with `felt` audio cues\n- The opt-in XRPL testnet ledger layer",
+      "translation": "**可用且经过测试的部分：**\n- 模拟核心：确定性的 tick、带种子的 RNG、逐字节一致的回放，以及存档和继续\n- 队伍战斗：以队友为目标、状态效果、不伤及队友的范围攻击，以及按照各自 AI 意图配置行动的敌人\n- 会作出反应的世界：派系、传闻、贸易经济、同伴、拥有自己目标的具名 NPC，以及你行为的后果\n- 全部 12 个入门世界，今天就可以用 `run` 游玩\n- World Forge 包，作为内容加载\n- Godot 4 宿主 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage)，通过 sidecar 运行，支持 `felt` 音频提示\n- XRPL 测试网账本层，仅在你主动启用时生效（opt-in）",
+      "pinnedAt": "2026-11-25T00:55:41.999Z"
+    },
+    "325bdefabcd71dc2:es": {
+      "lang": "es",
+      "source": "Thief-taker starter — pursuit as the loop, and which half of a city will open a door to you",
+      "translation": "Mundo inicial de cazador de fugitivos: la persecución como bucle, y qué mitad de la ciudad te abrirá una puerta",
+      "pinnedAt": "2026-11-25T00:55:41.214Z"
+    },
+    "325bdefabcd71dc2:fr": {
+      "lang": "fr",
+      "source": "Thief-taker starter — pursuit as the loop, and which half of a city will open a door to you",
+      "translation": "Départ chasseur de voleurs : la poursuite est au cœur du jeu, et quelle moitié de la ville vous ouvrira sa porte",
+      "pinnedAt": "2026-11-25T00:55:41.351Z"
+    },
+    "325bdefabcd71dc2:it": {
+      "lang": "it",
+      "source": "Thief-taker starter — pursuit as the loop, and which half of a city will open a door to you",
+      "translation": "Modello iniziale cacciatore di ladri: l'inseguimento come ciclo e quale metà della città aprirà una porta per te",
+      "pinnedAt": "2026-11-25T00:55:41.604Z"
+    },
+    "325bdefabcd71dc2:pt": {
+      "lang": "pt",
+      "source": "Thief-taker starter — pursuit as the loop, and which half of a city will open a door to you",
+      "translation": "Mundo inicial de caçador de ladrões — perseguição como o loop e qual metade da cidade abrirá uma porta para você",
+      "pinnedAt": "2026-11-25T00:55:41.861Z"
+    },
+    "325bdefabcd71dc2:zh": {
+      "lang": "zh",
+      "source": "Thief-taker starter — pursuit as the loop, and which half of a city will open a door to you",
+      "translation": "捕快（赏金猎人）初始世界——以追捕为核心循环，以及一座城市中的哪一半人会为你敞开大门",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "382a82e4207184dd:es": {
+      "lang": "es",
+      "source": "- A prosperous-family ambient bed (the tone bridge and per-zone roll ship; CORE still has no prosperous stem)\n- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)",
+      "translation": "- Un fondo ambiental de la familia de tono «próspero» (el puente de tono y la selección aleatoria por zona ya están incluidos; CORE aún no tiene una pista base próspera).\n- Multijugador: dos jugadores *humanos* compartiendo un mundo (una capa de red, deliberadamente pospuesta; los perfiles compartidos de un solo controlador se envían hoy como [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).\n- Anulaciones de fórmulas serializables: ajuste de fórmulas por perfil (bloqueado en un DSL de fórmulas; los perfiles llevan mapeos de estadísticas hoy, no cierres).",
+      "pinnedAt": "2026-11-25T00:55:41.215Z"
+    },
+    "382a82e4207184dd:fr": {
+      "lang": "fr",
+      "source": "- A prosperous-family ambient bed (the tone bridge and per-zone roll ship; CORE still has no prosperous stem)\n- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)",
+      "translation": "- Une nappe d’ambiance pour la famille tonale « prosperous » (le pont tonal et le tirage par zone sont livrés ; CORE n’a toujours pas de piste audio « prosperous »).\n- Multijoueur — deux joueurs *humains* partageant un monde (une couche de mise en réseau, délibérément différée ; les profils partagés à un seul contrôleur sont disponibles aujourd’hui sous la forme de [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).\n- Substitutions de formules sérialisables — réglage de la formule par profil (bloqué sur un DSL de formule ; les profils contiennent aujourd’hui des cartographies de statistiques, et non des fermetures).",
+      "pinnedAt": "2026-11-25T00:55:41.352Z"
+    },
+    "382a82e4207184dd:it": {
+      "lang": "it",
+      "source": "- A prosperous-family ambient bed (the tone bridge and per-zone roll ship; CORE still has no prosperous stem)\n- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)",
+      "translation": "- Un sottofondo audio ambientale per la categoria tonale \"prosperous\" (il ponte tonale e la selezione musicale per zona sono già inclusi; a CORE manca ancora una traccia base \"prosperous\")\n- Multiplayer: due giocatori *umani* che condividono un mondo (un livello di rete, volutamente differito; i profili condivisi a controller singolo vengono rilasciati oggi come [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Override di formule serializzabili: messa a punto delle formule per profilo (bloccato su un DSL per formule; i profili contengono oggi mappature di statistiche, non chiusure)",
+      "pinnedAt": "2026-11-25T00:55:41.605Z"
+    },
+    "382a82e4207184dd:pt": {
+      "lang": "pt",
+      "source": "- A prosperous-family ambient bed (the tone bridge and per-zone roll ship; CORE still has no prosperous stem)\n- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)",
+      "translation": "- Uma trilha ambiente da família de tom próspero (a ponte de tom e o sorteio por zona já foram lançados; o CORE ainda não tem uma faixa-base próspera)\n- Multijogador — dois jogadores *humanos* compartilhando um mundo (uma camada de rede, deliberadamente adiada; perfis compartilhados de um único controlador são lançados hoje como [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Substituições de fórmula serializáveis — ajuste de fórmula por perfil (bloqueado em uma DSL de fórmula; os perfis carregam mapeamentos de atributos hoje, não closures)",
+      "pinnedAt": "2026-11-25T00:55:41.861Z"
+    },
+    "382a82e4207184dd:zh": {
+      "lang": "zh",
+      "source": "- A prosperous-family ambient bed (the tone bridge and per-zone roll ship; CORE still has no prosperous stem)\n- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))\n- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)",
+      "translation": "- “繁荣（prosperous）”情绪类别的环境音底轨（基调桥接与按区域抽取机制均已发布，但 CORE 音效包仍缺少“繁荣”基调的分轨音轨）。\n- 多人游戏——两个*人类*玩家共享一个世界（一个网络层，故意推迟；共享配置的单控制器今天就可以使用，即[`shared-profiles.ts`](docs/examples/shared-profiles.ts)）。\n- 可序列化的公式覆盖——每个配置的公式调整（受公式 DSL 的限制；配置今天携带属性映射，而不是闭包）。",
+      "pinnedAt": "2026-11-25T00:55:42.003Z"
+    },
+    "40a2085371b8effb:fr": {
+      "lang": "fr",
+      "source": "Packages",
+      "translation": "Packages",
+      "pinnedAt": "2026-11-25T00:55:41.350Z"
+    },
+    "447cbd30d0c85ab2:es": {
+      "lang": "es",
+      "source": "The full release history is in [CHANGELOG.md](CHANGELOG.md).",
+      "translation": "El historial completo de versiones está en [CHANGELOG.md](CHANGELOG.md).",
+      "pinnedAt": "2026-11-25T00:55:41.212Z"
+    },
+    "447cbd30d0c85ab2:fr": {
+      "lang": "fr",
+      "source": "The full release history is in [CHANGELOG.md](CHANGELOG.md).",
+      "translation": "L'historique complet des versions se trouve dans [CHANGELOG.md](CHANGELOG.md).",
+      "pinnedAt": "2026-11-25T00:55:41.349Z"
+    },
+    "447cbd30d0c85ab2:it": {
+      "lang": "it",
+      "source": "The full release history is in [CHANGELOG.md](CHANGELOG.md).",
+      "translation": "La cronologia completa delle versioni è in [CHANGELOG.md](CHANGELOG.md).",
+      "pinnedAt": "2026-11-25T00:55:41.603Z"
+    },
+    "447cbd30d0c85ab2:pt": {
+      "lang": "pt",
+      "source": "The full release history is in [CHANGELOG.md](CHANGELOG.md).",
+      "translation": "O histórico completo de versões está em [CHANGELOG.md](CHANGELOG.md).",
+      "pinnedAt": "2026-11-25T00:55:41.859Z"
+    },
+    "447cbd30d0c85ab2:zh": {
+      "lang": "zh",
+      "source": "The full release history is in [CHANGELOG.md](CHANGELOG.md).",
+      "translation": "完整的发布历史见 [CHANGELOG.md](CHANGELOG.md)。",
+      "pinnedAt": "2026-11-25T00:55:42.001Z"
+    },
+    "54effd8e4fd4d28a:zh": {
+      "lang": "zh",
+      "source": "Nothing inside the game; the adapter attaches from outside at checkpoints and the game is unaware.",
+      "translation": "游戏内部无任何依赖；适配器从外部在检查点处挂载，游戏对此毫无感知。",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "59de121db1b8145e:fr": {
+      "lang": "fr",
+      "source": "Package",
+      "translation": "Package",
+      "pinnedAt": "2026-11-25T00:55:41.350Z"
+    },
+    "5f08e3145b5b16a2:it": {
+      "lang": "it",
+      "source": "- A **module library** — 30+ engine modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more\n- A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game\n- A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG\n- An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama\n- An **optional on-ledger layer** — `@ai-rpg-engine/ledger-adapter` backs a game's coin and tradeable items with real XRPL **testnet** tokens, settled at checkpoints, entirely outside the deterministic core (opt-in; a run is byte-identical without it)\n- An **optional visual host** — `@ai-rpg-engine/sidecar` plus the Godot 4 client [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). The engine still does not emit pixels. The stage draws a 2:1 dimetric harbour and plays `felt` audio. Occupancy stays a zone id.",
+      "translation": "- Una **libreria di moduli** — oltre 30 moduli del motore che coprono combattimento, percezione, cognizione, fazioni, voci, movimento, compagni e altro\n- Un **set di strumenti di composizione** — `buildCombatStack()` configura il combattimento in circa 7 righe; `new Engine({ modules })` avvia il gioco\n- Un **ambiente di simulazione** — cicli deterministici, registri di azioni riproducibili, generatore di numeri casuali con seme\n- Uno **studio di progettazione dell'IA** (opzionale) — scheletro, analisi critica, analisi dell'equilibrio, ottimizzazione, esperimenti tramite Ollama\n- Un **livello opzionale sulla blockchain** — `@ai-rpg-engine/ledger-adapter` supporta la valuta e gli oggetti commerciabili di un gioco con token XRPL reali sulla **testnet**, con regolamenti effettuati in punti di controllo, completamente al di fuori del nucleo deterministico (opzionale; un'esecuzione è identica a livello di byte senza di esso)\n- Un **host visivo opzionale** — `@ai-rpg-engine/sidecar` più il client Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). Il motore non genera comunque immagini. Lo stage disegna un porto dimetrico in scala 2:1 e riproduce l'audio `felt`. L'occupazione rimane un ID di zona.",
+      "pinnedAt": "2026-11-25T00:55:41.599Z"
+    },
+    "6d81bd4b39b75b0c:es": {
+      "lang": "es",
+      "source": "AI RPG Engine",
+      "translation": "AI RPG Engine",
+      "pinnedAt": "2026-11-25T00:55:41.208Z"
+    },
+    "6d81bd4b39b75b0c:fr": {
+      "lang": "fr",
+      "source": "AI RPG Engine",
+      "translation": "AI RPG Engine",
+      "pinnedAt": "2026-11-25T00:55:41.345Z"
+    },
+    "6d81bd4b39b75b0c:it": {
+      "lang": "it",
+      "source": "AI RPG Engine",
+      "translation": "AI RPG Engine",
+      "pinnedAt": "2026-11-25T00:55:41.598Z"
+    },
+    "6d81bd4b39b75b0c:pt": {
+      "lang": "pt",
+      "source": "AI RPG Engine",
+      "translation": "AI RPG Engine",
+      "pinnedAt": "2026-11-25T00:55:41.855Z"
+    },
+    "6d81bd4b39b75b0c:zh": {
+      "lang": "zh",
+      "source": "AI RPG Engine",
+      "translation": "AI RPG Engine",
+      "pinnedAt": "2026-11-25T00:55:41.996Z"
+    },
+    "6fd6311985c55147:it": {
+      "lang": "it",
+      "source": "- Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from\n- Not a visual engine — it outputs structured events, not pixels. Drawing is a host's job (terminal, or Godot)\n- Not a story generator — it simulates worlds; narrative emerges from mechanics",
+      "translation": "- Non è un singolo gioco finito: include 12 mondi iniziali giocabili che puoi avviare con `run` già oggi come esempi, e il motore è il kit di strumenti con cui componi il *tuo* gioco\n- Non è un motore grafico: produce eventi strutturati, non pixel. Il disegno spetta all'host (il terminale o Godot)\n- Non è un generatore di storie: simula mondi; la narrazione emerge dalle meccaniche",
+      "pinnedAt": "2026-11-25T00:55:41.600Z"
+    },
+    "6fd6311985c55147:zh": {
+      "lang": "zh",
+      "source": "- Not a single finished game — it ships 12 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from\n- Not a visual engine — it outputs structured events, not pixels. Drawing is a host's job (terminal, or Godot)\n- Not a story generator — it simulates worlds; narrative emerges from mechanics",
+      "translation": "- 它不是一个完成的游戏——它附带 12 个可玩的入门世界，今天就可以用 `run` 作为示例运行，而引擎是你用来组合*自己*游戏的工具包\n- 它不是可视化引擎——它输出结构化事件，而不是像素。绘制画面是宿主的工作（终端或 Godot）\n- 它不是故事生成器——它模拟世界；叙事从机制中涌现",
+      "pinnedAt": "2026-11-25T00:55:41.998Z"
+    },
+    "71d396e03e4b6a2f:zh": {
+      "lang": "zh",
+      "source": "Fits",
+      "translation": "适用场景",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "842890956a556877:pt": {
+      "lang": "pt",
+      "source": "Hunting people for money; violence is loud, not forbidden",
+      "translation": "Caça a pessoas por dinheiro; a violência faz barulho, não é proibida",
+      "pinnedAt": "2026-11-25T00:55:41.861Z"
+    },
+    "87979ad8b395d0be:es": {
+      "lang": "es",
+      "source": "Sidecar hosts, felt payload, Godot dimetric harbour — presentation may lie, occupancy stays a zone id",
+      "translation": "Hosts de sidecar, carga útil felt, puerto dimétrico de Godot: la presentación puede ser engañosa, la ocupación sigue siendo un ID de zona.",
+      "pinnedAt": "2026-11-25T00:55:41.214Z"
+    },
+    "87979ad8b395d0be:fr": {
+      "lang": "fr",
+      "source": "Sidecar hosts, felt payload, Godot dimetric harbour — presentation may lie, occupancy stays a zone id",
+      "translation": "Hôtes secondaires (sidecar), charge utile felt, port dimétrique Godot — la présentation peut être trompeuse, l’occupation reste un ID de zone.",
+      "pinnedAt": "2026-11-25T00:55:41.352Z"
+    },
+    "87979ad8b395d0be:it": {
+      "lang": "it",
+      "source": "Sidecar hosts, felt payload, Godot dimetric harbour — presentation may lie, occupancy stays a zone id",
+      "translation": "Host sidecar, payload felt, porto dimetrico di Godot: la presentazione potrebbe essere fuorviante, l'occupazione rimane un ID di zona",
+      "pinnedAt": "2026-11-25T00:55:41.605Z"
+    },
+    "894ec6346e6f37c4:zh": {
+      "lang": "zh",
+      "source": "A ledger-first merchant game.",
+      "translation": "以账本为核心的商业游戏。",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "a2e6bc155ce0ace7:es": {
+      "lang": "es",
+      "source": "**Optional** — opt-in XRPL testnet settlement for the player-owned tradeable layer (coin / inventory / trade), via XLS-85 token escrow at checkpoints, entirely outside the deterministic core",
+      "translation": "**Opcional:** liquidación opcional en la red de prueba de XRPL para la capa intercambiable propiedad del jugador (monedas / inventario / comercio), a través de un depósito de tokens XLS-85 en los puntos de control, completamente fuera del núcleo determinista",
+      "pinnedAt": "2026-11-25T00:55:41.214Z"
+    },
+    "a43b578b11ef2a29:zh": {
+      "lang": "zh",
+      "source": "Sound pack manifests, content-addressable registry",
+      "translation": "音效包清单、内容可寻址注册表",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "acf8327bb5c0f05b:zh": {
+      "lang": "zh",
+      "source": "Retrofitting an existing game (the shipped pirate demo).",
+      "translation": "改造现有游戏（已发布的海盗演示）。",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "b1cdbb91c9b49b09:pt": {
+      "lang": "pt",
+      "source": "AI RPG Engine is built around three ideas:",
+      "translation": "O AI RPG Engine é construído em torno de três ideias:",
+      "pinnedAt": "2026-11-25T00:55:41.861Z"
+    },
+    "b1cdbb91c9b49b09:zh": {
+      "lang": "zh",
+      "source": "AI RPG Engine is built around three ideas:",
+      "translation": "AI RPG Engine 建立在三个理念之上：",
+      "pinnedAt": "2026-11-25T00:55:42.003Z"
+    },
+    "b4ca9c00da9c124d:es": {
+      "lang": "es",
+      "source": "`@ai-rpg-engine/ledger-adapter` is an **optional** package that binds a game's\n**player-owned tradeable layer** — the `coin` balance and consumable inventory\nthat `trade-core`'s `buy`/`sell` verbs already move — to the **XRPL testnet**, so\nthose assets can be backed by real on-ledger tokens and settled at checkpoints.\nAn absent adapter is exactly the offline engine that ships today.",
+      "translation": "`@ai-rpg-engine/ledger-adapter` es un paquete **opcional** que vincula la\n**capa de objetos intercambiables propiedad del jugador** de un juego —el saldo de `coin` y el inventario de objetos consumibles que los verbos `buy`/`sell` de `trade-core` ya mueven— a la **red de pruebas XRPL**, de modo que\nestos activos puedan estar respaldados por tokens reales registrados y liquidarse en puntos de control.\nLa ausencia de un adaptador es exactamente el motor sin conexión que se ofrece actualmente.",
+      "pinnedAt": "2026-11-25T00:55:41.213Z"
+    },
+    "b4ca9c00da9c124d:pt": {
+      "lang": "pt",
+      "source": "`@ai-rpg-engine/ledger-adapter` is an **optional** package that binds a game's\n**player-owned tradeable layer** — the `coin` balance and consumable inventory\nthat `trade-core`'s `buy`/`sell` verbs already move — to the **XRPL testnet**, so\nthose assets can be backed by real on-ledger tokens and settled at checkpoints.\nAn absent adapter is exactly the offline engine that ships today.",
+      "translation": "`@ai-rpg-engine/ledger-adapter` é um pacote **opcional** que associa a\n**camada de itens negociáveis pertencente ao jogador** de um jogo — o saldo de `coin` e o inventário de itens consumíveis que os verbos `buy`/`sell` do `trade-core` já movimentam — à **testnet XRPL**, para que\nesses ativos possam ser lastreados por tokens reais registrados no livro-razão e liquidados em pontos de verificação.\nA ausência de um adaptador corresponde exatamente ao motor offline que está disponível atualmente.",
+      "pinnedAt": "2026-11-25T00:55:41.860Z"
+    },
+    "d111ca36f50e7156:it": {
+      "lang": "it",
+      "source": "Both composition spines are complete — **8368 tests across 388 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), tuned the depth those senses now reach (v3.11), and **gave a drawing host the felt of a tick — the first pixel client, a Godot 4 dimetric harbour, runs on that contract (v3.12)**.",
+      "translation": "Entrambe le strutture di composizione sono complete: **8368 test su 388 file**, tutti i 12 mondi iniziali su `buildCombatStack` **e** `buildWorldStack`, riproduzione deterministica e identica byte per byte con seed stampati, punteggio completo delle decisioni dell'IA e una CLI che crea, esegue, convalida e ispeziona. L'arco v3.x ha reso il mondo attivo (NPC con nomi, la superficie sociale con 25 verbi, economie di genere — v3.0–v3.1), ha inserito risorse di proprietà del giocatore sulla testnet XRPL come canale secondario opzionale (v3.2–v3.4), ha creato due mondi iniziali incentrati sul sistema e li ha trasformati in strumenti per migliorare il motore (v3.5–v3.6), ha illuminato e rafforzato lo strato strategico finché le conseguenze non lasciano segni reali (v3.7–v3.8), ha fornito agli host la superficie del motore di cui hanno bisogno per l'integrazione con Godot (v3.8.1), ha chiuso il ciclo di creazione in modo che una sessione di studio o un semplice pacchetto JSON producano un mondo giocabile dall'inizio alla fine (v3.9), ha portato l'intero strato strategico sui sensi del giocatore (v3.10), ha ottimizzato la profondità che questi sensi raggiungono ora (v3.11) e **ha fornito a un host di rendering la sensazione di un tick: il primo client pixel, un porto dimetrico di Godot 4, viene eseguito su tale contratto (v3.12)**.",
+      "pinnedAt": "2026-11-25T00:55:41.605Z"
+    },
+    "e3e563131ca87055:es": {
+      "lang": "es",
+      "source": "v3.12 closed the felt contract and the first drawing host. What remains is later-cycle work, not leftovers of this one:",
+      "translation": "v3.12 cerró el contrato felt y el primer host de dibujo. Lo que queda es un trabajo de ciclo posterior, no los restos de este:",
+      "pinnedAt": "2026-11-25T00:55:41.214Z"
+    },
+    "e3e563131ca87055:fr": {
+      "lang": "fr",
+      "source": "v3.12 closed the felt contract and the first drawing host. What remains is later-cycle work, not leftovers of this one:",
+      "translation": "La v3.12 a bouclé le contrat felt et le premier hôte de rendu. Ce qui reste est un travail de cycle ultérieur, et non des restes de celui-ci :",
+      "pinnedAt": "2026-11-25T00:55:41.352Z"
+    },
+    "e3e563131ca87055:it": {
+      "lang": "it",
+      "source": "v3.12 closed the felt contract and the first drawing host. What remains is later-cycle work, not leftovers of this one:",
+      "translation": "La v3.12 ha chiuso il contratto felt e il primo host di rendering. Ciò che resta è un lavoro successivo, non gli elementi rimasti di questo ciclo:",
+      "pinnedAt": "2026-11-25T00:55:41.605Z"
+    },
+    "e7ba63c46632d57b:es": {
+      "lang": "es",
+      "source": "- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).\n- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.",
+      "translation": "- La capa de IA (`@ai-rpg-engine/ollama`) se comunica con un daemon de Ollama **local**; su opción de participación `webfetch` (para RAG) está limitada por una protección contra SSRF (bloquea loopback/link-local/CGNAT/metadatos de la nube y equivalentes tunelizados por IPv6).\n- La capa de libro mayor (`@ai-rpg-engine/ledger-adapter`) se conecta a la **red de pruebas XRPL** —y solo a la red de pruebas: una protección estructural **imposible en el código para la red principal** (no una opción de configuración) rechaza cualquier host que no sea de la red de pruebas durante la construcción. Las semillas de la billetera se almacenan en un archivo secundario de secretos ignorado por Git, nunca en un archivo guardado, y el núcleo determinista nunca importa el adaptador.",
+      "pinnedAt": "2026-11-25T00:55:41.215Z"
+    },
+    "e7ba63c46632d57b:fr": {
+      "lang": "fr",
+      "source": "- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).\n- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.",
+      "translation": "- La couche d’IA (`@ai-rpg-engine/ollama`) communique avec un démon Ollama **local** ; son option d’activation `webfetch` (pour RAG) est limitée par une protection contre les attaques SSRF (qui bloque les adresses de loopback/link-local/CGNAT/métadonnées cloud et leurs équivalents encapsulés en IPv6).\n- La couche de registre (`@ai-rpg-engine/ledger-adapter`) accède au **testnet XRPL** — et uniquement au testnet : une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) rejette tout hôte autre que le testnet lors de sa création. Les graines (« seeds ») de portefeuille sont stockées dans un fichier secondaire ignoré par Git, jamais dans un fichier de sauvegarde, et le noyau déterministe n’importe jamais l’adaptateur.",
+      "pinnedAt": "2026-11-25T00:55:41.352Z"
+    },
+    "e7ba63c46632d57b:pt": {
+      "lang": "pt",
+      "source": "- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).\n- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.",
+      "translation": "- A camada de IA (`@ai-rpg-engine/ollama`) comunica-se com um daemon Ollama **local**; sua opção de adesão `webfetch` (para RAG) é restrita por um mecanismo de proteção contra SSRF (bloqueia loopback/link-local/CGNAT/metadados da nuvem e equivalentes tunelados via IPv6).\n- A camada de registro (`@ai-rpg-engine/ledger-adapter`) acessa a **testnet XRPL** — e apenas a testnet: uma proteção estrutural **impossível de ser implementada na mainnet por meio de código** (não uma flag de configuração) rejeita qualquer host que não seja da testnet durante a construção. As chaves da carteira são armazenadas em um arquivo de segredos ignorado pelo Git, nunca em um arquivo de salvamento, e o núcleo determinístico nunca importa o adaptador.",
+      "pinnedAt": "2026-11-25T00:55:41.862Z"
+    },
+    "e7ba63c46632d57b:zh": {
+      "lang": "zh",
+      "source": "- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).\n- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.",
+      "translation": "- AI 层（`@ai-rpg-engine/ollama`）与**本地** Ollama 守护进程通信；其选择加入 `webfetch`（用于 RAG）受到 SSRF 保护的限制（阻止回环/链路本地/CGNAT/云元数据以及通过 IPv6 隧道封装的等效地址）。\n- 分账本层（`@ai-rpg-engine/ledger-adapter`）连接到 **XRPL 测试网络**——并且仅连接到测试网络：一个**在代码中无法连接到主网络**的结构性保护（而不是配置标志），在构建时拒绝任何非测试网络主机。钱包种子存储在 git 忽略的单独文件中，绝不在保存文件中，并且确定性核心绝不会导入适配器。",
+      "pinnedAt": "2026-11-25T00:55:42.003Z"
+    },
+    "e95a75f40b87a6bf:zh": {
+      "lang": "zh",
+      "source": "**Proven live.** A real `starter-pirate` merchant run — sell a cutlass, buy a\ncannon-shell — settles on XRPL testnet via token escrow, then `reconcile()`\nconfirms on-ledger balances and memos against the engine's economy (conservation\nholds for every token). The ledger is a different system family than the engine,\nso the engine cannot fake it — reconciliation is a genuine external verifier.\nTestnet only; assets are game-scoped receipts, not securities.",
+      "translation": "**已验证的实际应用。** 一次真实的 `starter-pirate` 商家运行——出售一把弯刀，购买一枚炮弹——通过令牌托管在 XRPL 测试网上进行结算，然后 `reconcile()` 确认账本上的余额和备注与引擎的经济系统是否一致（每种代币均满足守恒关系）。账本是一个与引擎不同的系统，因此引擎无法伪造数据——对账是一个真正的外部验证器。仅限测试网络；资产是游戏范围内的收据，而不是证券。",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "eebcbe8650dbf63c:es": {
+      "lang": "es",
+      "source": "**What is rough or incomplete:**\n- The AI design studio (Ollama) is optional and more lightly tested than the simulation core\n- There is no terminal audio backend: only the Godot stage plays sound\n- Multiplayer (two human players in one world) is not built\n- `replay --replay` restores the save instead of re-simulating, by design\n- Some handbook pages lag behind the latest APIs",
+      "translation": "**Lo que está sin pulir o incompleto:**\n- El estudio de diseño con IA (Ollama) es opcional y está menos probado que el núcleo de simulación\n- No hay backend de audio en la terminal: solo el escenario de Godot reproduce sonido\n- El multijugador (dos jugadores humanos en un mismo mundo) no está construido\n- `replay --replay` restaura la partida guardada en lugar de volver a simular, por diseño\n- Algunas páginas del manual van por detrás de las API más recientes",
+      "pinnedAt": "2026-11-25T00:55:41.211Z"
+    },
+    "eebcbe8650dbf63c:fr": {
+      "lang": "fr",
+      "source": "**What is rough or incomplete:**\n- The AI design studio (Ollama) is optional and more lightly tested than the simulation core\n- There is no terminal audio backend: only the Godot stage plays sound\n- Multiplayer (two human players in one world) is not built\n- `replay --replay` restores the save instead of re-simulating, by design\n- Some handbook pages lag behind the latest APIs",
+      "translation": "**Ce qui est encore brut ou incomplet :**\n- Le studio de conception IA (Ollama) est optionnel et moins testé que le cœur de simulation\n- Il n'y a pas de backend audio dans le terminal : seule la scène Godot joue du son\n- Le multijoueur (deux joueurs humains dans un même monde) n'est pas construit\n- `replay --replay` restaure la sauvegarde au lieu de re-simuler, par choix de conception\n- Certaines pages du manuel sont en retard sur les API les plus récentes",
+      "pinnedAt": "2026-11-25T00:55:41.348Z"
+    },
+    "eebcbe8650dbf63c:it": {
+      "lang": "it",
+      "source": "**What is rough or incomplete:**\n- The AI design studio (Ollama) is optional and more lightly tested than the simulation core\n- There is no terminal audio backend: only the Godot stage plays sound\n- Multiplayer (two human players in one world) is not built\n- `replay --replay` restores the save instead of re-simulating, by design\n- Some handbook pages lag behind the latest APIs",
+      "translation": "**Cosa è ancora grezzo o incompleto:**\n- Lo studio di progettazione IA (Ollama) è opzionale ed è testato meno del nucleo di simulazione\n- Non c'è un backend audio nel terminale: solo lo stage Godot riproduce suoni\n- Il multigiocatore (due giocatori umani nello stesso mondo) non è stato realizzato\n- `replay --replay` ripristina il salvataggio invece di ri-simulare, per scelta progettuale\n- Alcune pagine del manuale sono indietro rispetto alle API più recenti",
+      "pinnedAt": "2026-11-25T00:55:41.602Z"
+    },
+    "eebcbe8650dbf63c:pt": {
+      "lang": "pt",
+      "source": "**What is rough or incomplete:**\n- The AI design studio (Ollama) is optional and more lightly tested than the simulation core\n- There is no terminal audio backend: only the Godot stage plays sound\n- Multiplayer (two human players in one world) is not built\n- `replay --replay` restores the save instead of re-simulating, by design\n- Some handbook pages lag behind the latest APIs",
+      "translation": "**O que ainda está bruto ou incompleto:**\n- O estúdio de design com IA (Ollama) é opcional e menos testado que o núcleo de simulação\n- Não há backend de áudio no terminal: só o palco do Godot reproduz som\n- O multijogador (dois jogadores humanos no mesmo mundo) não foi construído\n- `replay --replay` restaura o salvamento em vez de simular de novo, por decisão de projeto\n- Algumas páginas do manual estão atrás das APIs mais recentes",
+      "pinnedAt": "2026-11-25T00:55:41.859Z"
+    },
+    "eebcbe8650dbf63c:zh": {
+      "lang": "zh",
+      "source": "**What is rough or incomplete:**\n- The AI design studio (Ollama) is optional and more lightly tested than the simulation core\n- There is no terminal audio backend: only the Godot stage plays sound\n- Multiplayer (two human players in one world) is not built\n- `replay --replay` restores the save instead of re-simulating, by design\n- Some handbook pages lag behind the latest APIs",
+      "translation": "**尚不完善或未完成的部分：**\n- AI 设计工作室（Ollama）是可选的，测试程度低于模拟核心\n- 没有终端音频后端：只有 Godot 舞台会播放声音\n- 多人游戏（两名人类玩家共享一个世界）尚未构建\n- `replay --replay` 会恢复存档而不是重新模拟，这是有意的设计\n- 部分手册页面落后于最新的 API",
+      "pinnedAt": "2026-11-25T00:55:42.000Z"
+    },
+    "ef9755ce1b1130f5:zh": {
+      "lang": "zh",
+      "source": "Content-addressed storage for portraits, icons, media",
+      "translation": "用于肖像、图标、媒体的内容寻址存储",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    },
+    "effb27e6837a3ad1:it": {
+      "lang": "it",
+      "source": "**Three play modes.** `offline` (default — no chain, the engine as it ships) ·\n`ledger` (coin/items backed by testnet balances, settled at checkpoints) ·\n`diary` (play offline, then anchor the run's state hash on-ledger for a\ntamper-evident receipt).",
+      "translation": "**Tre modalità di gioco.** `offline` (predefinito: nessuna catena, il motore così come viene fornito) · `ledger` (monete/oggetti supportati dai saldi della testnet, regolati ai checkpoint) · `diary` (gioca offline, quindi ancora l'hash dello stato dell'esecuzione sul registro per una ricevuta a prova di manomissione).",
+      "pinnedAt": "2026-11-25T00:55:41.604Z"
+    },
+    "f71ccf69d5c15b34:fr": {
+      "lang": "fr",
+      "source": "**Safety rails.** Testnet only, with a **mainnet-impossible-in-code** structural\nguard (not a config flag); wallet seeds live in a gitignored secrets sidecar,\nnever in the save file; settlement is idempotent and conservation-safe on the\nretry path; proofs verify the **real on-chain memo** (not the engine's own\nstring); and if the chain is unreachable the run simply continues, marked\n*unanchored*.",
+      "translation": "**Mesures de sécurité.** Uniquement pour le testnet, avec une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) ; les graines (« seeds ») de portefeuille sont stockées dans un fichier secondaire de secrets ignoré par Git, et non dans le fichier d’enregistrement ; la validation est idempotente et sécurisée en termes de conservation lors de la tentative de relance ; les preuves vérifient le **vrai mémo sur la chaîne** (et non la chaîne de caractères propre au moteur) ; et si la chaîne est inaccessible, l’exécution se poursuit simplement, en étant marquée comme *non ancrée*.",
+      "pinnedAt": "2026-11-25T00:55:41.350Z"
+    },
+    "f71ccf69d5c15b34:zh": {
+      "lang": "zh",
+      "source": "**Safety rails.** Testnet only, with a **mainnet-impossible-in-code** structural\nguard (not a config flag); wallet seeds live in a gitignored secrets sidecar,\nnever in the save file; settlement is idempotent and conservation-safe on the\nretry path; proofs verify the **real on-chain memo** (not the engine's own\nstring); and if the chain is unreachable the run simply continues, marked\n*unanchored*.",
+      "translation": "**安全保障。** 仅限测试网络，具有一种**在代码中无法连接主网**的结构性保护（而不是配置标志）；钱包种子存储在 git 忽略的单独文件中，绝不在存档文件中；结算是幂等的，且在重试路径上保证资产守恒安全；证明验证**真实的链上备注**（而不是引擎自身的字符串）；如果无法访问链，则运行将继续进行，并标记为*未锚定*。",
+      "pinnedAt": "2026-11-25T00:55:42.002Z"
+    }
+  }
+}

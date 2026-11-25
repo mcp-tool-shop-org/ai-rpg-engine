@@ -12,7 +12,7 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# Motor de RPG con IA
+# AI RPG Engine
 
 Un conjunto de herramientas TypeScript para crear simulaciones de RPG deterministas. Define las estadísticas, elige los módulos, conecta una pila de combate y crea contenido. El motor gestiona el estado, los eventos, el RNG, la resolución de acciones y la toma de decisiones de la IA. Cada ejecución es reproducible.
 
@@ -46,7 +46,7 @@ Este es un **motor de composición**, no un juego terminado. Los 12 mundos inici
 - Los 12 mundos iniciales, jugables hoy con `run`
 - Paquetes de World Forge, cargados como contenido
 - El host de Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), a través del sidecar, con señales de audio `felt`
-- La capa opcional de libro mayor en la testnet de XRPL
+- La capa de libro mayor en la testnet de XRPL, que solo se activa si la eliges (opt-in)
 
 **Lo que está sin pulir o incompleto:**
 - El estudio de diseño con IA (Ollama) es opcional y está menos probado que el núcleo de simulación
@@ -162,17 +162,17 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | Capa | Función |
 |-------|------|
-| **Core Runtime** | Motor determinista: estado del mundo, eventos, acciones, ciclos, RNG, repetición |
-| **Modules** | Más de 30 sistemas componibles: combate, percepción, cognición, facciones, desplazamiento, compañeros, etc. |
-| **Content** | Entidades, zonas, diálogos, objetos, habilidades, estados: creados por el autor |
-| **AI Studio** | Capa de Ollama opcional: creación de prototipos, crítica, análisis de equilibrio, ajuste, experimentos |
+| **Entorno de ejecución principal** | Motor determinista: estado del mundo, eventos, acciones, ciclos, RNG, repetición |
+| **Módulos** | Más de 30 sistemas componibles: combate, percepción, cognición, facciones, desplazamiento, compañeros, etc. |
+| **Contenido** | Entidades, zonas, diálogos, objetos, habilidades, estados: creados por el autor |
+| **Estudio de IA** | Capa de Ollama opcional: creación de prototipos, crítica, análisis de equilibrio, ajuste, experimentos |
 
 ---
 
 ## El adaptador del libro mayor XRPL (opcional)
 
 `@ai-rpg-engine/ledger-adapter` es un paquete **opcional** que vincula la
-**capa de objetos intercambiables propiedad del jugador** de un juego —el saldo de `coin` y el inventario de objetos consumibles que ya gestionan los verbos `trade-core`, `buy` y `sell`— a la **red de pruebas XRPL**, de modo que
+**capa de objetos intercambiables propiedad del jugador** de un juego —el saldo de `coin` y el inventario de objetos consumibles que los verbos `buy`/`sell` de `trade-core` ya mueven— a la **red de pruebas XRPL**, de modo que
 estos activos puedan estar respaldados por tokens reales registrados y liquidarse en puntos de control.
 La ausencia de un adaptador es exactamente el motor sin conexión que se ofrece actualmente.
 
@@ -186,9 +186,9 @@ La ausencia de un adaptador es exactamente el motor sin conexión que se ofrece 
 
 | Nivel | Qué depende del adaptador | Se ajusta |
 |-------|-----------------------------|------|
-| **L0 — External observer** | Nada dentro del juego; el adaptador se adjunta desde el exterior en los puntos de control y el juego no es consciente de ello. | Adaptación de un juego existente (la demostración de piratas incluida). |
+| **L0 — Observador externo** | Nada dentro del juego; el adaptador se adjunta desde el exterior en los puntos de control y el juego no es consciente de ello. | Adaptación de un juego existente (la demostración de piratas incluida). |
 | **L1: puntos de control impulsados por el juego** | El flujo de guardado/ciudad/progresión meta del juego llama al adaptador en momentos definidos. | Un juego que desea momentos deliberados en el libro mayor. |
-| **L2 — Ledger-native design** | La economía o la identidad del juego están diseñadas *en torno a* la propiedad en la cadena (emisor persistente, mercados reales). | Un juego de comerciantes primero en el libro mayor. |
+| **L2 — Diseño nativo de libro mayor** | La economía o la identidad del juego están diseñadas *en torno a* la propiedad en la cadena (emisor persistente, mercados reales). | Un juego de comerciantes primero en el libro mayor. |
 
 La distinción que mantiene la repetición segura no es "qué paquete importa el adaptador", sino "si la llamada se realiza dentro del ciclo". Un paquete de juego puede importar y controlar el adaptador libremente, siempre y cuando todas las llamadas se realicen en un punto de control fuera del bucle de repetición impulsado por la semilla.
 
@@ -255,8 +255,8 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI: ejecutar juegos, crear plantillas iniciales, inspeccionar guardados |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Motor de renderizado de terminal y capa de entrada |
 | [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | Comerciante inicial: el paquete de referencia para el adaptador del libro mayor, que no tiene ninguna dependencia de este |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Comerciante inicial: la persecución como bucle, y qué mitad de la ciudad te abrirá una puerta |
-| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Opcional:** liquidación opcional en la red de prueba de XRPL para la capa comercial de propiedad del jugador, a través de un depósito de tokens XLS-85 en los puntos de control, completamente fuera del núcleo determinista |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Mundo inicial de cazador de fugitivos: la persecución como bucle, y qué mitad de la ciudad te abrirá una puerta |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Opcional:** liquidación opcional en la red de prueba de XRPL para la capa intercambiable propiedad del jugador (monedas / inventario / comercio), a través de un depósito de tokens XLS-85 en los puntos de control, completamente fuera del núcleo determinista |
 
 ### Ejemplos de inicio
 
@@ -283,19 +283,19 @@ Los 12 mundos de inicio son **ejemplos de composición**: demuestran cómo combi
 
 | Recurso | Descripción |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crear un nuevo juego: ruta CLI o plantilla manual |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Crea tu propio juego componiendo módulos del motor. |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Resolución de reglas por entidad: combate de estilo de juego mixto, `applyProfile`, plantillas de perfil, la CLI `profile`. |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Liquidación opcional en el libro mayor: el cortafuegos del determinismo, niveles de integración L0/L1/L2, modos de juego, medidas de seguridad y la demostración de pirata probada en vivo. |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco acciones, estados de un vistazo. |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack paso a paso, mapeo de estadísticas, perfiles de recursos. |
-| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | Hosts de sidecar, carga simulada, puerto dimétrico de Godot: la presentación puede ser engañosa, la ocupación sigue siendo un ID de zona. |
-| [Handbook](site/src/content/docs/handbook/index.md) | Manual completo: todos los sistemas, más 4 apéndices. |
-| [Composition Model](docs/composition-model.md) | Las 6 capas reutilizables y cómo se componen. |
-| [Examples](docs/examples/) | Ejemplos ejecutables de TypeScript (verificados por tipo y probados en cuanto a comportamiento en CI): fiesta mixta por entidad, perfiles compartidos, entre mundos, desde cero. |
-| [Design Document](docs/DESIGN.md) | Análisis profundo de la arquitectura: canalización de acciones, verdad frente a presentación. |
-| [Philosophy](PHILOSOPHY.md) | Mundos deterministas, diseño basado en la evidencia, IA como asistente. |
-| [Changelog](CHANGELOG.md) | Historial de lanzamientos. |
+| [Crea tu propio mundo inicial](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crear un nuevo juego: ruta CLI o plantilla manual |
+| [Guía de composición](site/src/content/docs/handbook/57-composition-guide.md) | Crea tu propio juego componiendo módulos del motor. |
+| [Perfiles complementarios](site/src/content/docs/handbook/59-plugin-profiles.md) | Resolución de reglas por entidad: combate de estilo de juego mixto, `applyProfile`, plantillas de perfil, la CLI `profile`. |
+| [Adaptador del libro mayor XRPL](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Liquidación opcional en el libro mayor: el cortafuegos del determinismo, niveles de integración L0/L1/L2, modos de juego, medidas de seguridad y la demostración de pirata probada en vivo. |
+| [Descripción general del combate](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco acciones, estados de un vistazo. |
+| [Guía para autores de paquetes](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack paso a paso, mapeo de estadísticas, perfiles de recursos. |
+| [Clientes visuales](site/src/content/docs/handbook/66-visual-clients.md) | Hosts de sidecar, carga útil felt, puerto dimétrico de Godot: la presentación puede ser engañosa, la ocupación sigue siendo un ID de zona. |
+| [Manual](site/src/content/docs/handbook/index.md) | Manual completo: todos los sistemas, más 4 apéndices. |
+| [Modelo de composición](docs/composition-model.md) | Las 6 capas reutilizables y cómo se componen. |
+| [Ejemplos](docs/examples/) | Ejemplos ejecutables de TypeScript (verificados por tipo y probados en cuanto a comportamiento en CI): grupo mixto por entidad, perfiles compartidos, entre mundos, desde cero. |
+| [Documento de diseño](docs/DESIGN.md) | Análisis profundo de la arquitectura: canalización de acciones, verdad frente a presentación. |
+| [Filosofía](PHILOSOPHY.md) | Mundos deterministas, diseño basado en la evidencia, IA como asistente. |
+| [Registro de cambios](CHANGELOG.md) | Historial de lanzamientos. |
 
 ---
 
@@ -309,9 +309,9 @@ El historial completo de versiones está en [CHANGELOG.md](CHANGELOG.md).
 
 ### Siguiente
 
-v3.12 cerró el contrato simulado y el primer host de dibujo. Lo que queda es un trabajo de ciclo posterior, no los restos de este:
+v3.12 cerró el contrato felt y el primer host de dibujo. Lo que queda es un trabajo de ciclo posterior, no los restos de este:
 
-- Un ambiente de cama de familia próspera (el puente de tono y el envío de rol por zona; CORE todavía no tiene un tronco próspero).
+- Un fondo ambiental de la familia de tono «próspero» (el puente de tono y la selección aleatoria por zona ya están incluidos; CORE aún no tiene una pista base próspera).
 - Multijugador: dos jugadores *humanos* compartiendo un mundo (una capa de red, deliberadamente pospuesta; los perfiles compartidos de un solo controlador se envían hoy como [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
 - Anulaciones de fórmulas serializables: ajuste de fórmulas por perfil (bloqueado en un DSL de fórmulas; los perfiles llevan mapeos de estadísticas hoy, no cierres).
 
@@ -339,7 +339,7 @@ Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para obtener la explicación completa.
 
 El motor principal es una **biblioteca de simulación puramente local**: no hay telemetría, ni red, ni secretos. Los archivos guardados se almacenan en `.ai-rpg-engine/` solo cuando se solicita explícitamente. Dos **capas opcionales** añaden una ruta de salida, y solo cuando las active:
 
-- La capa de IA (`@ai-rpg-engine/ollama`) se comunica con un daemon de Ollama **local**; su opción de participación `webfetch` (para RAG) está limitada por una protección contra SSRF (bloquea loopback/link-local/CGNAT/metadatos de la nube y IPv6-tunnelled equivalentes).
+- La capa de IA (`@ai-rpg-engine/ollama`) se comunica con un daemon de Ollama **local**; su opción de participación `webfetch` (para RAG) está limitada por una protección contra SSRF (bloquea loopback/link-local/CGNAT/metadatos de la nube y equivalentes tunelizados por IPv6).
 - La capa de libro mayor (`@ai-rpg-engine/ledger-adapter`) se conecta a la **red de pruebas XRPL** —y solo a la red de pruebas: una protección estructural **imposible en el código para la red principal** (no una opción de configuración) rechaza cualquier host que no sea de la red de pruebas durante la construcción. Las semillas de la billetera se almacenan en un archivo secundario de secretos ignorado por Git, nunca en un archivo guardado, y el núcleo determinista nunca importa el adaptador.
 
 Consulte [SECURITY.md](SECURITY.md) para obtener más detalles.

@@ -12,7 +12,7 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# Motore per RPG basato sull'IA
+# AI RPG Engine
 
 Un set di strumenti TypeScript per creare simulazioni di giochi di ruolo deterministiche. Si definiscono le statistiche, si selezionano i moduli, si configura una sequenza di combattimento e si crea il contenuto. Il motore gestisce lo stato, gli eventi, il generatore di numeri casuali, la risoluzione delle azioni e il processo decisionale dell'IA. Ogni esecuzione è riproducibile.
 
@@ -27,7 +27,7 @@ Questo è un **motore di composizione**, non un gioco completo. I 12 mondi inizi
 - Un **ambiente di simulazione** — cicli deterministici, registri di azioni riproducibili, generatore di numeri casuali con seme
 - Uno **studio di progettazione dell'IA** (opzionale) — scheletro, analisi critica, analisi dell'equilibrio, ottimizzazione, esperimenti tramite Ollama
 - Un **livello opzionale sulla blockchain** — `@ai-rpg-engine/ledger-adapter` supporta la valuta e gli oggetti commerciabili di un gioco con token XRPL reali sulla **testnet**, con regolamenti effettuati in punti di controllo, completamente al di fuori del nucleo deterministico (opzionale; un'esecuzione è identica a livello di byte senza di esso)
-- Un **host visivo opzionale** — `@ai-rpg-engine/sidecar` più il client Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). Il motore non genera comunque immagini. Lo sfondo disegna un porto dimetrico in scala 2:1 e riproduce l'audio `felt`. L'occupazione rimane un ID di zona.
+- Un **host visivo opzionale** — `@ai-rpg-engine/sidecar` più il client Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). Il motore non genera comunque immagini. Lo stage disegna un porto dimetrico in scala 2:1 e riproduce l'audio `felt`. L'occupazione rimane un ID di zona.
 
 ## Cos'è che non è
 
@@ -46,7 +46,7 @@ Questo è un **motore di composizione**, non un gioco completo. I 12 mondi inizi
 - Tutti i 12 mondi iniziali, giocabili oggi con `run`
 - I pacchetti World Forge, caricati come contenuto
 - L'host Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), tramite il sidecar, con i segnali audio `felt`
-- Il livello opzionale di registro sulla testnet XRPL
+- Il livello di registro sulla testnet XRPL, attivo solo se lo scegli (opt-in)
 
 **Cosa è ancora grezzo o incompleto:**
 - Lo studio di progettazione IA (Ollama) è opzionale ed è testato meno del nucleo di simulazione
@@ -162,10 +162,10 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | Livello | Ruolo |
 |-------|------|
-| **Core Runtime** | Motore deterministico: stato del mondo, eventi, azioni, tick, RNG, replay |
-| **Modules** | Oltre 30 sistemi componibili: combattimento, percezione, cognizione, fazioni, movimento, compagni, ecc. |
-| **Content** | Entità, zone, dialoghi, oggetti, abilità, stati: creati dall'autore |
-| **AI Studio** | Livello Ollama opzionale: creazione di prototipi, analisi critica, analisi dell'equilibrio, ottimizzazione, esperimenti |
+| **Runtime principale** | Motore deterministico: stato del mondo, eventi, azioni, tick, RNG, replay |
+| **Moduli** | Oltre 30 sistemi componibili: combattimento, percezione, cognizione, fazioni, movimento, compagni, ecc. |
+| **Contenuti** | Entità, zone, dialoghi, oggetti, abilità, stati: creati dall'autore |
+| **Studio IA** | Livello Ollama opzionale: creazione di prototipi, analisi critica, analisi dell'equilibrio, ottimizzazione, esperimenti |
 
 ---
 
@@ -177,19 +177,19 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 - Non viene mai invocato all'interno del tick deterministico, ma solo ai **checkpoint** (salvataggio, ingresso in città/mercato, fine del capitolo).
 - Nulla in `@ai-rpg-engine/core` o `@ai-rpg-engine/modules` lo importa (la sua unica dipendenza dal motore è un `import type` in fase di compilazione).
-- **Un'esecuzione è identica con o senza.** Un test del firewall esegue il ciclo del mercante `starter-pirate` `createGame()` reale su due motori, uno con l'adattatore abilitato e che si regola a un checkpoint, e verifica che i due mondi siano identici. Il replay con seme 0 non viene modificato.
+- **Un'esecuzione è identica a livello di byte con o senza di esso.** Un test del firewall esegue il ciclo del mercante `starter-pirate` `createGame()` reale su due motori, uno con l'adattatore abilitato e che si regola a un checkpoint, e verifica che i due mondi siano identici. Il replay con seme 0 non viene modificato.
 
 **Livelli di integrazione: un gioco lo include in profondità quanto desidera il suo design.** Il firewall è un confine del *determinismo*, non una regola anti-integrazione; l'invariante di cui sopra è valido a tutti i livelli:
 
 | Livello | Cosa dipende dall'adattatore | Si adatta |
 |-------|-----------------------------|------|
-| **L0 — External observer** | Nulla all'interno del gioco; l'adattatore si collega dall'esterno ai checkpoint e il gioco non ne è a conoscenza. | Riadattamento di un gioco esistente (la demo pirata fornita). |
+| **L0 — Osservatore esterno** | Nulla all'interno del gioco; l'adattatore si collega dall'esterno ai checkpoint e il gioco non ne è a conoscenza. | Riadattamento di un gioco esistente (la demo pirata fornita). |
 | **L1: checkpoint guidati dal gioco** | Il flusso di salvataggio/città/progressione meta del gioco chiama l'adattatore in momenti definiti. | Un gioco che desidera momenti di registro deliberati. |
-| **L2 — Ledger-native design** | L'economia o l'identità del gioco sono progettate *attorno* alla proprietà on-chain (emittente persistente, mercati reali). | Un gioco di mercanti basato sul registro. |
+| **L2 — Progettazione nativa per il registro** | L'economia o l'identità del gioco sono progettate *attorno* alla proprietà on-chain (emittente persistente, mercati reali). | Un gioco di mercanti basato sul registro. |
 
 La distinzione che mantiene il replay sicuro non è "quale pacchetto importa l'adattatore", ma "la chiamata è all'interno del tick". Un pacchetto di gioco può importare e gestire l'adattatore liberamente, purché ogni chiamata avvenga a un checkpoint al di fuori del ciclo di replay guidato dal seme.
 
-**Tre modalità di gioco.** `offline` (predefinito: nessuna catena, il motore così come viene fornito) · `ledger` (monete/oggetti supportati dai saldi della testnet, regolati ai checkpoint) · `diary` (gioca offline, quindi ancora lo stato dell'esecuzione sul registro per una ricevuta a prova di manomissione).
+**Tre modalità di gioco.** `offline` (predefinito: nessuna catena, il motore così come viene fornito) · `ledger` (monete/oggetti supportati dai saldi della testnet, regolati ai checkpoint) · `diary` (gioca offline, quindi ancora l'hash dello stato dell'esecuzione sul registro per una ricevuta a prova di manomissione).
 
 **Cosa è presente nel registro.** `coin` → un impegno di valuta emessa su una linea di credito;
 articoli di consumo → token fungibili; la variazione netta delle transazioni di un checkpoint → un trasferimento convalidato tramite **XLS-85 escrow di token**. Attrezzature uniche vengono rilasciate come **XLS-20 NFT**
@@ -254,7 +254,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI: esegui giochi, crea modelli iniziali, ispeziona i salvataggi |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderer terminale e livello di input |
 | [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | Modello iniziale mercantile: il pacchetto di riferimento per l'adattatore del registro, che non dipende da esso |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Modello iniziale ladro: l'inseguimento come ciclo e quale metà della città aprirà una porta per te |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Modello iniziale cacciatore di ladri: l'inseguimento come ciclo e quale metà della città aprirà una porta per te |
 | [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Facoltativo:** convalida facoltativa della testnet XRPL per il livello negoziabile di proprietà del giocatore (monete/inventario/scambio), tramite XLS-85 escrow di token ai checkpoint, completamente al di fuori del core deterministico |
 
 ### Esempi di modelli iniziali
@@ -282,19 +282,19 @@ I 12 mondi iniziali sono **esempi di composizione**: dimostrano come combinare i
 
 | Risorsa | Descrizione |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crea un nuovo gioco: tramite CLI o percorso del modello manuale |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Crea il tuo gioco componendo moduli del motore |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Risoluzione delle regole per entità: combattimento con stili di gioco misti, `applyProfile`, modelli di profilo, la CLI `profile` |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Integrazione opzionale con il registro — firewall deterministico, livelli di integrazione L0/L1/L2, modalità di gioco, misure di sicurezza e demo pirata testata dal vivo |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Sei pilastri del combattimento, cinque azioni, stati a colpo d'occhio |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack passo dopo passo, mappatura delle statistiche, profili delle risorse |
-| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | Host sidecar, payload simulato, porto dimetrico di Godot: la presentazione potrebbe essere fuorviante, l'occupazione rimane un ID di zona |
-| [Handbook](site/src/content/docs/handbook/index.md) | Manuale completo: ogni sistema, più 4 appendici |
-| [Composition Model](docs/composition-model.md) | I 6 livelli riutilizzabili e come si compongono |
-| [Examples](docs/examples/) | Esempi TypeScript eseguibili (con controllo dei tipi e test del comportamento in CI) — gruppo misto per entità, profili condivisi, tra mondi, da zero |
-| [Design Document](docs/DESIGN.md) | Analisi approfondita dell'architettura: pipeline delle azioni, verità contro presentazione |
-| [Philosophy](PHILOSOPHY.md) | Mondi deterministici, progettazione basata sull'evidenza, IA come assistente |
-| [Changelog](CHANGELOG.md) | Cronologia delle versioni |
+| [Crea il tuo mondo iniziale](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crea un nuovo gioco: tramite CLI o percorso del modello manuale |
+| [Guida alla composizione](site/src/content/docs/handbook/57-composition-guide.md) | Crea il tuo gioco componendo moduli del motore |
+| [Profili plug-in](site/src/content/docs/handbook/59-plugin-profiles.md) | Risoluzione delle regole per entità: combattimento con stili di gioco misti, `applyProfile`, modelli di profilo, la CLI `profile` |
+| [Adattatore del registro XRPL](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Integrazione opzionale con il registro — firewall deterministico, livelli di integrazione L0/L1/L2, modalità di gioco, misure di sicurezza e demo pirata testata dal vivo |
+| [Panoramica del combattimento](site/src/content/docs/handbook/49a-combat-overview.md) | Sei pilastri del combattimento, cinque azioni, stati a colpo d'occhio |
+| [Guida per gli autori di pacchetti](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack passo dopo passo, mappatura delle statistiche, profili delle risorse |
+| [Client visivi](site/src/content/docs/handbook/66-visual-clients.md) | Host sidecar, payload felt, porto dimetrico di Godot: la presentazione potrebbe essere fuorviante, l'occupazione rimane un ID di zona |
+| [Manuale](site/src/content/docs/handbook/index.md) | Manuale completo: ogni sistema, più 4 appendici |
+| [Modello di composizione](docs/composition-model.md) | I 6 livelli riutilizzabili e come si compongono |
+| [Esempi](docs/examples/) | Esempi TypeScript eseguibili (con controllo dei tipi e test del comportamento in CI) — gruppo misto per entità, profili condivisi, tra mondi, da zero |
+| [Documento di progettazione](docs/DESIGN.md) | Analisi approfondita dell'architettura: pipeline delle azioni, verità contro presentazione |
+| [Filosofia](PHILOSOPHY.md) | Mondi deterministici, progettazione basata sull'evidenza, IA come assistente |
+| [Registro delle modifiche](CHANGELOG.md) | Cronologia delle versioni |
 
 ---
 
@@ -302,15 +302,15 @@ I 12 mondi iniziali sono **esempi di composizione**: dimostrano come combinare i
 
 ### Dove siamo ora
 
-Entrambe le strutture di composizione sono complete: **8368 test su 388 file**, tutti i 12 personaggi iniziali su `buildCombatStack` **e** `buildWorldStack`, riproduzione deterministica e identica byte per byte con seed stampati, punteggio completo delle decisioni dell'IA e una CLI che crea, esegue, convalida e ispeziona. L'arco v3.x ha reso il mondo attivo (NPC con nomi, la superficie sociale con 25 verbi, economie di genere — v3.0–v3.1), ha inserito risorse di proprietà del giocatore sulla testnet XRPL come canale secondario opzionale (v3.2–v3.4), ha creato due personaggi iniziali incentrati sul sistema e li ha trasformati in strumenti per migliorare il motore (v3.5–v3.6), ha illuminato e rafforzato lo strato strategico finché le conseguenze non lasciano segni reali (v3.7–v3.8), ha fornito agli host la superficie del motore di cui hanno bisogno per l'integrazione con Godot (v3.8.1), ha chiuso il ciclo di creazione in modo che una sessione di studio o un semplice pacchetto JSON producano un mondo giocabile dall'inizio alla fine (v3.9), ha portato l'intero strato strategico sui sensi del giocatore (v3.10), ha ottimizzato la profondità che questi sensi raggiungono ora (v3.11) e **ha fornito a un host di rendering la sensazione di un tick: il primo client pixel, un porto dimetrico di Godot 4, viene eseguito su tale contratto (v3.12)**.
+Entrambe le strutture di composizione sono complete: **8368 test su 388 file**, tutti i 12 mondi iniziali su `buildCombatStack` **e** `buildWorldStack`, riproduzione deterministica e identica byte per byte con seed stampati, punteggio completo delle decisioni dell'IA e una CLI che crea, esegue, convalida e ispeziona. L'arco v3.x ha reso il mondo attivo (NPC con nomi, la superficie sociale con 25 verbi, economie di genere — v3.0–v3.1), ha inserito risorse di proprietà del giocatore sulla testnet XRPL come canale secondario opzionale (v3.2–v3.4), ha creato due mondi iniziali incentrati sul sistema e li ha trasformati in strumenti per migliorare il motore (v3.5–v3.6), ha illuminato e rafforzato lo strato strategico finché le conseguenze non lasciano segni reali (v3.7–v3.8), ha fornito agli host la superficie del motore di cui hanno bisogno per l'integrazione con Godot (v3.8.1), ha chiuso il ciclo di creazione in modo che una sessione di studio o un semplice pacchetto JSON producano un mondo giocabile dall'inizio alla fine (v3.9), ha portato l'intero strato strategico sui sensi del giocatore (v3.10), ha ottimizzato la profondità che questi sensi raggiungono ora (v3.11) e **ha fornito a un host di rendering la sensazione di un tick: il primo client pixel, un porto dimetrico di Godot 4, viene eseguito su tale contratto (v3.12)**.
 
 La cronologia completa delle versioni è in [CHANGELOG.md](CHANGELOG.md).
 
 ### Prossimo
 
-v3.12 ha chiuso il contratto simulato e il primo host di rendering. Ciò che resta è un lavoro successivo, non gli elementi rimasti di questo ciclo:
+La v3.12 ha chiuso il contratto felt e il primo host di rendering. Ciò che resta è un lavoro successivo, non gli elementi rimasti di questo ciclo:
 
-- Un ambiente di famiglia prospera (il ponte tonale e il rilascio per zona; CORE non ha ancora un elemento prospero)
+- Un sottofondo audio ambientale per la categoria tonale "prosperous" (il ponte tonale e la selezione musicale per zona sono già inclusi; a CORE manca ancora una traccia base "prosperous")
 - Multiplayer: due giocatori *umani* che condividono un mondo (un livello di rete, volutamente differito; i profili condivisi a controller singolo vengono rilasciati oggi come [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
 - Override di formule serializzabili: messa a punto delle formule per profilo (bloccato su un DSL per formule; i profili contengono oggi mappature di statistiche, non chiusure)
 

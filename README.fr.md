@@ -12,7 +12,7 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# Moteur de jeu de rôle basé sur l’IA
+# AI RPG Engine
 
 Une boîte à outils TypeScript pour créer des simulations de jeu de rôle déterministes. Vous définissez les statistiques, choisissez des modules, configurez une pile de combat et créez du contenu. Le moteur gère l’état, les événements, le générateur de nombres aléatoires, la résolution des actions et la prise de décision par l’IA. Chaque exécution est reproductible.
 
@@ -46,7 +46,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mon
 - Les 12 mondes de départ, jouables dès aujourd'hui avec `run`
 - Les packs World Forge, chargés comme contenu
 - L'hôte Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), via le sidecar, avec les signaux audio `felt`
-- La couche optionnelle de registre sur le testnet XRPL
+- La couche de registre sur le testnet XRPL, activée seulement si vous le choisissez (opt-in)
 
 **Ce qui est encore brut ou incomplet :**
 - Le studio de conception IA (Ollama) est optionnel et moins testé que le cœur de simulation
@@ -162,10 +162,10 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | Couche | Rôle |
 |-------|------|
-| **Core Runtime** | Moteur déterministe — état du monde, événements, actions, cycles, RNG, relecture |
+| **Noyau d’exécution** | Moteur déterministe — état du monde, événements, actions, cycles, RNG, relecture |
 | **Modules** | Plus de 30 systèmes composables — combat, perception, cognition, factions, déplacement, compagnons, etc. |
-| **Content** | Entités, zones, dialogues, objets, capacités, états — créés par l’auteur |
-| **AI Studio** | Couche Ollama facultative — création de prototypes, critique, analyse de l’équilibre, réglage, expériences |
+| **Contenu** | Entités, zones, dialogues, objets, capacités, états — créés par l’auteur |
+| **Studio d’IA** | Couche Ollama facultative — création de prototypes, critique, analyse de l’équilibre, réglage, expériences |
 
 ---
 
@@ -177,15 +177,15 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 - Il n’est **jamais invoqué à l’intérieur du cycle déterministe** — uniquement aux **points de contrôle** (sauvegarde, entrée dans une ville/un marché, fin de chapitre).
 - Rien dans `@ai-rpg-engine/core` ou `@ai-rpg-engine/modules` ne l’importe (sa seule dépendance au moteur est une `import type` au moment de la compilation).
-- **Une exécution est identique, avec ou sans lui.** Un test de pare-feu exécute la boucle marchande réelle `starter-pirate` `createGame()` sur deux moteurs — l’un avec l’adaptateur activé et réglant aux points de contrôle — et affirme que les deux mondes sont profondément égaux. La relecture avec la graine 0 n’est pas affectée.
+- **Une exécution est identique au niveau des octets, avec ou sans lui.** Un test de pare-feu exécute la boucle marchande réelle `starter-pirate` `createGame()` sur deux moteurs — l’un avec l’adaptateur activé et réglant à un point de contrôle — et affirme que les deux mondes sont profondément égaux. La relecture avec la graine 0 n’est pas affectée.
 
 **Niveaux d’intégration — un jeu l’intègre aussi profondément que son design le souhaite.** Le pare-feu est une *frontière de déterminisme*, et non une règle anti-intégration ; l’invariant ci-dessus est valable à tous les niveaux :
 
 | Niveau | Ce qui dépend de l’adaptateur | Convient |
 |-------|-----------------------------|------|
-| **L0 — External observer** | Rien à l’intérieur du jeu ; l’adaptateur se connecte de l’extérieur aux points de contrôle et le jeu n’en a pas conscience. | Intégration à un jeu existant (la démo du pirate expédiée). |
+| **L0 — Observateur externe** | Rien à l’intérieur du jeu ; l’adaptateur se connecte de l’extérieur aux points de contrôle et le jeu n’en a pas conscience. | Intégration à un jeu existant (la démo du pirate expédiée). |
 | **L1 — Points de contrôle pilotés par le jeu** | Le flux de sauvegarde/ville/progression méta propre au jeu appelle l’adaptateur à des moments définis. | Un jeu qui souhaite des moments délibérés sur le registre. |
-| **L2 — Ledger-native design** | L’économie ou l’identité du jeu est conçue *autour* de la propriété sur la chaîne (émetteur persistant, marchés réels). | Un jeu de commerce axé sur le registre. |
+| **L2 — Conception native pour le registre** | L’économie ou l’identité du jeu est conçue *autour* de la propriété sur la chaîne (émetteur persistant, marchés réels). | Un jeu de commerce axé sur le registre. |
 
 La distinction qui garantit la sécurité de la relecture n’est **pas** « quel package importe l’adaptateur », mais « l’appel se fait-il à l’intérieur du cycle ». Un package de jeu peut importer et piloter l’adaptateur librement, à condition que chaque appel se produise à un point de contrôle en dehors de la boucle de relecture pilotée par la graine.
 
@@ -194,7 +194,7 @@ La distinction qui garantit la sécurité de la relecture n’est **pas** « qu
 **Ce qui figure dans le grand livre.** `coin` → une promesse de paiement en devise émise sur une ligne de confiance ;
 articles consommables → jetons fongibles ; le delta net des transactions d’un point de contrôle → un transfert validé via un **dépositaire de jetons XLS-85**. Les équipements uniques sont fournis sous forme de **NFT XLS-20** (v3.3), et l’évolution des reliques fait progresser les métadonnées d’un NFT modifiable en place via **XLS-46 `NFTokenModify`** — ce qui est basé sur un jeu réel à partir de v3.4. L’économie du district abstrait (`economy-core`) n’est *pas* affectée ; elle reste une simulation pure.
 
-**Mesures de sécurité.** Uniquement pour le testnet, avec une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) ; les clés de portefeuille sont stockées dans un fichier secondaire de secrets ignoré par Git, et non dans le fichier d’enregistrement ; la validation est idempotente et sécurisée en termes de conservation lors de la tentative de relance ; les preuves vérifient le **vrai mémo sur la chaîne** (et non la chaîne de caractères propre au moteur) ; et si la chaîne est inaccessible, l’exécution se poursuit simplement, en étant marquée comme *non ancrée*.
+**Mesures de sécurité.** Uniquement pour le testnet, avec une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) ; les graines (« seeds ») de portefeuille sont stockées dans un fichier secondaire de secrets ignoré par Git, et non dans le fichier d’enregistrement ; la validation est idempotente et sécurisée en termes de conservation lors de la tentative de relance ; les preuves vérifient le **vrai mémo sur la chaîne** (et non la chaîne de caractères propre au moteur) ; et si la chaîne est inaccessible, l’exécution se poursuit simplement, en étant marquée comme *non ancrée*.
 
 **Résultats concrets.** Une véritable simulation d’un marchand `starter-pirate` : vente d’un coutelas, achat d’un obus ; les transactions sont validées sur le testnet XRPL via un dépositaire de jetons, puis `reconcile()` confirme les soldes et les mémos dans le grand livre par rapport à l’économie du moteur (la conservation est assurée pour chaque jeton). Le grand livre est un système différent du moteur, de sorte que le moteur ne peut pas le falsifier ; la réconciliation est une vérification externe authentique. Uniquement pour le testnet ; les actifs sont des reçus spécifiques au jeu, et non des titres financiers.
 
@@ -202,7 +202,7 @@ articles consommables → jetons fongibles ; le delta net des transactions d’u
 
 ## Système de combat
 
-Cinq actions (attaque, garde, désengagement, préparation, repositionnement), quatre états de combat (protégé, déséquilibré, exposé, en fuite), quatre états d’engagement (engagé, protégé, en ligne arrière, isolé). Trois dimensions statistiques déterminent chaque formule, de sorte qu’un duelliste rapide joue différemment d’un combattant lourd ou d’un sentinelle calme.
+Cinq actions (attaque, garde, désengagement, préparation, repositionnement), quatre états de combat (en garde, déséquilibré, exposé, en fuite), quatre états d’engagement (engagé, protégé, en ligne arrière, isolé). Trois dimensions statistiques déterminent chaque formule, de sorte qu’un duelliste rapide joue différemment d’un combattant lourd ou d’un sentinelle calme.
 
 Les adversaires IA utilisent un système de notation unifié pour la prise de décision : les actions et les capacités de combat sont comparées dans une seule évaluation, avec des seuils configurables pour éviter l’utilisation excessive de capacités marginales.
 
@@ -230,9 +230,9 @@ const warCry: AbilityDefinition = {
 
 ---
 
-## Packs
+## Packages
 
-| Pack | Objectif |
+| Package | Objectif |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Environnement de simulation déterministe : état du monde, événements, générateur de nombres aléatoires, cycles, résolution des actions |
 | [`@ai-rpg-engine/modules`](packages/modules) | Plus de 30 modules composables : combat, perception, cognition, factions, rumeurs, déplacement, compagnons, autonomie des PNJ, carte stratégique, reconnaissance des objets, opportunités émergentes, détection d’arcs narratifs, déclencheurs de fin de partie |
@@ -252,7 +252,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI : exécution de jeux, création d’ébauches, inspection des enregistrements |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Moteur de rendu terminal et couche d’entrée |
 | [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | Départ commercial : le pack de référence pour l’adaptateur du grand livre, qui n’en dépend pas |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Départ voleur : la poursuite est au cœur du jeu, et quelle moitié de la ville vous ouvrira une porte |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Départ chasseur de voleurs : la poursuite est au cœur du jeu, et quelle moitié de la ville vous ouvrira sa porte |
 | [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Optionnel** : validation optionnelle sur le testnet XRPL pour la couche échangeable appartenant au joueur (pièce/inventaire/échange), via un dépositaire de jetons XLS-85 aux points de contrôle, entièrement en dehors du noyau déterministe |
 
 ### Exemples de départ
@@ -280,19 +280,19 @@ Les 12 mondes de départ sont des **exemples de composition** : ils montrent com
 
 | Ressource | Description |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Création d’un nouveau jeu : via la CLI ou en utilisant un modèle manuel |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Créez votre propre jeu en assemblant des modules de moteur. |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Résolution des règles par entité — combat avec styles de jeu mixtes, `applyProfile`, modèles de profil, l’interface en ligne de commande `profile`. |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Règlement sur le registre, sur demande — pare-feu de déterminisme, niveaux d’intégration L0/L1/L2, modes de jeu, mesures de sécurité et démonstration de pirate testée en direct. |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Six piliers de combat, cinq actions, états en un coup d’œil. |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack étape par étape, cartographie des statistiques, profils de ressources. |
-| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | Hôtes secondaires, charge utile, port dimétrique Godot — la présentation peut être trompeuse, l’occupation reste un ID de zone. |
-| [Handbook](site/src/content/docs/handbook/index.md) | Manuel complet — tous les systèmes, plus 4 annexes. |
-| [Composition Model](docs/composition-model.md) | Les 6 couches réutilisables et leur composition. |
-| [Examples](docs/examples/) | Exemples TypeScript exécutables (vérifiés par type et testés en termes de comportement dans CI) — groupe mixte par entité, profils partagés, inter-mondes, à partir de zéro. |
-| [Design Document](docs/DESIGN.md) | Analyse approfondie de l’architecture — pipeline d’action, vérité par rapport à la présentation. |
-| [Philosophy](PHILOSOPHY.md) | Mondes déterministes, conception basée sur des preuves, IA en tant qu’assistant. |
-| [Changelog](CHANGELOG.md) | Historique des versions. |
+| [Créer votre propre monde de départ](site/src/content/docs/handbook/58-create-your-own-starter.md) | Création d’un nouveau jeu : via la CLI ou en utilisant un modèle manuel |
+| [Guide de composition](site/src/content/docs/handbook/57-composition-guide.md) | Créez votre propre jeu en assemblant des modules de moteur. |
+| [Profils de module d’extension](site/src/content/docs/handbook/59-plugin-profiles.md) | Résolution des règles par entité — combat avec styles de jeu mixtes, `applyProfile`, modèles de profil, l’interface en ligne de commande `profile`. |
+| [Adaptateur du registre XRPL](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Règlement sur le registre, sur demande — pare-feu de déterminisme, niveaux d’intégration L0/L1/L2, modes de jeu, mesures de sécurité et démonstration de pirate testée en direct. |
+| [Aperçu du combat](site/src/content/docs/handbook/49a-combat-overview.md) | Six piliers de combat, cinq actions, états en un coup d’œil. |
+| [Guide du créateur de packs](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack étape par étape, cartographie des statistiques, profils de ressources. |
+| [Clients visuels](site/src/content/docs/handbook/66-visual-clients.md) | Hôtes secondaires (sidecar), charge utile felt, port dimétrique Godot — la présentation peut être trompeuse, l’occupation reste un ID de zone. |
+| [Manuel](site/src/content/docs/handbook/index.md) | Manuel complet — tous les systèmes, plus 4 annexes. |
+| [Modèle de composition](docs/composition-model.md) | Les 6 couches réutilisables et leur composition. |
+| [Exemples](docs/examples/) | Exemples TypeScript exécutables (vérifiés par type et testés en termes de comportement dans CI) — groupe mixte par entité, profils partagés, inter-mondes, à partir de zéro. |
+| [Document de conception](docs/DESIGN.md) | Analyse approfondie de l’architecture — pipeline d’action, vérité par rapport à la présentation. |
+| [Philosophie](PHILOSOPHY.md) | Mondes déterministes, conception basée sur des preuves, IA en tant qu’assistant. |
+| [Journal des modifications](CHANGELOG.md) | Historique des versions. |
 
 ---
 
@@ -306,9 +306,9 @@ L'historique complet des versions se trouve dans [CHANGELOG.md](CHANGELOG.md).
 
 ### Suivant
 
-v3.12 a clos le contrat et le premier hôte de dessin. Ce qui reste est un travail de cycle ultérieur, et non des restes de celui-ci :
+La v3.12 a bouclé le contrat felt et le premier hôte de rendu. Ce qui reste est un travail de cycle ultérieur, et non des restes de celui-ci :
 
-- Un lit ambiant de famille prospère (le pont tonal et le déploiement par zone ; CORE n’a toujours pas de tige prospère).
+- Une nappe d’ambiance pour la famille tonale « prosperous » (le pont tonal et le tirage par zone sont livrés ; CORE n’a toujours pas de piste audio « prosperous »).
 - Multijoueur — deux joueurs *humains* partageant un monde (une couche de mise en réseau, délibérément différée ; les profils partagés à un seul contrôleur sont disponibles aujourd’hui sous la forme de [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
 - Substitutions de formules sérialisables — réglage de la formule par profil (bloqué sur un DSL de formule ; les profils contiennent aujourd’hui des cartographies de statistiques, et non des fermetures).
 
@@ -336,8 +336,8 @@ Consultez le fichier [PHILOSOPHY.md](PHILOSOPHY.md) pour une explication complè
 
 Le moteur principal est une **bibliothèque de simulation locale uniquement** : pas de télémétrie, pas de réseau, pas de données sensibles. Les fichiers de sauvegarde sont enregistrés uniquement dans `.ai-rpg-engine/` lorsqu’une demande explicite est faite. Deux **couches optionnelles** ajoutent une voie de communication sortante, et ce uniquement lorsque vous les activez :
 
-- La couche d’IA (`@ai-rpg-engine/ollama`) communique avec un démon Ollama **local** ; son option d’activation `webfetch` (pour RAG) est limitée par une protection contre les attaques SSRF (qui bloque les adresses de loopback/link-local/CGNAT/cloud-metadata et les équivalents IPv6-tunnelled).
-- La couche de registre (`@ai-rpg-engine/ledger-adapter`) accède au **testnet XRPL** — et uniquement au testnet : une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) rejette tout hôte autre que le testnet lors de sa création. Les clés de portefeuille sont stockées dans un fichier secondaire ignoré par Git, jamais dans un fichier de sauvegarde, et le noyau déterministe n’importe jamais l’adaptateur.
+- La couche d’IA (`@ai-rpg-engine/ollama`) communique avec un démon Ollama **local** ; son option d’activation `webfetch` (pour RAG) est limitée par une protection contre les attaques SSRF (qui bloque les adresses de loopback/link-local/CGNAT/métadonnées cloud et leurs équivalents encapsulés en IPv6).
+- La couche de registre (`@ai-rpg-engine/ledger-adapter`) accède au **testnet XRPL** — et uniquement au testnet : une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) rejette tout hôte autre que le testnet lors de sa création. Les graines (« seeds ») de portefeuille sont stockées dans un fichier secondaire ignoré par Git, jamais dans un fichier de sauvegarde, et le noyau déterministe n’importe jamais l’adaptateur.
 
 Consultez le fichier [SECURITY.md](SECURITY.md) pour plus de détails.
 
