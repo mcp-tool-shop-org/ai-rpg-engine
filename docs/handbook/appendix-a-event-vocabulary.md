@@ -30,7 +30,7 @@ Dynamic event types built from finite TypeScript union templates (`module.${phas
 | `rule.effect.failed` | core (actions), core (modules) | Registered rule or effect handler threw during action or module execution |
 | `world.entity.inspected` | traversal-core | Actor inspected an entity (`entityId`, `stats`, `resources`, `tags`, and `statuses`) |
 | `world.flag.changed` | dialogue-core | Dialogue `set-global` effect updated a `world.globals` flag (`key`, `value`) |
-| `world.zone.entered` | traversal-core | Actor entered a zone (`zoneId`, optional `previousZoneId`, `placement`) |
+| `world.zone.entered` | traversal-core | Actor entered a zone (`zoneId`, optional `previousZoneId`, `placement`). Presentation narrates it only for the player |
 | `world.zone.gate.refused` | traversal-core | Hard zone gate refused entry and reported `unmet` conditions (`zoneId`, `fromZoneId`) |
 | `world.zone.gate.warned` | traversal-core | Soft zone gate warned of `unmet` conditions before allowing entry (`zoneId`, `fromZoneId`) |
 | `world.zone.inspected` | traversal-core | Actor inspected current zone (`entities`, `interactables`, `exits`, `hazards`, optional hints/economy) |

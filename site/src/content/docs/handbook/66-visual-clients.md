@@ -16,6 +16,7 @@ This chapter is the contract those hosts share. It is not a Godot tutorial.
 - Occupancy is **zone-id**. `move` takes an adjacent zone id. There is no cell, path, or pixel in `WorldState`.
 - Presentation may lie: a sprite can tween, a camera can shake, a toast can flash. Those lies are never hashed.
 - Hash mismatch means the client is stale. The client announces it and re-snapshots. It never patches the sim.
+- `world.zone.entered` fires for every actor that moves, but the zone-entry narration, music and log line are the **player's** alone. A follower stepping into a new zone gets none of them.
 
 Chapter 51 (zone positioning) is the combat overlay on that same zone graph. A dimetric diamond under a click is a **view** of a zone, not a second spatial sim.
 
@@ -39,6 +40,15 @@ Canonical pre-images scale every finite number by `1e6` (rounded half away from 
 bytes it saw before, which is the point of an additive capability.
 
 A `--content` sidecar boot still needs `--manifest` (`SIDECAR_MANIFEST_REQUIRED`) and runs both the four-check load gate and the unresolved AI profile check (`aiProfile` / `entityAi` against the host engine's registered cognition profiles) before any mutation. By default (`--unresolved-ai-profile fail`), an unresolved profile refuses with exit `1` (`SIDECAR_CONTENT_REFUSED`). Passing `--unresolved-ai-profile warn` loads the pack, writes one sanitized warning line per unresolved entry to `stderr`, and relays `packIntake.warnings` on `initialize` (which custom hosts embedding `SidecarServer` with `unresolvedAiProfile: 'warn'` also receive).
+
+## When the client must resync
+
+A client never repairs its own copy of the world. When the sidecar can't keep a session's baseline in step, it says so and the client starts over from a snapshot:
+
+- The server sends `sim/resyncRequired` with `{ tick, snapshotSeq, reason, code?, message }`. `reason` is `tick_skipped` (a peer's tick could not be sent to this session) or `rebase_skipped` (a `load` could not rebase this session).
+- After a skipped rebase, `submitAction` and `advance` refuse with `RESYNC_REQUIRED` until the client calls `snapshot()`.
+- `SidecarClient` records the notices in `resyncRequiredNotices` and calls `onResyncRequired`. The GDScript `SidecarAttachClient` emits `resync_required`.
+- Every write is checked against the always-on JSON rules on the whole world (no `NaN`, no `Infinity`, no functions) and is rolled back if it fails.
 
 ## The Godot client (ai-rpg-stage)
 

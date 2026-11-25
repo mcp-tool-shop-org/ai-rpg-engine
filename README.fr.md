@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.md">English</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -12,98 +12,56 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# Moteur de jeu de rôle basé sur l’IA
+# AI RPG Engine
 
 Une boîte à outils TypeScript pour créer des simulations de jeu de rôle déterministes. Vous définissez les statistiques, choisissez des modules, configurez une pile de combat et créez du contenu. Le moteur gère l’état, les événements, le générateur de nombres aléatoires, la résolution des actions et la prise de décision par l’IA. Chaque exécution est reproductible.
 
-Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mondes de départ sont des exemples : des modèles décomposables à partir desquels vous pouvez apprendre et créer de nouvelles choses. Votre jeu utilise la partie du moteur dont vous avez besoin.
+Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mondes de départ sont des exemples : des modèles décomposables à partir desquels vous pouvez apprendre et créer de nouvelles choses. Votre jeu utilise le sous-ensemble du moteur dont vous avez besoin.
 
 ---
 
 ## Ce que c’est
 
-- Une **bibliothèque de modules** — plus de 30 modules pour le moteur, couvrant le combat, la perception, la cognition, les factions, les rumeurs, le déplacement, les compagnons, etc.
-- Un **ensemble d’outils de composition** — `buildCombatStack()` permet de gérer le combat en environ 7 lignes de code ; `new Engine({ modules })` lance le jeu
-- Un **environnement d’exécution de simulation** — cycles déterministes, journaux d’actions rejouables, générateur de nombres aléatoires avec amorçage
-- Un **studio de conception d’IA** (facultatif) — structure, évaluation, analyse de l’équilibre, réglage, expériences via Ollama
-- Une **couche facultative sur la chaîne de blocs** — `@ai-rpg-engine/ledger-adapter` prend en charge la monnaie et les objets échangeables d’un jeu avec de véritables jetons XRPL du **testnet**, réglés à des points de contrôle, entièrement en dehors du noyau déterministe (facultatif ; une exécution est identique au niveau des octets sans cela)
-- Un **hôte visuel facultatif** — `@ai-rpg-engine/sidecar` plus le client Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). Le moteur ne génère toujours pas d’images. La scène dessine un port dimétrique au ratio 2:1 et diffuse `felt` de l’audio. L’occupation reste un identifiant de zone.
+- Une **bibliothèque de modules** : plus de 30 modules pour le moteur, couvrant le combat, la perception, la cognition, les factions, les rumeurs, le déplacement, les compagnons, etc.
+- Une **boîte à outils de composition** : `buildCombatStack()` permet de configurer le combat en environ 7 lignes ; `new Engine({ modules })` lance le jeu
+- Un **environnement d’exécution de simulation** : cycles déterministes, journaux d’actions rejouables, générateur de nombres aléatoires avec amorçage
+- Un **studio de conception d’IA** (facultatif) : échafaudage, évaluation, analyse de l’équilibre, réglage, expériences via Ollama
+- Une **couche facultative sur la chaîne de blocs** : `@ai-rpg-engine/ledger-adapter` permet de garantir la valeur d’une monnaie et d’objets échangeables d’un jeu à l’aide de jetons XRPL **testnet** réels, réglés à des points de contrôle, entièrement en dehors du noyau déterministe (facultatif ; une exécution est identique au niveau des octets sans cela)
+- Un **hôte visuel facultatif** : `@ai-rpg-engine/sidecar` plus le client Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage). Le moteur ne génère toujours pas d’images. La scène dessine un port dimétrique 2:1 et diffuse `felt` audio. L’occupation reste un identifiant de zone.
 
 ## Ce que ce n’est pas
 
-- Ce n’est pas un jeu fini : il propose 12 mondes de départ jouables que vous pouvez `run` dès aujourd’hui à titre d’exemple, et le moteur est la boîte à outils à partir de laquelle vous créez *votre propre* jeu.
-- Ce n’est pas un moteur graphique : il génère des événements structurés, et non des pixels.
+- Ce n’est pas un jeu fini unique : il propose 12 mondes de départ jouables que vous pouvez `run` dès aujourd’hui à titre d’exemple, et le moteur est la boîte à outils à partir de laquelle vous composez *votre propre* jeu.
+- Ce n’est pas un moteur visuel : il génère des événements structurés, et non des images. Le rendu est l’affaire d’un hôte (terminal ou Godot).
 - Ce n’est pas un générateur d’histoires : il simule des mondes ; la narration émerge des mécanismes.
 
 ---
 
 ## État actuel (v3.12.2)
 
-**What works and is tested:**
-- **Les paquets World Forge ne sont plus rejetés (v3.12.2) :** le module de chargement déclare les 13 clés de premier niveau qu’une exportation World Forge contient (`connections`, `spawnPoints`, `playerTemplate` et dix autres) comme étant des clés connues que le moteur ne conserve pas. Un paquet valide qui les contient est donc chargé, et le rapport de chargement liste chacune de ces clés comme ignorée. Une clé mal orthographiée est toujours rejetée, et le message de rejet indique la clé en question. Les hachages restent inchangés.
-- **Godot host (v3.12):** sidecar `capabilities.audio` ships a `felt` payload (cue ids, overlay stings, spoken line, UI effects) that is never hashed — negotiated and additive, omitted entirely when the capability is off, so an exact-match client stays byte-stable. [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage) is the Godot 4 consumer: 2:1 dimetric TileMapLayer, Foundry 8-dir characters, click-to-cell as presentation, `move` still names a neighbour zone. Handbook: [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md).
-- **Tuning and depth (v3.11):** `bounty` fires on authored content again (the v3.10 listener cleanup put black-flag's two navy kills 36 quiet rounds apart; heat grace is that measured gap, wake still two kills). A fight that ends because someone ran says so: `combat.encounter.cleared` carries `outcome: 'victory' | 'retreat'` — not a second event, not a victory sting, not a journaled win. Faction membership has three honest locations: `entity.faction` on the person, a kept registry that hydrates from it and still takes extras, and `CompanionState.originFaction` so the guild they came from still listens. Zone music rolls per `zoneId`; stings honor cooldowns; `/build` staged writes survive a crash; a new CLI session emits the starting-zone entered event so KEY MOMENTS see the first mood. 8356 tests.
-- **The world reaches the player (v3.10):** two cycles of producers finally land on the player's senses. All eight narrator-voice hints render — NPC texture and faction bias frame the speaker, the manner hint rides the speaker line, party presence / world pressure / open opportunities close the dialogue frame as asides, and district mood and situation reports join the event log. The always-on HUD gains the party line. Combat honesty arrives as a real event: `combat.encounter.cleared` fires exactly once when the last hostile falls (a mutual kill reads as defeat, a companion's death no longer renders triumph, and the nine starter listeners that fanfared every kill are gone), mapped to the victory sting through the per-turn presenter. Zone entry resolves tone-aware music — a grim district actually sounds grim — and the spoken-output contract is real: `NarrationPlan.asides` carries dialogue fragments exactly once, `SpeakerCue.emotion` carries the manner hint verbatim, ready for a TTS embedder. Sidecar clients see pack-intake `dropped[]`/`advisories` on `initialize`, guided `/build` batches stage every step behind one batched consent (with a CREATE-aware undo and a decline that can't hollow the gate), scaffolded factions survive `emit-pack`, and faction identity resolves from the entity's own authored `faction` everywhere it used to need a registry no shipped pack populates — un-inverting district intruder tracking and reviving rumor propagation. A played-session e2e pins the whole surface frame-by-frame, NO_COLOR byte-identical.
-- **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
-- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams.
-- Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
-- Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
-- Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
-- **Party combat (v2.4):** ally-targeting (heal / buff / revive), friend/foe AoE filtering, target selectors — a healer can heal a teammate; enemy AoE spares allies
-- **Status effects (v2.4):** passive stat modifiers reach combat, deterministic DoT/HoT off the tick counter, depth-capped reactive triggers (thorns/reflect)
-- **Plug-in Profiles — per-entity rule resolution (v2.5):** a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` attaches a profile (stat mapping, resource pools, per-entity abilities); `buildProfile()`, `validateProfileSet()` (duplicate ids rejected), 10 starter-derived templates, and a `profile` CLI command
-- **Playable `run` loop (v2.6):** the terminal game is real, not a demo — enemies act on their own AI intent profiles (`aggressive`/`cautious`/`territorial`/`calculating`; now six built-ins, with `passive` and `follower`), a fight ends in victory or defeat, you can save and resume, and abilities and XP are on the action menu. `run <path>` loads a game you scaffolded. Composed terminal UI with a glance-able HUD and accessible color (honors `NO_COLOR` / non-TTY)
-- **AI design studio ships as its own `ai` command (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — scaffold, critique, and balance content against a local Ollama model
-- Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
-- All 12 starter worlds use `buildCombatStack()` — the proven composition spine
-- Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
-- Tag taxonomy and validation utilities for content authoring
-- **The world reacts (v2.7):** kills accrue heat and erode district safety; a per-round world tick spawns hidden pressures that surface as rumors ("Whispers reach you…"), escalate, and expire with consequences; the ~30 authored encounter compositions fire on zone entry in all 10 starters — deterministic per-seed, bloodier districts spawn more, boss set-pieces protected
-- **A reason to return (v2.7):** a minimal quest loop on the long-shipped schema — quests offer on triggers, track kill/reach/progress objectives, and pay XP and items exactly once; four authored quests, a **Journal** screen, quest beats in the round's narration
-- **Equipment reaches combat (v2.7):** `equip`/`unequip` move real numbers through the status layer the combat formulas already read — zero combat-code changes; gladiator's trident-and-net is wired end-to-end with a test-pinned hit-chance delta
-- **Seeded runs (v2.7):** every fresh session prints its seed with the exact replay command; `--seed <n>` reproduces a session byte-for-byte; combat, resist, ability, and tactics rolls all consume the world seed — and endings read the run you actually played (live heat, pressures, faction accruals, player level)
-- **`buildWorldStack()` (v2.7):** the strategic composition spine beside `buildCombatStack()` — one call assembles environment, factions, rumors, districts, defeat fallout, encounters, and quests; plus the **Director's Ledger** strategy screen, an `AI_RPG_DEBUG=1` simulation inspector, `inspect-save` gated by the same authorities as Continue, and a module save-migration seam on the shipped restore path
-- **Act on the living economy (v2.8):** `createEconomyCore` seeds a per-district economy at pack-load and ticks it each round; a new `sell` verb prices loot through `computeItemValue` (scarcity / faction / provenance / contraband) and shifts local supply. One write-wire lit five systems that shipped dark in v2.7 — the Director's MARKET OVERVIEW + FACTIONS scoring, the endgame merchant-prince arc and collapse trigger, and four economy pressure kinds. **Sell-only this cycle** (buying → v2.9)
-- **Companions (v2.8):** a `recruit` verb builds a party — state, tags, and faction, so a companion fights *with* you; companion combat rides combat-core's interception mechanic (dark until `isAlly` got set), companions react with morale and can depart, and recruiting lights seven waiting consumers — the finale's COMPANIONS roll-call, party targeting, npc-agency goals, favor-quests, and the Director's PARTY section. **Passive interception this cycle** (independent turns → v2.9)
-- **The Director reads the whole board (v2.8):** a new EQUIPMENT Ledger section (behind the cli→equipment provenance dependency), a DIRECTOR'S SUMMARY finale trailer, the MARKET OVERVIEW + PARTY sections now fed from live producers, and district stability + economic tone in the finale's DISTRICTS section
-- **The economy's other half (v2.9):** a `buy` verb completes the loop — merchant stock offered per district at supply-category granularity (supply level *is* the restock signal), priced through the same `computeItemValue` pipeline as `sell` plus a buy/sell spread so there's no riskless round-trip. And crafting comes alive: `createCraftingCore` registers `salvage`/`craft`/`repair`/`modify` over the authored recipe tables, lighting the Director's MATERIALS + RECIPES sections that shipped dark
-- **Companions take their own turns (v2.9):** the passive-interception floor from v2.8 becomes the ceiling — recruited companions act independently each round through the previously-unused `selectBestAction` advisor, with a per-role combat bias so a fighter and a scholar fight differently, companion-on-companion interception, and party HP on the Director's PARTY line. Companion-less packs stay byte-identical (the empty-party gate preserves seed-0 legacy replay)
-- **The social layer, connected end to end (v2.9):** four leverage verbs — `bribe`, `intimidate`, `petition`, `seed` (rumor) — write real reputation / alert / heat globals that trade pricing and faction gates already read, and `seed` lights the whole player-rumor module + the Director's RUMORS ABOUT YOU section. The leverage *economy* that funds them is wired too: completing an opportunity now grants the leverage it always narrated, so the verbs are genuinely earnable in play
-- **Opportunities, the full lifecycle (v2.9):** a per-round spawner offers contracts/bounties/favors scored against live world state; you `accept`, then `complete` or `abandon`; ignoring one to its deadline now has consequences (expiry fallout), and completing a companion favor moves that companion's morale. The endgame's rising-power and merchant-prince arcs read the opportunities you actually resolved
-- **Content parity across all ten starters (v2.9):** equipment wiring, quests, recruitable companions, and a starting coin balance rolled out to every starter that lacked them — the ten worlds now share a uniform, fully-lit feature surface (equipment was gladiator-only; quests were fantasy/zombie-only; five worlds shipped `recruit` with no one to recruit). Plus a structural content validator that catches a typo'd item id across every reference surface, and multi-checkpoint save slots with `--checkpoint`/`--list-checkpoints`
-- **Living NPCs, actually alive (v3.0):** the persisted npc-agency producer lights the Director's **PEOPLE** section — named NPCs (one authored story character per starter, plus every companion you recruit) carry goals, trust/fear/greed/loyalty relationships, an obligation ledger, and consequence chains. `runNpcAgencyTick` runs each round, gated so a world with no named NPCs stays byte-identical to legacy replay. Lighting the producer also lit companion favor-fallout departure breakpoints, two dormant opportunity spawn rules (npc-goal + obligation), and the endgame's npcProfiles/npcObligations — the wire was tested green but inert in shipped content until a Phase-9 audit caught it, so the fix ships an authored named NPC in every starter
-- **The full social surface (v3.0):** the four leverage verbs become twenty-five — the diplomacy and sabotage groups register (21 more sub-verbs), lighting the previously-dark `leverage-diplomacy` / `leverage-sabotage` companion reactions; nineteen surface on the numbered menu (afford + cooldown + reputation gated). Dialogue conditions and effects now read and write social state (leverage / reputation / npc-relationship). And passive leverage income (`tickLeverage` / `computeLeverageGains`) drips influence from reputation and grants favor / blackmail / legitimacy from XP and milestones — so the social layer earns *between* opportunities, not only on completion
-- **Genre-flavored economy (v3.0):** merchant stock and crafting recipes now resolve per-starter genre tables (seven of ten starters carry authored genre content; three fall back to universal, honestly) — across the buy/craft mechanics, the numbered-menu display, and the Director's RECIPES section, all threaded from the same ruleset key so display and mechanics agree. `repair` and `modify` are numbered menu rows now (item×recipe pairing), and `escort` opportunities spawn on a protective-travel-in-a-dangerous-district gate
-- **The endgame reads the leverage you earned (v3.0):** the `victory`, `puppet-master`, and `quiet-retirement` campaign endings — long gated on influence / blackmail / legitimacy that the endgame layer read as hardcoded zero — are reachable now through the real leverage store the whole social economy writes. Companion departure is reachable too, via npc-agency breakpoints and a morale-floor fallback
-- **`audit-content` dev CLI (v3.0):** a developer content-audit command (sibling of `validate`, distinct from the player-facing Director's Ledger) that runs the six encounter / boss / combat director formatters over a pack
-- **Genre-flavored *starting supply* — v3.0's opener, delivered (v3.1):** `economyGenre` threads each starter's bare ruleset key through `buildWorldStack` → `createEconomyCore`, so a district now seeds its genre's `GENRE_SUPPLY_DEFAULTS` profile (cyberpunk runs high on components / contraband, fantasy runs medicine scarce) instead of a flat universal baseline — the starting supply the Director's MARKET tone and the endgame inputs already read. Seven of ten starters carry a genre profile; three fall back to baseline, honestly. A field separate from `tradeGenre` / `craftingGenre` so the three can diverge later
-- **The social surface, complete (v3.1):** `deny` and `bury-scandal` — the rumor-manipulation pair that targets an existing rumor by id rather than a faction — reach the numbered menu through a rumor-target pairing dimension, closing the twenty-one-verb surface (19 → 21 surfaced)
-- **`obligation-exists` dialogue, wired and reachable (v3.1):** the dialogue condition reads a named NPC's persisted obligation ledger (`getPersistedNpcObligations`) — fantasy's Brother Aldric, once he owes you a favor through ordinary npc-agency play, unlocks a `call-in-favor` choice — a real gate where v3.0 left a silent always-true stub (a Phase-9 played-session audit proved it reachable in a real run, not just unit-green)
-- **Genre-flavored repair (v3.1):** every genre-carrying starter authors a signature `repair` recipe in its genre table (fantasy `repair-rune-mend`, cyberpunk `repair-nanite-weld`, …), surfaced through `getAvailableRecipes` — repair is flavored now, not only universal
-- **Opt-in XRPL ledger settlement (v3.2):** a new optional `@ai-rpg-engine/ledger-adapter` package binds the player-owned tradeable layer — `coin` → an IOU, consumables → fungible tokens, a checkpoint's net `buy`/`sell` delta → a settled **XLS-85 token escrow** — to the **XRPL testnet**, entirely outside the deterministic core. Nothing in `core`/`modules` imports it and a run is byte-identical with or without it (proven on the real pirate `createGame()` merchant loop). Testnet-only behind a mainnet-impossible-in-code guard, with a gitignored secrets sidecar, conservation-safe retries, on-chain memo verification, and an unanchored fallback; proven live end-to-end on testnet (settle via token escrow → `reconcile` against on-ledger balances + memos). NFT unique gear lands in v3.3 (below). See [The XRPL ledger adapter](#the-xrpl-ledger-adapter-opt-in)
-- **Unique gear as NFTs (v3.3):** the `@ai-rpg-engine/ledger-adapter` binds the `equipment` package's unique gear — the deferred "later slice" from v3.2 — to XRPL NFTs: each unique item minted as an **XLS-20 NFToken** (`tfMutable`, never burnable — true player ownership) at a checkpoint, relic growth advancing a mutable NFT's metadata in place via **XLS-46 `NFTokenModify`**, and a `reconcile()` ownership family verifying on-ledger `account_nfts`. A distinct read path over the equipment loadout, carried alongside the fungible layer — same determinism firewall, byte-identical with or without it. Proven on the real `starter-gladiator` played session, live on testnet (mint the equipped `trident-and-net` as an NFT, own it on-ledger, reconcile, world unperturbed)
-- **Gear that earns a name (v3.4):** relic growth has existed since v3.3 but had never fired during play — nothing populated an item-chronicle in a running game, so every item's relic version was permanently `0`. The write side ships now: an **opt-in `item-chronicle-core`** module records `acquired` / `used-in-kill` / `recognized` from real play, and `starter-gladiator` wires it — win three arena fights and the retiarius trident is the **Bloodied Trident & Net** for the rest of the run, shown in the HUD and the Director's ledger. This also **closes the NFT loop**: a checkpoint settles that growth as a real **XLS-46 `NFTokenModify`**, advancing the on-ledger URI while preserving the NFTokenID. Fixed along the way: `boss-kill` and `recognized` were both unreachable on every shipped pack (a bare-`boss` tag check against content that tags `role:boss`, and a faction guard against content where no entity sets one) — and the latter had been silently blocking *all* armor growth. Opt-in by construction: a pack that does not wire it is byte-identical to the engine that shipped before it existed
-- **Consequences that leave real marks (v3.8):** the strategic layer FIRED after v3.7 — offers spawned, resolved, and the narrator could speak the result — and then the world forgot it. `applyOpportunityFallout` declared **fourteen** effect types and persisted **six**: an obligation announced and entered in no ledger, a rumor that spread to nobody, a title that titled no one. All fourteen persist now, each through the owning system's own writer, and two of them **close feedback loops** — a sink-written obligation moves the loyalty breakpoint that decides what an NPC offers you next, and sink-moved trust opens the gate those offers are read through. Three effect types turned out to be dead one level EARLIER than a missing sink (`materials` and `spawn-opportunity` were emitted by nothing at all; every `spawn-pressure` producer sat on a resolution no shipped path could reach), so the cycle authored producers rather than building guards that could never fire. The `betray` op lands as the fourth transition and lights **six obligation sites, three rumors and all three original spawn-pressure producers** that had been authored across earlier releases and reached by nothing. A session-wide **ledger audit** then found three MORE sinks on the pressure applier nobody had indicted — which is what reconciling in both directions buys over an orphan scan. And the twelfth starter, **Hue and Cry**, is authored backwards from the consequence layer: a thief-taker in a city with no police force, 7/7 on the pack rubric
-- **The strategic layer, lit (v3.7):** the tier above moment-to-moment verbs — where opportunities spawn, companions passively matter, and districts have moods — was half-dark, and nothing could see it. A new catalog-wide probe boots all eleven packs and drives **forty full rounds** through the same driver the interactive CLI uses (NPC turns, companion turns, then the world tick), because `runWorldTick` is a per-round function rather than a verb and a probe built from `submitAction` alone sees half a round forever. It measured **one of eight opportunity kinds** ever firing on shipped content. All **eight fire now**, each with a played-session proof that the reward actually landed — and one that deliberately runs out the clock, so an expiry's authored fallout (reputation lost, a district gone hungrier) is proven on real content rather than assumed. What was in the way was never the rules: `contract` needed an NPC both allied AND greedy, which the breakpoint table makes mutually exclusive with `favorable`, and `relations['player-trust']` had been authored exactly ONCE in the entire catalog; district economies erased their own genre-and-tag character within ~15 rounds by drifting every category to a universal 50; `world.factions[].reputation` — the authored baseline the engine explicitly merges — was set by no pack, so every world began at a flat zero with everyone. **Pacing** is tuned against named findings rather than taste, each cited at the constant it governs (choice-overload, quest-variance, relax valleys, radiant repetition, appointment dynamics), and guarded by a deterministic regression. **Twelve of the thirteen** companion and district modifier fields now reach a resolution function through a parameter seam, each with a named contribution in the payload so a UI can say WHO helped — a computed-but-unrendered modifier is experientially identical to no modifier. `use` **stops silently destroying things**: 89 of 90 authored items across the catalog were consumed by a verb that found no effect and spliced them out of the bag anyway, reporting success. And the `statusTags` contract, declared by all eleven packs and enforced by none, is bound — declarations widened to shipped truth first, then gated
-- **The instrument turned on the catalog (v3.6):** the pack built to USE the ledger is now run deliberately as an engine-polishing instrument. A catalog-wide **verb-reachability audit** boots all eleven packs and SUBMITS each verb through the real engine, asking whether any target in the booted world accepts it — a gate no existing check could pass or fail, because verb-honesty compares the help table against registered handlers and never looks at the content. Run before any fix, it caught `recruit` advertised in Salt Road Ledger with zero recruitable NPCs (the v2.9 defect, re-introduced) and `use` inert across the pack's entire catalog. `give` ships as the engine's **first entity-to-entity item transfer** — atomic, structured-rejecting, chronicle-stamped by event — closing a gap where a pack could make an item obtainable and have nothing able to hand it to anyone. And the two remaining adapter axes that were config flags with **zero behavioral reads** became behaviours: `diary` mode (witnessed, not custodied — one anchor per checkpoint, no trust lines, reconcile verifies the anchor chain) and `issuerMode: 'persistent'` (a market that outlives the run). Proven **15/15 on live XRPL testnet**
-- **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
-- `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
-- Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **8368 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+**Ce qui fonctionne et est testé :**
+- Le cœur de simulation : ticks déterministes, RNG à graine, rejeu identique octet pour octet, et sauvegarde et reprise
+- Le combat en groupe : ciblage des alliés, effets de statut, attaques de zone qui épargnent les alliés, et ennemis qui agissent selon leurs propres profils d'intention d'IA
+- Un monde qui réagit : factions, rumeurs, économie marchande, compagnons, PNJ nommés avec leurs propres objectifs, et conséquences de vos actes
+- Les 12 mondes de départ, jouables dès aujourd'hui avec `run`
+- Les packs World Forge, chargés comme contenu
+- L'hôte Godot 4 [`ai-rpg-stage`](https://github.com/mcp-tool-shop-org/ai-rpg-stage), via le sidecar, avec les signaux audio `felt`
+- La couche de registre sur le testnet XRPL, activée seulement si vous le choisissez (opt-in)
 
-**What is rough or incomplete:**
-- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
-- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound in `run`. The Godot stage is the first host that actually plays `felt` cue ids (mixer + optional TTS). Overlay stings must not replace the zone stem
-- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
-- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
-- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
-- Documentation is extensive but not every handbook page reflects the very latest APIs
+**Ce qui est encore brut ou incomplet :**
+- Le studio de conception IA (Ollama) est optionnel et moins testé que le cœur de simulation
+- Il n'y a pas de backend audio dans le terminal : seule la scène Godot joue du son
+- Le multijoueur (deux joueurs humains dans un même monde) n'est pas construit
+- `replay --replay` restaure la sauvegarde au lieu de re-simuler, par choix de conception
+- Certaines pages du manuel sont en retard sur les API les plus récentes
+
+L'historique complet des versions se trouve dans [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## À quoi cela ressemble
 
-L’interface utilisateur terminal intégrée compose chaque tour en sections étiquetées — scène, statut, journal et actions — avec un HUD facile à consulter. Par défaut, la sortie est du texte brut et ajoute une couleur sémantique sur un TTY (rouge pour les dégâts, vert pour les soins, jaune pour les rejets), en respectant `NO_COLOR` et les canaux non-TTY ; chaque indication est également incluse dans le texte, et non uniquement dans la couleur.
+L’interface utilisateur terminal intégrée compose chaque tour en sections étiquetées — scène, état, journal et actions — avec un HUD facile à consulter. Par défaut, la sortie est du texte brut et ajoute une couleur sémantique sur un TTY (rouge pour les dégâts, vert pour les soins, jaune pour les rejets), en respectant `NO_COLOR` et les canaux non-TTY ; chaque signal est également inclus dans le texte, et non uniquement la couleur.
 
 ```text
 ── The Crypt Gate ──────────────────────────────────────────
@@ -138,7 +96,7 @@ L’interface utilisateur terminal intégrée compose chaque tour en sections é
 
 ## Installation et lancement
 
-Lancez un jeu de démarrage ou créez le vôtre à partir du terminal :
+Lancez une partie de démonstration ou créez votre propre jeu à partir du terminal :
 
 ```bash
 npm install -g @ai-rpg-engine/cli
@@ -158,7 +116,7 @@ ai chat                              # scaffold, critique, and balance content
                                      # against a local Ollama model (see Ch. 36)
 ```
 
-L’atelier communique avec un démon [Ollama](https://ollama.com) local — exécutez d’abord `ollama serve` et `ollama pull qwen2.5-coder`. C’est entièrement facultatif ; le moteur et la boucle `run` n’ont besoin d’aucun réseau.
+L’atelier communique avec un démon [Ollama](https://ollama.com) local — exécutez `ollama serve` et `ollama pull qwen2.5-coder` en premier. C’est entièrement facultatif ; le moteur et la boucle `run` n’ont besoin d’aucun réseau.
 
 Une image de conteneur est publiée sur GHCR en tant que `ghcr.io/mcp-tool-shop-org/ai-rpg-engine` pour les exécutions CI et en environnement isolé.
 
@@ -192,7 +150,7 @@ engine.submitAction('attack', { targetIds: ['skeleton-1'] });
 engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
 ```
 
-Consultez le [Guide de composition](site/src/content/docs/handbook/57-composition-guide.md) pour connaître le flux de travail complet, ou créez un nouveau jeu de démarrage :
+Consultez le [Guide de composition](site/src/content/docs/handbook/57-composition-guide.md) pour connaître le flux de travail complet, ou créez une nouvelle partie de démonstration :
 
 ```bash
 npx @ai-rpg-engine/cli create-starter my-game
@@ -204,49 +162,49 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 | Couche | Rôle |
 |-------|------|
-| **Core Runtime** | Moteur déterministe — état du monde, événements, actions, cycles, RNG, relecture |
+| **Noyau d’exécution** | Moteur déterministe — état du monde, événements, actions, cycles, RNG, relecture |
 | **Modules** | Plus de 30 systèmes composables — combat, perception, cognition, factions, déplacement, compagnons, etc. |
-| **Content** | Entités, zones, dialogues, objets, capacités, statuts — créés par l’auteur |
-| **AI Studio** | Couche Ollama facultative — création de prototypes, critique, analyse de l’équilibre, réglage, expériences |
+| **Contenu** | Entités, zones, dialogues, objets, capacités, états — créés par l’auteur |
+| **Studio d’IA** | Couche Ollama facultative — création de prototypes, critique, analyse de l’équilibre, réglage, expériences |
 
 ---
 
 ## L’adaptateur du registre XRPL (facultatif)
 
-`@ai-rpg-engine/ledger-adapter` est un **paquet facultatif** qui lie la **couche échangeable appartenant au joueur** d’un jeu — le solde `coin` et l’inventaire d’objets consommables que les verbes `trade-core` `buy`/`sell` modifient déjà — au **testnet XRPL**, de sorte que ces actifs peuvent être adossés à de véritables jetons du registre et réglés aux points de contrôle. L’absence d’un adaptateur correspond exactement au moteur hors ligne qui est livré aujourd’hui.
+`@ai-rpg-engine/ledger-adapter` est un package **facultatif** qui lie la **couche échangeable et détenue par le joueur** d’un jeu — le solde `coin` et l’inventaire consommable que les verbes `buy`/`sell` de `trade-core` gèrent déjà — au **testnet XRPL**, de sorte que ces actifs peuvent être adossés à de véritables jetons du registre et réglés aux points de contrôle. Un adaptateur absent est exactement le moteur hors ligne qui est livré aujourd’hui.
 
-**L’invariant du déterminisme (le but ultime).** L’adaptateur est un *canal secondaire*, et non une partie de la simulation :
+**L’invariant du déterminisme (le but principal).** L’adaptateur est un *canal secondaire*, qui ne fait jamais partie de la simulation :
 
 - Il n’est **jamais invoqué à l’intérieur du cycle déterministe** — uniquement aux **points de contrôle** (sauvegarde, entrée dans une ville/un marché, fin de chapitre).
-- Rien dans `@ai-rpg-engine/core` ou `@ai-rpg-engine/modules` ne l’importe (sa seule dépendance au moteur est un `import type` au moment de la compilation).
-- **Une exécution est identique, avec ou sans lui.** Un test de pare-feu exécute la boucle du marchand `starter-pirate` `createGame()` réelle sur deux moteurs — l’un avec l’adaptateur activé et réglant aux points de contrôle — et vérifie que les deux mondes sont profondément égaux. La relecture avec la graine 0 n’est pas affectée.
+- Rien dans `@ai-rpg-engine/core` ou `@ai-rpg-engine/modules` ne l’importe (sa seule dépendance au moteur est une `import type` au moment de la compilation).
+- **Une exécution est identique au niveau des octets, avec ou sans lui.** Un test de pare-feu exécute la boucle marchande réelle `starter-pirate` `createGame()` sur deux moteurs — l’un avec l’adaptateur activé et réglant à un point de contrôle — et affirme que les deux mondes sont profondément égaux. La relecture avec la graine 0 n’est pas affectée.
 
 **Niveaux d’intégration — un jeu l’intègre aussi profondément que son design le souhaite.** Le pare-feu est une *frontière de déterminisme*, et non une règle anti-intégration ; l’invariant ci-dessus est valable à tous les niveaux :
 
-| Niveau | Ce qui dépend de l’adaptateur | Correspondance |
+| Niveau | Ce qui dépend de l’adaptateur | Convient |
 |-------|-----------------------------|------|
-| **L0 — External observer** | Rien à l’intérieur du jeu ; l’adaptateur se connecte de l’extérieur aux points de contrôle et le jeu n’en a pas conscience. | Adaptation d’un jeu existant (la démo du pirate fournie). |
-| **Niveau 1 — Points de contrôle pilotés par le jeu** | Le flux de sauvegarde/ville/progression méta propre au jeu appelle l’adaptateur à des moments définis. | Un jeu qui souhaite des moments délibérés dans le registre. |
-| **L2 — Ledger-native design** | L’économie ou l’identité du jeu est conçue *autour* de la propriété sur la chaîne (émetteur persistant, marchés réels). | Un jeu de marchand axé sur le registre. |
+| **L0 — Observateur externe** | Rien à l’intérieur du jeu ; l’adaptateur se connecte de l’extérieur aux points de contrôle et le jeu n’en a pas conscience. | Intégration à un jeu existant (la démo du pirate expédiée). |
+| **L1 — Points de contrôle pilotés par le jeu** | Le flux de sauvegarde/ville/progression méta propre au jeu appelle l’adaptateur à des moments définis. | Un jeu qui souhaite des moments délibérés sur le registre. |
+| **L2 — Conception native pour le registre** | L’économie ou l’identité du jeu est conçue *autour* de la propriété sur la chaîne (émetteur persistant, marchés réels). | Un jeu de commerce axé sur le registre. |
 
-La distinction qui garantit la sécurité de la relecture n’est **pas** « quel paquet importe l’adaptateur », mais « l’appel se fait-il à l’intérieur du cycle ». Un paquet de jeu peut importer et piloter l’adaptateur librement, à condition que chaque appel se produise à un point de contrôle en dehors de la boucle de relecture pilotée par la graine.
+La distinction qui garantit la sécurité de la relecture n’est **pas** « quel package importe l’adaptateur », mais « l’appel se fait-il à l’intérieur du cycle ». Un package de jeu peut importer et piloter l’adaptateur librement, à condition que chaque appel se produise à un point de contrôle en dehors de la boucle de relecture pilotée par la graine.
 
-**Trois modes de jeu.** `offline` (par défaut — pas de chaîne, le moteur tel qu’il est livré) · `ledger` (pièces/objets adossés aux soldes du testnet, réglés aux points de contrôle) · `diary` (jouer hors ligne, puis ancrer le hachage de l’état de l’exécution sur le registre pour obtenir un reçu inviolable).
+**Trois modes de jeu.** `offline` (par défaut — pas de chaîne, le moteur tel qu’il est livré) · `ledger` (pièces/objets adossés aux soldes du testnet, réglés aux points de contrôle) · `diary` (jouer hors ligne, puis ancrer le hachage de l’état de l’exécution sur le registre pour un reçu inviolable).
 
 **Ce qui figure dans le grand livre.** `coin` → une promesse de paiement en devise émise sur une ligne de confiance ;
-articles consommables → jetons fongibles ; le delta net des échanges d’un point de contrôle → un transfert validé via le **système de dépôt fiduciaire de jetons XLS-85**. Les équipements uniques sont fournis sous forme de **NFT XLS-20** (v3.3), et l’évolution des reliques fait progresser les métadonnées d’un NFT mutable en place via **XLS-46 `NFTokenModify`** — ce processus est basé sur le jeu réel à partir de la version 3.4. L’économie du district abstrait (`economy-core`) n’est *pas* modifiée ; elle reste une simulation pure.
+articles consommables → jetons fongibles ; le delta net des transactions d’un point de contrôle → un transfert validé via un **dépositaire de jetons XLS-85**. Les équipements uniques sont fournis sous forme de **NFT XLS-20** (v3.3), et l’évolution des reliques fait progresser les métadonnées d’un NFT modifiable en place via **XLS-46 `NFTokenModify`** — ce qui est basé sur un jeu réel à partir de v3.4. L’économie du district abstrait (`economy-core`) n’est *pas* affectée ; elle reste une simulation pure.
 
-**Mesures de sécurité.** Uniquement pour le testnet, avec une protection structurelle **impossible sur le mainnet** (et non un simple indicateur de configuration) ; les clés de portefeuille sont stockées dans un fichier secondaire de secrets ignoré par Git, et non dans le fichier d’enregistrement ; la validation est idempotente et sécurisée en cas de nouvelle tentative ; les preuves vérifient le **mémo réel sur la chaîne** (et non la chaîne de caractères propre au moteur) ; et si la chaîne est inaccessible, l’exécution se poursuit simplement, en étant marquée comme *non ancrée*.
+**Mesures de sécurité.** Uniquement pour le testnet, avec une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) ; les graines (« seeds ») de portefeuille sont stockées dans un fichier secondaire de secrets ignoré par Git, et non dans le fichier d’enregistrement ; la validation est idempotente et sécurisée en termes de conservation lors de la tentative de relance ; les preuves vérifient le **vrai mémo sur la chaîne** (et non la chaîne de caractères propre au moteur) ; et si la chaîne est inaccessible, l’exécution se poursuit simplement, en étant marquée comme *non ancrée*.
 
-**Résultats concrets.** Une simulation réelle d’un marchand `starter-pirate` — vente d’un coutelas, achat d’un obus — validée sur le testnet XRPL via un système de dépôt fiduciaire de jetons, puis `reconcile()` confirme les soldes et les mémos du grand livre par rapport à l’économie du moteur (les règles de conservation s’appliquent à chaque jeton). Le grand livre est un système différent du moteur, de sorte que le moteur ne peut pas le falsifier ; la réconciliation est une vérification externe authentique. Uniquement pour le testnet ; les actifs sont des reçus spécifiques au jeu, et non des titres.
+**Résultats concrets.** Une véritable simulation d’un marchand `starter-pirate` : vente d’un coutelas, achat d’un obus ; les transactions sont validées sur le testnet XRPL via un dépositaire de jetons, puis `reconcile()` confirme les soldes et les mémos dans le grand livre par rapport à l’économie du moteur (la conservation est assurée pour chaque jeton). Le grand livre est un système différent du moteur, de sorte que le moteur ne peut pas le falsifier ; la réconciliation est une vérification externe authentique. Uniquement pour le testnet ; les actifs sont des reçus spécifiques au jeu, et non des titres financiers.
 
 ---
 
 ## Système de combat
 
-Cinq actions (attaque, garde, désengagement, préparation, repositionnement), quatre états de combat (protégé, déséquilibré, exposé, en fuite), quatre états d’engagement (engagé, protégé, en ligne arrière, isolé). Trois dimensions statistiques déterminent chaque formule, de sorte qu’un duelliste rapide joue différemment d’un combattant lourd ou d’un sentinelle calme.
+Cinq actions (attaque, garde, désengagement, préparation, repositionnement), quatre états de combat (en garde, déséquilibré, exposé, en fuite), quatre états d’engagement (engagé, protégé, en ligne arrière, isolé). Trois dimensions statistiques déterminent chaque formule, de sorte qu’un duelliste rapide joue différemment d’un combattant lourd ou d’un sentinelle calme.
 
-Les adversaires dotés d’IA utilisent un système de notation unifié pour la prise de décision ; les actions et les capacités de combat sont évaluées dans une seule évaluation, avec des seuils configurables pour éviter l’utilisation excessive de capacités marginales.
+Les adversaires IA utilisent un système de notation unifié pour la prise de décision : les actions et les capacités de combat sont comparées dans une seule évaluation, avec des seuils configurables pour éviter l’utilisation excessive de capacités marginales.
 
 Les créateurs de packs utilisent `buildCombatStack()` pour définir le combat à partir d’une cartographie des statistiques, d’un profil de ressources et d’étiquettes de biais. Voir la section [Aperçu du combat](site/src/content/docs/handbook/49a-combat-overview.md) et le [Guide du créateur de packs](site/src/content/docs/handbook/55-combat-pack-guide.md).
 
@@ -254,7 +212,7 @@ Les créateurs de packs utilisent `buildCombatStack()` pour définir le combat �
 
 ## Capacités
 
-Système de capacités natif du genre, avec des coûts, des vérifications de statistiques, des temps de recharge et des effets typés (dégâts, soins, application d’état, suppression). Les effets d’état utilisent un vocabulaire sémantique de 11 étiquettes, avec des profils de résistance/vulnérabilité. Les scores de sélection tenant compte de l’IA déterminent les trajectoires auto/AoE/cible unique.
+Système de capacités natif du genre, avec des coûts, des vérifications de statistiques, des temps de recharge et des effets typés (dégâts, soins, application d’état, suppression). Les effets d’état utilisent un vocabulaire sémantique de 11 étiquettes, avec des profils de résistance/vulnérabilité. Les scores de sélection tenant compte de l’IA évaluent les chemins auto/AoE/cible unique.
 
 ```typescript
 const warCry: AbilityDefinition = {
@@ -272,16 +230,16 @@ const warCry: AbilityDefinition = {
 
 ---
 
-## Packs
+## Packages
 
-| Pack | Objectif |
+| Package | Objectif |
 |---------|---------|
-| [`@ai-rpg-engine/core`](packages/core) | Environnement de simulation déterministe — état du monde, événements, RNG, cycles, résolution des actions |
-| [`@ai-rpg-engine/modules`](packages/modules) | Plus de 30 modules composables — combat, perception, cognition, factions, rumeurs, déplacement, compagnons, autonomie des PNJ, carte stratégique, reconnaissance des objets, opportunités émergentes, détection d’arcs narratifs, déclencheurs de fin de partie |
+| [`@ai-rpg-engine/core`](packages/core) | Environnement de simulation déterministe : état du monde, événements, générateur de nombres aléatoires, cycles, résolution des actions |
+| [`@ai-rpg-engine/modules`](packages/modules) | Plus de 30 modules composables : combat, perception, cognition, factions, rumeurs, déplacement, compagnons, autonomie des PNJ, carte stratégique, reconnaissance des objets, opportunités émergentes, détection d’arcs narratifs, déclencheurs de fin de partie |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Schémas et validateurs canoniques pour le contenu du monde |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Progression du personnage, blessures, étapes importantes, réputation |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Sélection d’archétypes, génération de builds, équipement de départ |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Types d’équipement, provenance des objets et évolution des reliques — y compris `item-chronicle-core`, le module optionnel qui enregistre l’historique de l’équipement à partir du jeu réel, de sorte que les objets obtiennent des épithètes et des niveaux |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Types d’équipement, provenance des objets et évolution des reliques, y compris `item-chronicle-core`, le module optionnel qui enregistre l’historique de l’équipement à partir d’un jeu réel, de sorte que les objets obtiennent des épithètes et des niveaux |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Mémoire intersessions, effets relationnels, état de la campagne |
 | [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | Cycle de vie des rumeurs, mécanismes de mutation, suivi de la propagation |
 | [`@ai-rpg-engine/presentation`](packages/presentation) | Schéma du plan narratif, contrats de rendu, profils vocaux |
@@ -290,28 +248,28 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | Enregistrement des packs, notation rubriques, découverte des packs |
 | [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | Stockage adressé par contenu pour les portraits, les icônes, les médias |
 | [`@ai-rpg-engine/image-gen`](packages/image-gen) | Génération de portraits sans interface, avec des fournisseurs modulables |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | Création d’IA optionnelle — échafaudage, critique, flux de travail guidés, réglage, expériences |
-| [`@ai-rpg-engine/cli`](packages/cli) | CLI : exécution des jeux, création de modèles de départ, inspection des enregistrements |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | Création d’IA optionnelle : échafaudage, critique, flux de travail guidés, réglage, expériences |
+| [`@ai-rpg-engine/cli`](packages/cli) | CLI : exécution de jeux, création d’ébauches, inspection des enregistrements |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Moteur de rendu terminal et couche d’entrée |
-| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | Départ commercial — le pack de référence pour l’adaptateur du grand livre, qui n’en dépend pas |
-| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Départ voleur — la poursuite comme boucle, et quelle moitié de la ville vous ouvrira une porte |
-| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Optionnel** — validation optionnelle sur le testnet XRPL pour la couche échangeable appartenant au joueur (pièce/inventaire/échange), via le système de dépôt fiduciaire de jetons XLS-85 aux points de contrôle, entièrement en dehors du noyau déterministe |
+| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | Départ commercial : le pack de référence pour l’adaptateur du grand livre, qui n’en dépend pas |
+| [`@ai-rpg-engine/starter-bounty-hunter`](packages/starter-bounty-hunter) | Départ chasseur de voleurs : la poursuite est au cœur du jeu, et quelle moitié de la ville vous ouvrira sa porte |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Optionnel** : validation optionnelle sur le testnet XRPL pour la couche échangeable appartenant au joueur (pièce/inventaire/échange), via un dépositaire de jetons XLS-85 aux points de contrôle, entièrement en dehors du noyau déterministe |
 
 ### Exemples de départ
 
-Les 12 mondes de départ sont des **exemples de composition** — ils montrent comment combiner les modules du moteur pour créer des jeux complets. Chacun d’eux présente différents modèles (cartographies des statistiques, profils de ressources, configurations d’engagement, ensembles de capacités). Voir la section README de chaque départ pour connaître les « Modèles démontrés » et « Ce qu’il faut emprunter ».
+Les 12 mondes de départ sont des **exemples de composition** : ils montrent comment combiner les modules du moteur pour créer des jeux complets. Chacun d’eux présente des modèles différents (cartographies des statistiques, profils de ressources, configurations d’engagement, ensembles de capacités). Voir la section README de chaque monde de départ pour connaître les « Modèles présentés » et « Ce qu’il faut emprunter ».
 
-| Départ | Genre | Principaux modèles |
+| Monde de départ | Genre | Principaux modèles |
 |---------|-------|-------------|
 | [`starter-fantasy`](packages/starter-fantasy) | Fantasy sombre | Combat minimal, axé sur le dialogue |
 | [`starter-cyberpunk`](packages/starter-cyberpunk) | Cyberpunk | Ressources, rôles d’engagement |
-| [`starter-detective`](packages/starter-detective) | Mystère victorien | Axé sur le social, lourd en termes de perception |
+| [`starter-detective`](packages/starter-detective) | Mystère victorien | Axé sur l’aspect social, lourd sur la perception |
 | [`starter-pirate`](packages/starter-pirate) | Pirate | Naval + mêlée, multi-zones |
 | [`starter-zombie`](packages/starter-zombie) | Survie aux zombies | Pénurie, ressource d’infection |
 | [`starter-weird-west`](packages/starter-weird-west) | Western étrange | Biais des packs, récupération dans une zone sûre |
 | [`starter-colony`](packages/starter-colony) | Colonie de science-fiction | Points d’étranglement, zones d’embuscade |
 | [`starter-ronin`](packages/starter-ronin) | Japon féodal | Passages cachés, plusieurs rôles de protecteur |
-| [`starter-merchant`](packages/starter-merchant) | Commercial | L’obligation comme boucle, le combat est un coût |
+| [`starter-merchant`](packages/starter-merchant) | Commercial | L’obligation est au cœur du jeu, le combat est considéré comme une pénalité |
 | [`starter-bounty-hunter`](packages/starter-bounty-hunter) | Poursuite | Chasse aux gens pour gagner de l’argent ; la violence est bruyante, mais pas interdite |
 | [`starter-vampire`](packages/starter-vampire) | Horreur vampirique | Ressource sanguine, manipulation sociale |
 | [`starter-gladiator`](packages/starter-gladiator) | Gladiateur historique | Combat d’arène, faveur de la foule |
@@ -322,73 +280,66 @@ Les 12 mondes de départ sont des **exemples de composition** — ils montrent c
 
 | Ressource | Description |
 |----------|-------------|
-| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Création d'un nouveau jeu — via l'interface en ligne de commande ou en utilisant un modèle manuel |
-| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Créez votre propre jeu en assemblant des modules du moteur |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Résolution des règles par entité — combats avec styles de jeu mixtes, `applyProfile`, modèles de profil, l'interface en ligne de commande `profile` |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Intégration optionnelle sur le registre — pare-feu de déterminisme, niveaux d'intégration L0/L1/L2, modes de jeu, mesures de sécurité et démonstration de pirate testée en direct |
-| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Six piliers de combat, cinq actions, états en un coup d'œil |
-| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Création étape par étape de `buildCombatStack`, mappage des statistiques, profils de ressources |
-| [Visual Clients](site/src/content/docs/handbook/66-visual-clients.md) | Les hôtes Sidecar, la charge utile tactile, le port dimétrique de Godot : la présentation peut être trompeuse, l’occupation reste un identifiant de zone. |
-| [Handbook](site/src/content/docs/handbook/index.md) | Manuel complet — tous les systèmes, plus 4 annexes |
-| [Composition Model](docs/composition-model.md) | Les 6 couches réutilisables et leur composition |
-| [Examples](docs/examples/) | Exemples exécutables en TypeScript (vérifiés par type et testés en termes de comportement dans l'environnement CI) — groupe mixte par entité, profils partagés, inter-mondes, à partir de zéro |
-| [Design Document](docs/DESIGN.md) | Analyse approfondie de l'architecture — pipeline d'actions, vérité par rapport à la présentation |
-| [Philosophy](PHILOSOPHY.md) | Mondes déterministes, conception basée sur des preuves, IA en tant qu'assistant |
-| [Changelog](CHANGELOG.md) | Historique des versions |
+| [Créer votre propre monde de départ](site/src/content/docs/handbook/58-create-your-own-starter.md) | Création d’un nouveau jeu : via la CLI ou en utilisant un modèle manuel |
+| [Guide de composition](site/src/content/docs/handbook/57-composition-guide.md) | Créez votre propre jeu en assemblant des modules de moteur. |
+| [Profils de module d’extension](site/src/content/docs/handbook/59-plugin-profiles.md) | Résolution des règles par entité — combat avec styles de jeu mixtes, `applyProfile`, modèles de profil, l’interface en ligne de commande `profile`. |
+| [Adaptateur du registre XRPL](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Règlement sur le registre, sur demande — pare-feu de déterminisme, niveaux d’intégration L0/L1/L2, modes de jeu, mesures de sécurité et démonstration de pirate testée en direct. |
+| [Aperçu du combat](site/src/content/docs/handbook/49a-combat-overview.md) | Six piliers de combat, cinq actions, états en un coup d’œil. |
+| [Guide du créateur de packs](site/src/content/docs/handbook/55-combat-pack-guide.md) | buildCombatStack étape par étape, cartographie des statistiques, profils de ressources. |
+| [Clients visuels](site/src/content/docs/handbook/66-visual-clients.md) | Hôtes secondaires (sidecar), charge utile felt, port dimétrique Godot — la présentation peut être trompeuse, l’occupation reste un ID de zone. |
+| [Manuel](site/src/content/docs/handbook/index.md) | Manuel complet — tous les systèmes, plus 4 annexes. |
+| [Modèle de composition](docs/composition-model.md) | Les 6 couches réutilisables et leur composition. |
+| [Exemples](docs/examples/) | Exemples TypeScript exécutables (vérifiés par type et testés en termes de comportement dans CI) — groupe mixte par entité, profils partagés, inter-mondes, à partir de zéro. |
+| [Document de conception](docs/DESIGN.md) | Analyse approfondie de l’architecture — pipeline d’action, vérité par rapport à la présentation. |
+| [Philosophie](PHILOSOPHY.md) | Mondes déterministes, conception basée sur des preuves, IA en tant qu’assistant. |
+| [Journal des modifications](CHANGELOG.md) | Historique des versions. |
 
 ---
 
 ## Feuille de route
 
-### Où nous en sommes
+### Où nous en sommes aujourd’hui
 
-Les deux structures de composition sont complètes : **8368 tests sur 388 fichiers**, les 12 éléments de départ sur `buildCombatStack` **et** `buildWorldStack`, une relecture déterministe et identique au niveau des octets sous des graines imprimées, une évaluation complète des décisions de l’IA, et une interface en ligne de commande qui permet de créer, d’exécuter, de valider et d’inspecter. L’arc v3.x a donné vie au monde (PNJ nommés, la surface sociale à 25 verbes, économies de genre – v3.0–v3.1), a placé les actifs appartenant aux joueurs sur le testnet XRPL en tant que canal secondaire facultatif (v3.2–v3.4), a créé deux éléments de départ axés sur le système et les a transformés en outils d’amélioration du moteur (v3.5–v3.6), a affiné et renforcé la couche stratégique jusqu’à ce que les conséquences laissent des marques réelles (v3.7–v3.8), a donné aux hôtes la surface du moteur dont ils ont besoin pour s’intégrer à Godot (v3.8.1), a fermé la boucle de création afin qu’une session en studio ou un simple paquet JSON produise un monde jouable de bout en bout (v3.9), a placé toute la couche stratégique dans les sens du joueur (v3.10), a affiné la profondeur que ces sens atteignent maintenant (v3.11), et **a donné à un hôte de dessin la sensation d’un tic – le premier client pixel, un port dimétrique Godot 4, s’exécute sur ce contrat (v3.12)**.
+Les deux axes de composition sont terminés — **8368 tests sur 388 fichiers**, tous les 12 éléments de départ sur `buildCombatStack` **et** `buildWorldStack`, relecture déterministe et identique au niveau des octets sous des graines imprimées, évaluation complète des décisions de l’IA et une interface en ligne de commande qui crée, exécute, valide et inspecte. L’arc v3.x a rendu le monde actif (PNJ nommés, la surface sociale à 25 verbes, économies de genre — v3.0–v3.1), a placé les actifs appartenant aux joueurs sur le testnet XRPL en tant que canal secondaire sur demande (v3.2–v3.4), a créé deux éléments de départ axés sur le système et les a transformés en instruments d’amélioration du moteur (v3.5–v3.6), a éclairé et renforcé la couche stratégique jusqu’à ce que les conséquences laissent des marques réelles (v3.7–v3.8), a donné aux hôtes la surface du moteur dont Godot a besoin pour s’y attacher (v3.8.1), a fermé la boucle d’auteur afin qu’une session de studio ou un simple pack JSON produise un monde jouable de bout en bout (v3.9), a placé toute la couche stratégique sur les sens du joueur (v3.10), a affiné la profondeur que ces sens atteignent maintenant (v3.11) et **a donné à un hôte de dessin le sentiment d’un tic — le premier client pixel, un port dimétrique Godot 4, s’exécute sur ce contrat (v3.12)**.
 
-**Dernière série de versions (v2.4.0–v3.0.0) :**
-- v2.4.0 — Combat de groupe (ciblage des alliés / soin / amélioration / réanimation, système d'effets de statut (modificateurs + DoT/HoT + déclencheurs réactifs), phase 1 des profils plug-in, contenu CLI `validate`/`scaffold`
-- v2.5.0 — Résolution des règles par entité (combat avec styles de jeu mixtes), le chargeur `applyProfile` + capacités par entité, modèles de profil + CLI `profile` et une révision complète de la santé
-- v2.6.0 — La commande `run` est devenue un véritable jeu : les ennemis agissent en fonction de leurs propres profils d'IA, victoire/défaite, sauvegarde/reprise, capacités et XP dans le menu, le dossier `ai` du studio et la pile de narration
-- v2.7.0 — Le monde réagit et il y a une raison de revenir : chaleur → pressions → conséquences narrées, rencontres à l'entrée de la zone, une boucle de quête + Journal, équipement au combat, exécutions rejouables avec des séquences, entrées de fin de partie en direct, `buildWorldStack`, le registre du directeur et une jonction de migration de sauvegarde
-- v2.8.0 — Agissez sur le monde dans lequel vous vivez : une économie commerciale en direct + le verbe `sell`, des compagnons que vous recrutez et avec lesquels vous combattez, et un registre du directeur qui analyse l'ensemble du tableau — un fil de connexion par système allumé ~12 consommateurs qui ont été livrés en mode sombre
-- v2.9.0 — Fermez les boucles : `buy` + les stocks des marchands et l'artisanat complètent l'économie ; les compagnons effectuent des tours indépendants ; quatre verbes sociaux (corruption / intimidation / requête / amorce) fonctionnent sur une économie d'influence financée par des récompenses d'opportunité ; les opportunités se résolvent avec une date d'expiration + des conséquences de faveur ; et l'équipement, les quêtes, les recrues et la monnaie de départ sont distribués uniformément à tous les dix modèles de départ
-- **v3.0.0 — Donnez vie au monde : le producteur d'agence des PNJ allume les PNJ nommés (objectifs / relations / registres d'obligations / chaînes de conséquences) plus un PNJ narratif dans chaque modèle de départ ; la surface sociale s'étend à 25 verbes (diplomatie + sabotage) avec un revenu d'influence passif et un dialogue qui lit l'état social ; stocks et recettes adaptés au genre par modèle de départ ; les fins d'influence (victoire / maître marionnettiste / retraite tranquille) deviennent accessibles ; lignes de menu de réparation/modification, opportunités d'escorte et une CLI de développement `audit-content` — livrés grâce à un audit de la phase 9 qui a détecté deux fils morts que la suite de tests verts a masqués**
+L'historique complet des versions se trouve dans [CHANGELOG.md](CHANGELOG.md).
 
 ### Suivant
 
-La version v3.12 a clôturé le contrat tactile et a créé le premier hôte de dessin. Ce qui reste est un travail ultérieur, et non des éléments résiduels de cette version :
+La v3.12 a bouclé le contrat felt et le premier hôte de rendu. Ce qui reste est un travail de cycle ultérieur, et non des restes de celui-ci :
 
-- Un environnement ambiant de famille prospère (le pont tonal et le système de gestion par zone ; CORE n’a toujours pas de base prospère)
-- Multijoueur : deux joueurs *humains* partageant un même monde (une couche de réseau, délibérément reportée ; les profils partagés à contrôleur unique sont disponibles dès aujourd’hui sous la forme [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- Remplacements de formules sérialisables : réglage des formules par profil (bloqué sur un DSL de formules ; les profils contiennent aujourd’hui des mappages de statistiques, et non des fermetures)
+- Une nappe d’ambiance pour la famille tonale « prosperous » (le pont tonal et le tirage par zone sont livrés ; CORE n’a toujours pas de piste audio « prosperous »).
+- Multijoueur — deux joueurs *humains* partageant un monde (une couche de mise en réseau, délibérément différée ; les profils partagés à un seul contrôleur sont disponibles aujourd’hui sous la forme de [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
+- Substitutions de formules sérialisables — réglage de la formule par profil (bloqué sur un DSL de formule ; les profils contiennent aujourd’hui des cartographies de statistiques, et non des fermetures).
 
-### Destination : Profils plug-in
+### Destination : profils plug-in
 
-L'objectif final du moteur est les **profils définis par l'utilisateur** — des ensembles portables qui s'insèrent dans n'importe quel jeu. Un profil regroupe un mappage de statistiques, un comportement de ressource, des balises de biais d'IA et des capacités dans une seule unité importable. Depuis la v2.5, les entités d'un monde peuvent chacune avoir leur propre profil et résoudre le combat par entité — un combattant `might` et un mystique `will` partagent un groupe, chacun apportant son propre style de jeu.
+L’objectif final du moteur est les **profils définis par l’utilisateur** — des ensembles portables qui s’insèrent dans n’importe quel jeu. Un profil regroupe une cartographie de statistiques, un comportement de ressources, des balises de biais d’IA et des capacités dans une seule unité importable. À partir de v2.5, les entités d’un monde peuvent chacune avoir leur propre profil et résoudre le combat par entité — un combattant `might` et un mystique `will` partagent un groupe, chacun apportant son propre style de jeu.
 
-Le schéma, le chargeur `applyProfile`, la résolution des capacités par entité et la validation inter-profils sont tous livrés. Ce qui reste, c'est le multijoueur — qui permet à deux joueurs *humains* (et pas seulement à deux entités) de partager un monde — ce qui est une couche de mise en réseau. Consultez [Feuille de route du profil](docs/profile-roadmap.md) et [feature-architecture.md](docs/feature-architecture.md) pour la conception.
+Le schéma, le chargeur `applyProfile`, la résolution des capacités par entité et la validation inter-profils sont tous disponibles. Ce qui reste est le multijoueur — en permettant à deux joueurs *humains* (et non seulement à deux entités) de partager un monde — ce qui est une couche de mise en réseau. Voir [Feuille de route du profil](docs/profile-roadmap.md) et [feature-architecture.md](docs/feature-architecture.md) pour la conception.
 
 ---
 
 ## Philosophie
 
-Le moteur de jeu de rôle basé sur l’IA est conçu autour de trois idées :
+L’AI RPG Engine est construit autour de trois idées :
 
-1. **Mondes déterministes** : les résultats de la simulation doivent être reproductibles.
-2. **Conception basée sur les données** : les mécanismes du monde doivent être testés par le biais de simulations.
-3. **L’IA en tant qu’assistant, et non autorité** : les outils d’IA aident à générer et à évaluer les conceptions, mais ne remplacent pas les systèmes déterministes.
+1. **Mondes déterministes** — les résultats de la simulation doivent être reproductibles.
+2. **Conception basée sur des preuves** — les mécanismes du monde doivent être testés par le biais de simulations.
+3. **IA en tant qu’assistant, et non autorité** — les outils d’IA aident à générer et à critiquer les conceptions, mais ne remplacent pas les systèmes déterministes.
 
-Pour une explication complète, consultez le fichier [PHILOSOPHY.md](PHILOSOPHY.md).
+Consultez le fichier [PHILOSOPHY.md](PHILOSOPHY.md) pour une explication complète.
 
 ---
 
 ## Sécurité
 
-Le moteur principal est une **bibliothèque de simulation locale uniquement** : pas de télémétrie, pas de réseau, pas de données sensibles. Les fichiers de sauvegarde sont enregistrés uniquement dans `.ai-rpg-engine/` lorsque cela est explicitement demandé. Deux **couches facultatives** ajoutent une voie de communication sortante, et ce uniquement lorsque vous les activez :
+Le moteur principal est une **bibliothèque de simulation locale uniquement** : pas de télémétrie, pas de réseau, pas de données sensibles. Les fichiers de sauvegarde sont enregistrés uniquement dans `.ai-rpg-engine/` lorsqu’une demande explicite est faite. Deux **couches optionnelles** ajoutent une voie de communication sortante, et ce uniquement lorsque vous les activez :
 
-- La couche d’IA (`@ai-rpg-engine/ollama`) communique avec un démon Ollama **local** ; son option d’activation `webfetch` (pour RAG) est limitée par une protection contre les attaques SSRF (qui bloque les adresses de loopback/link-local/CGNAT/cloud-metadata et leurs équivalents IPv6).
-- La couche de registre (`@ai-rpg-engine/ledger-adapter`) accède au **testnet XRPL** — et uniquement au testnet : une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) rejette tout hôte autre que le testnet lors de sa création. Les clés de portefeuille sont stockées dans un fichier de secrets ignoré par Git, jamais dans un fichier de sauvegarde, et le noyau déterministe n’importe jamais l’adaptateur.
+- La couche d’IA (`@ai-rpg-engine/ollama`) communique avec un démon Ollama **local** ; son option d’activation `webfetch` (pour RAG) est limitée par une protection contre les attaques SSRF (qui bloque les adresses de loopback/link-local/CGNAT/métadonnées cloud et leurs équivalents encapsulés en IPv6).
+- La couche de registre (`@ai-rpg-engine/ledger-adapter`) accède au **testnet XRPL** — et uniquement au testnet : une protection structurelle **impossible en code sur le mainnet** (et non un simple indicateur de configuration) rejette tout hôte autre que le testnet lors de sa création. Les graines (« seeds ») de portefeuille sont stockées dans un fichier secondaire ignoré par Git, jamais dans un fichier de sauvegarde, et le noyau déterministe n’importe jamais l’adaptateur.
 
-Pour plus de détails, consultez le fichier [SECURITY.md](SECURITY.md).
+Consultez le fichier [SECURITY.md](SECURITY.md) pour plus de détails.
 
 ## Prérequis
 
