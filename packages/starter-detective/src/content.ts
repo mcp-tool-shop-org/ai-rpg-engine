@@ -12,8 +12,8 @@ import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 export const manifest: GameManifest = {
   id: 'gaslight-detective',
   title: 'Gaslight Detective',
-  version: '3.12.2',
-  engineVersion: '>=3.8.0 <4.0.0',
+  version: '4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   ruleset: 'detective-minimal',
   modules: [
     'traversal-core',
@@ -696,8 +696,8 @@ export const packMeta: PackMetadata = {
   difficulty: 'intermediate',
   tones: ['noir', 'dark'],
   tags: ['investigation', 'victorian', 'interrogation', 'deduction'],
-  engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.12.2',
+  engineVersion: '>=4.0.0 <5.0.0',
+  version: '4.0.0',
   description: 'Investigate a locked-room murder at Ashford Estate. Interrogate suspects, gather evidence, and survive the back alleys.',
   narratorTone: 'victorian noir, measured, atmospheric, suspenseful',
 };

@@ -37,7 +37,7 @@ Questo è un **motore di composizione**, non un gioco completo. I 12 mondi inizi
 
 ---
 
-## Stato attuale (v3.12.2)
+## Stato attuale
 
 **Cosa funziona ed è testato:**
 - Il nucleo di simulazione: tick deterministici, RNG con seme, replay identico byte per byte, e salvataggio e ripresa
@@ -302,13 +302,13 @@ I 12 mondi iniziali sono **esempi di composizione**: dimostrano come combinare i
 
 ### Dove siamo ora
 
-Entrambe le strutture di composizione sono complete: **8368 test su 388 file**, tutti i 12 mondi iniziali su `buildCombatStack` **e** `buildWorldStack`, riproduzione deterministica e identica byte per byte con seed stampati, punteggio completo delle decisioni dell'IA e una CLI che crea, esegue, convalida e ispeziona. L'arco v3.x ha reso il mondo attivo (NPC con nomi, la superficie sociale con 25 verbi, economie di genere — v3.0–v3.1), ha inserito risorse di proprietà del giocatore sulla testnet XRPL come canale secondario opzionale (v3.2–v3.4), ha creato due mondi iniziali incentrati sul sistema e li ha trasformati in strumenti per migliorare il motore (v3.5–v3.6), ha illuminato e rafforzato lo strato strategico finché le conseguenze non lasciano segni reali (v3.7–v3.8), ha fornito agli host la superficie del motore di cui hanno bisogno per l'integrazione con Godot (v3.8.1), ha chiuso il ciclo di creazione in modo che una sessione di studio o un semplice pacchetto JSON producano un mondo giocabile dall'inizio alla fine (v3.9), ha portato l'intero strato strategico sui sensi del giocatore (v3.10), ha ottimizzato la profondità che questi sensi raggiungono ora (v3.11) e **ha fornito a un host di rendering la sensazione di un tick: il primo client pixel, un porto dimetrico di Godot 4, viene eseguito su tale contratto (v3.12)**.
+Entrambe le strutture di composizione sono complete: tutti i 12 mondi iniziali usano `buildCombatStack` **e** `buildWorldStack`, il replay è deterministico e identico byte per byte con seed stampati, il punteggio delle decisioni dell'IA è completo e la CLI crea, esegue, convalida e ispeziona.
 
 La cronologia completa delle versioni è in [CHANGELOG.md](CHANGELOG.md).
 
 ### Prossimo
 
-La v3.12 ha chiuso il contratto felt e il primo host di rendering. Ciò che resta è un lavoro successivo, non gli elementi rimasti di questo ciclo:
+Ciò che resta è lavoro dei cicli successivi:
 
 - Un sottofondo audio ambientale per la categoria tonale "prosperous" (il ponte tonale e la selezione musicale per zona sono già inclusi; a CORE manca ancora una traccia base "prosperous")
 - Multiplayer: due giocatori *umani* che condividono un mondo (un livello di rete, volutamente differito; i profili condivisi a controller singolo vengono rilasciati oggi come [`shared-profiles.ts`](docs/examples/shared-profiles.ts))

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-merchant",
-  "version": "3.12.2",
+  "version": "4.0.0",
   "description": "AI RPG Engine mercantile starter: Salt Road Ledger",
   "type": "module",
   "main": "./dist/index.js",

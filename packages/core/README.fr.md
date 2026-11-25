@@ -41,7 +41,7 @@ import { Engine } from '@ai-rpg-engine/core';
 const engine = new Engine({
   manifest: {
     id: 'my-game', title: 'My Game',
-    version: '1.0.0', engineVersion: '1.0.0',
+    version: '1.0.0', engineVersion: '>=4.0.0 <5.0.0',
     ruleset: 'fantasy', modules: [],
     contentPacks: [],
   },

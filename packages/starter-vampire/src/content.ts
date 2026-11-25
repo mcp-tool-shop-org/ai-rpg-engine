@@ -11,8 +11,8 @@ import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyR
 export const manifest: GameManifest = {
   id: 'crimson-court',
   title: 'Crimson Court',
-  version: '3.12.2',
-  engineVersion: '>=3.8.0 <4.0.0',
+  version: '4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   ruleset: 'vampire-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
   contentPacks: ['crimson-court'],
@@ -714,8 +714,8 @@ export const packMeta: PackMetadata = {
   difficulty: 'intermediate',
   tones: ['dark', 'noir'],
   tags: ['vampire', 'aristocracy', 'hunger', 'politics', 'gothic'],
-  engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.12.2',
+  engineVersion: '>=4.0.0 <5.0.0',
+  version: '4.0.0',
   description: 'Navigate vampire court politics during a decadent masked ball. Feed sparingly, enthrall carefully, and survive the night without losing your humanity.',
   narratorTone: 'gothic horror, intimate, decadent, predatory',
 };

@@ -12,8 +12,8 @@ import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content
 export const manifest: GameManifest = {
   id: 'neon-lockbox',
   title: 'Neon Lockbox',
-  version: '3.12.2',
-  engineVersion: '>=3.8.0 <4.0.0',
+  version: '4.0.0',
+  engineVersion: '>=4.0.0 <5.0.0',
   ruleset: 'cyberpunk-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
   contentPacks: ['neon-lockbox'],
@@ -632,8 +632,8 @@ export const packMeta: PackMetadata = {
   difficulty: 'beginner',
   tones: ['noir', 'gritty'],
   tags: ['hacking', 'neon', 'corporate', 'netrunning'],
-  engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.12.2',
+  engineVersion: '>=4.0.0 <5.0.0',
+  version: '4.0.0',
   description: 'Meet a fixer in a neon-lit alley, breach a server corridor, and crack a data vault defended by an ICE sentry.',
   narratorTone: 'cyberpunk noir, terse, neon-lit, paranoid',
 };

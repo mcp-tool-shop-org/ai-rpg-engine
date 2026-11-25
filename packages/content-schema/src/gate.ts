@@ -21,7 +21,22 @@
 import { createHash } from 'node:crypto';
 import type { ContentPack } from './refs.js';
 import type { ValidationError } from './validate.js';
-import { satisfiesRange, isBareVersion, SemVerError } from './semver-range.js';
+import { satisfiesRange, isBareVersion, parseVersion, SemVerError } from './semver-range.js';
+
+/**
+ * A range suggestion for a pack that declares none: from the running engine's
+ * release (major.minor.patch, prerelease dropped) up to its next major. Built from
+ * parseVersion so a "v" prefix or a prerelease never produces a range the engine
+ * itself would fail; an unparseable version gets a generic example instead.
+ */
+function suggestedRange(engineVersion: string): string {
+  try {
+    const v = parseVersion(engineVersion);
+    return `>=${v.major}.${v.minor}.${v.patch} <${v.major + 1}.0.0`;
+  } catch {
+    return '>=4.0.0 <5.0.0';
+  }
+}
 
 // --- The allowlist --------------------------------------------------------
 
@@ -32,6 +47,7 @@ import { satisfiesRange, isBareVersion, SemVerError } from './semver-range.js';
  * because a type cannot be enumerated at runtime, and a gate that guesses its own
  * allowlist is the silent-pass it replaces.
  */
+
 export const ALLOWED_PACK_KEYS = [
   'schemaVersion',
   'entities',
@@ -343,7 +359,7 @@ function checkEngineVersion(ctx: GateContext): GateCheckResult {
       expected: `a semver range satisfied by ${ctx.engineVersion}`,
       actual: 'no engineVersion in the manifest',
       message: 'Content pack does not declare which engine versions it supports.',
-      hint: `Set manifest.engineVersion to a range, e.g. ">=${ctx.engineVersion} <4.0.0".`,
+      hint: `Set manifest.engineVersion to a range, e.g. "${suggestedRange(ctx.engineVersion)}".`,
     };
   }
   if (typeof claimed !== 'string') {
@@ -353,7 +369,7 @@ function checkEngineVersion(ctx: GateContext): GateCheckResult {
       expected: 'a semver range string',
       actual: `${typeof claimed}`,
       message: 'manifest.engineVersion must be a string.',
-      hint: 'Write a range like ">=3.8.0 <4.0.0".',
+      hint: 'Write a range like ">=4.0.0 <5.0.0".',
     };
   }
 
@@ -507,7 +523,7 @@ export function runLoadGate(pack: ContentPack, ctx: GateContext): GateResult {
       path: 'gate.engine-version',
       message:
         `engineVersion "${claimedVersion}" is a bare version, treated as an exact match. ` +
-        'Prefer an explicit range (">=3.8.0 <4.0.0") so compatibility is a claim the gate can check.',
+        'Prefer an explicit range (">=4.0.0 <5.0.0") so compatibility is a claim the gate can check.',
     });
   }
 

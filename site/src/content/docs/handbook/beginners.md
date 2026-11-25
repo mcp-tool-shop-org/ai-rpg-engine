@@ -106,7 +106,7 @@ const engine = new Engine({
     id: 'my-first-game',
     title: 'My First Game',
     version: '1.0.0',
-    engineVersion: '2.3.1',
+    engineVersion: '>=4.0.0 <5.0.0',
     ruleset: 'custom',
     modules: [],
     contentPacks: [],

@@ -37,7 +37,7 @@ This is a **composition engine**, not a finished game. The 12 starter worlds are
 
 ---
 
-## Current Status (v3.12.2)
+## Current Status
 
 **What works and is tested:**
 - The simulation core: deterministic ticks, seeded RNG, byte-identical replay, and save and resume
@@ -337,13 +337,13 @@ The 12 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-Both composition spines are complete — **8368 tests across 388 files**, all 12 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. The v3.x arc made the world live (named NPCs, the 25-verb social surface, genre economies — v3.0–v3.1), put player-owned assets on the XRPL testnet as an opt-in side channel (v3.2–v3.4), authored two system-first starters and turned them into engine-polishing instruments (v3.5–v3.6), lit and toughened the strategic layer until consequences leave real marks (v3.7–v3.8), gave hosts the Engine surface a Godot attach needs (v3.8.1), closed the authoring loop so a studio session or a bare JSON pack produces a playable world end-to-end (v3.9), put the whole strategic layer on the player's senses (v3.10), tuned the depth those senses now reach (v3.11), and **gave a drawing host the felt of a tick — the first pixel client, a Godot 4 dimetric harbour, runs on that contract (v3.12)**.
+Both composition spines are complete: all 12 starters run on `buildCombatStack` **and** `buildWorldStack`, replay is deterministic and byte-identical under printed seeds, AI decision scoring is complete, and the CLI scaffolds, runs, validates and inspects.
 
 The full release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ### Next
 
-v3.12 closed the felt contract and the first drawing host. What remains is later-cycle work, not leftovers of this one:
+What remains is later-cycle work:
 
 - A prosperous-family ambient bed (the tone bridge and per-zone roll ship; CORE still has no prosperous stem)
 - Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))

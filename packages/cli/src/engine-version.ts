@@ -32,5 +32,5 @@ function readVersion(): string {
   );
 }
 
-/** The running engine's semantic version, e.g. "3.8.0". */
+/** The running engine's semantic version, e.g. "4.0.0". */
 export const ENGINE_VERSION: string = readVersion();

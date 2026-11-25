@@ -92,7 +92,7 @@ export type PackMetadata = {
   tones: PackTone[];
   /** Free-form tags for search/filtering */
   tags: string[];
-  /** Minimum engine version (semver) */
+  /** The engine versions the pack supports, as a semver range (e.g. ">=4.0.0 <5.0.0") */
   engineVersion: string;
   /** Pack version */
   version: string;

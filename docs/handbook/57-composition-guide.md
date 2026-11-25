@@ -293,7 +293,7 @@ const combat = buildCombatStack({
 const engine = new Engine({
   manifest: {
     id: 'arena', title: 'Arena', version: '1.0.0',
-    engineVersion: '1.0.0', ruleset: 'minimal', modules: [], contentPacks: ['arena'],
+    engineVersion: '>=4.0.0 <5.0.0', ruleset: 'minimal', modules: [], contentPacks: ['arena'],
   },
   modules: [traversalCore, statusCore, ...combat.modules],
 });

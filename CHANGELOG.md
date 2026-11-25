@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-25
+
+A major release, because every `canonicalHash` value changes: the canonical pre-image now scales numbers to integers (`digest_spec_version: 2`). It also adds two built-in AI intent profiles (`passive` and `follower`, six in all), the sidecar's `sim/resyncRequired` notice after a load, whole-world checks on every sidecar write, and player-only zone-entry presentation.
+
+**Upgrading from 3.x:**
+- **Hashes.** Recompute any stored `canonicalHash` and update clients to `digest_spec_version: 2`. Core `stateHash` is unchanged. The sidecar's per-tick `stateHash` changes only where a number's sixth decimal is a negative half-tie, which now rounds half away from zero (`-0.0000005` becomes `-0.000001`, not `0`). In `@ai-rpg-engine/core`, the `canonicalStateHash` alias is now `worldStateHash`; the old core name stays as a deprecated alias. The sidecar's own `canonicalStateHash` (the cross-language wire digest) keeps its name.
+- **Unresolved AI profiles are refused by default** in `sidecar --content`, `validate` and starter `createGame`. For the CLI commands, pass `--unresolved-ai-profile warn` to load with warnings; programmatic callers pass `unresolvedAiProfile: 'warn'` to `applyContentPack`. The starters' `createGame` always uses `'fail'`.
+- **`pack.entityAi` and map-form `options.profiles` are checked against the registered profiles.** Under `'warn'`, an engine without `cognition-core` registers none, so every entry is dropped with an `UNRESOLVED_AI_PROFILE` warning.
+- **Stricter state values.** Every sidecar write and `applyContentPack` refuse `NaN` and `±Infinity` (3.12.2 turned them into `null`). `canonicalJson` and `canonicalStateHash` refuse numbers beyond ±9,007,199,254.740991 (a raw `Date.now()` is one), non-ASCII object keys, U+0000 and lone surrogates whenever they are called; the sidecar applies those rules only to sessions that negotiated `canonicalHashes`. A sidecar refusal is a `StateDigestError` with a named code (`STATE_DIGEST_INVALID` on the wire); `applyContentPack` reports it in `{ ok: false, errors }` and does not throw.
+- **After a load that skips a session's rebase,** that session's `submitAction` and `advance` are refused with `RESYNC_REQUIRED` until it calls `snapshot()`, and `rebaseAfterLoad()` returns `{ ok: false }` instead of throwing.
+- **An empty socket `host`** now binds `127.0.0.1`; it used to bind every interface.
+- **`ApplyContentPackResult.warnings`** is a new required field.
+- **`DialogueNode.speaker`** is now optional.
+- **`buildNarrationPlan` without a player id** sets no zone-entry cue.
+- **Content packs must declare a range that includes 4.x.** The load gate refuses a pack whose `manifest.engineVersion` excludes the running engine, so a pack stamped `>=3.8.0 <4.0.0` no longer loads. Re-export World Forge packs with World Forge 4.11.0 or later, which stamps `>=4.0.0 <5.0.0`; for a hand-written pack, change the range. The built-in starters and `templates/starter` now declare `>=4.0.0 <5.0.0`, and the gate's hint suggests a range up to the running engine's next major.
+
 ### For integrators
 
 - From the next engine release, World Forge's release workflow checks its exports against the published `@ai-rpg-engine/cli`.

@@ -66,7 +66,7 @@ Ogni pacchetto di avvio esporta un `packMeta: PackMetadata` con campi strutturat
 | difficoltà | PackDifficulty | principiante, intermedio o avanzato |
 | toni | PackTone[] | Descrittori del tono narrativo |
 | tag | stringa[] | Tag liberi per la ricerca |
-| engineVersion | stringa | Versione minima del motore (semver) |
+| engineVersion | stringa | Versioni del motore supportate dal pacchetto, un intervallo semver come `>=4.0.0 <5.0.0` |
 | version | stringa | Versione del pacchetto |
 | description | stringa | Breve descrizione (1-3 frasi) — sottotitolo del listing |
 | narratorTone | stringa | Tono per il narratore |

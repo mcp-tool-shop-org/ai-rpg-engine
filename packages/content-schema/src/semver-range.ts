@@ -46,7 +46,7 @@ export function parseVersion(input: string): SemVer {
     throw new SemVerError({
       code: 'SEMVER_INVALID',
       message: `Version must be a non-empty string, got ${JSON.stringify(input)}.`,
-      hint: 'Use a semantic version like "3.8.0".',
+      hint: 'Use a semantic version like "4.0.0".',
     });
   }
   let s = input.trim();
@@ -67,7 +67,7 @@ export function parseVersion(input: string): SemVer {
     throw new SemVerError({
       code: 'SEMVER_INVALID',
       message: `Version "${input}" must have exactly three numeric parts (major.minor.patch).`,
-      hint: 'Write "3.8.0", not "3.8" or "3.8.0.1".',
+      hint: 'Write "4.0.0", not "4.0" or "4.0.0.1".',
     });
   }
   const nums = parts.map((p) => {
@@ -118,7 +118,7 @@ function expand(token: string): Bound[] {
       throw new SemVerError({
         code: 'SEMVER_RANGE_INVALID',
         message: `Range comparator "${token}" has an operator with no version.`,
-        hint: 'Write a full comparator like ">=3.8.0".',
+        hint: 'Write a full comparator like ">=4.0.0".',
       });
     }
     return []; // '*' — unbounded
@@ -129,7 +129,7 @@ function expand(token: string): Bound[] {
     throw new SemVerError({
       code: 'SEMVER_RANGE_INVALID',
       message: `Range comparator "${token}" has more than three version parts.`,
-      hint: 'Use major.minor.patch, e.g. ">=3.8.0".',
+      hint: 'Use major.minor.patch, e.g. ">=4.0.0".',
     });
   }
 
@@ -208,7 +208,7 @@ export function satisfiesRange(version: string | SemVer, range: string): boolean
     throw new SemVerError({
       code: 'SEMVER_RANGE_INVALID',
       message: 'Range must be a non-empty string.',
-      hint: 'Use a range like ">=3.8.0 <4.0.0", "^3.8.0", or "3.x".',
+      hint: 'Use a range like ">=4.0.0 <5.0.0", "^4.0.0", or "4.x".',
     });
   }
   if (range.includes(' - ')) {

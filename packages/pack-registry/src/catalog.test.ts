@@ -325,11 +325,11 @@ describe('pack rubric × real catalog (PG-1)', () => {
       expect(typeof claimed, `${pack.meta.id} manifest.engineVersion must be a string`).toBe('string');
       expect(
         isBareVersion(claimed),
-        `${pack.meta.id} manifest.engineVersion "${claimed}" is a bare version; stamp a range like ">=${workspaceEngine} <4.0.0"`,
+        `${pack.meta.id} manifest.engineVersion "${claimed}" is a bare version; stamp a range like ">=${workspaceEngine} <${Number(workspaceEngine.split('.')[0]) + 1}.0.0"`,
       ).toBe(false);
       expect(
         satisfiesRange(workspaceEngine, claimed),
-        `${pack.meta.id} manifest.engineVersion "${claimed}" does not satisfy workspace engine ${workspaceEngine} — set manifest.engineVersion to a range such as ">=${workspaceEngine} <4.0.0"`,
+        `${pack.meta.id} manifest.engineVersion "${claimed}" does not satisfy workspace engine ${workspaceEngine} — set manifest.engineVersion to a range such as ">=${workspaceEngine} <${Number(workspaceEngine.split('.')[0]) + 1}.0.0"`,
       ).toBe(true);
       const metaVer = pack.meta.engineVersion;
       const lockstep =

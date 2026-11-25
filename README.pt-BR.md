@@ -37,7 +37,7 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 
 ---
 
-## Status atual (v3.12.2)
+## Status atual
 
 **O que funciona e está testado:**
 - O núcleo de simulação: ticks determinísticos, RNG com semente, replay idêntico byte a byte, e salvar e retomar
@@ -305,13 +305,13 @@ Os 12 mundos iniciais são **exemplos de composição** — eles demonstram como
 
 ### Onde estamos agora
 
-Ambas as estruturas de composição estão completas — **8368 testes em 388 arquivos**, todos os 12 iniciadores em `buildCombatStack` **e** `buildWorldStack`, reprodução determinística e idêntica byte a byte sob sementes impressas, pontuação completa das decisões da IA e uma CLI que cria, executa, valida e inspeciona. O arco v3.x tornou o mundo ativo (NPCs com nomes, a superfície social de 25 verbos, economias de gênero — v3.0–v3.1), colocou ativos de propriedade do jogador na testnet XRPL como um canal secundário opcional (v3.2–v3.4), criou dois iniciadores focados no sistema e os transformou em instrumentos de aprimoramento do motor (v3.5–v3.6), iluminou e fortaleceu a camada estratégica até que as consequências deixem marcas reais (v3.7–v3.8), deu aos hosts a superfície do motor que o Godot precisa (v3.8.1), fechou o ciclo de criação para que uma sessão de estúdio ou um pacote JSON simples produzam um mundo jogável de ponta a ponta (v3.9), colocou toda a camada estratégica nos sentidos do jogador (v3.10), ajustou a profundidade que esses sentidos agora alcançam (v3.11) e **deu a um host de desenho a sensação de um "tick" — o primeiro cliente de pixel, um porto dimétrico do Godot 4, é executado nesse contrato (v3.12)**.
+As duas colunas de composição estão completas: os 12 mundos iniciais usam `buildCombatStack` **e** `buildWorldStack`, o replay é determinístico e idêntico byte a byte com sementes impressas, a pontuação de decisões da IA está completa e a CLI cria estruturas, executa, valida e inspeciona.
 
 O histórico completo de versões está em [CHANGELOG.md](CHANGELOG.md).
 
 ### Próximo
 
-v3.12 fechou o contrato "felt" e o primeiro host de desenho. O que resta é um trabalho de ciclo posterior, não sobras deste.
+O que resta é trabalho de ciclos posteriores:
 
 - Uma trilha ambiente da família de tom próspero (a ponte de tom e o sorteio por zona já foram lançados; o CORE ainda não tem uma faixa-base próspera)
 - Multijogador — dois jogadores *humanos* compartilhando um mundo (uma camada de rede, deliberadamente adiada; perfis compartilhados de um único controlador são lançados hoje como [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
