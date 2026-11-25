@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-template",
-  "version": "3.12.2",
+  "version": "4.0.0",
   "description": "Starter template for ai-rpg-engine — scaffold a standalone game project from it",
   "type": "module",
   "engines": {
@@ -18,12 +18,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "^3.0.0",
-    "@ai-rpg-engine/content-schema": "^3.0.0",
-    "@ai-rpg-engine/modules": "^3.0.0",
-    "@ai-rpg-engine/pack-registry": "^3.0.0",
-    "@ai-rpg-engine/character-creation": "^3.0.0",
-    "@ai-rpg-engine/equipment": "^3.0.0"
+    "@ai-rpg-engine/core": "^4.0.0",
+    "@ai-rpg-engine/content-schema": "^4.0.0",
+    "@ai-rpg-engine/modules": "^4.0.0",
+    "@ai-rpg-engine/pack-registry": "^4.0.0",
+    "@ai-rpg-engine/character-creation": "^4.0.0",
+    "@ai-rpg-engine/equipment": "^4.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

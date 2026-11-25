@@ -157,7 +157,7 @@
       "confidence": "full",
       "highWater": 0.796067,
       "name": "cli",
-      "qualifyingSourceCommits": 117,
+      "qualifyingSourceCommits": 121,
       "rebaseline": null
     },
     {
@@ -192,7 +192,7 @@
       "confidence": "full",
       "highWater": 1,
       "name": "content-schema",
-      "qualifyingSourceCommits": 33,
+      "qualifyingSourceCommits": 34,
       "rebaseline": null
     },
     {
@@ -235,7 +235,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "core",
-      "qualifyingSourceCommits": 28,
+      "qualifyingSourceCommits": 26,
       "rebaseline": null
     },
     {
@@ -390,7 +390,7 @@
       "confidence": "full",
       "highWater": 0.8125,
       "name": "modules",
-      "qualifyingSourceCommits": 112,
+      "qualifyingSourceCommits": 115,
       "rebaseline": null
     },
     {
@@ -458,7 +458,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "presentation",
-      "qualifyingSourceCommits": 8,
+      "qualifyingSourceCommits": 9,
       "rebaseline": null
     },
     {
@@ -508,7 +508,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "scripts",
-      "qualifyingSourceCommits": 10,
+      "qualifyingSourceCommits": 11,
       "rebaseline": null
     },
     {
@@ -523,10 +523,10 @@
       },
       "cohesion": 1,
       "cohesionDropped": false,
-      "confidence": "low",
+      "confidence": "full",
       "highWater": 1,
       "name": "sidecar",
-      "qualifyingSourceCommits": 27,
+      "qualifyingSourceCommits": 30,
       "rebaseline": null
     },
     {
@@ -581,7 +581,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter",
-      "qualifyingSourceCommits": 13,
+      "qualifyingSourceCommits": 15,
       "rebaseline": null
     },
     {
@@ -625,7 +625,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-colony",
-      "qualifyingSourceCommits": 20,
+      "qualifyingSourceCommits": 22,
       "rebaseline": null
     },
     {
@@ -647,7 +647,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-cyberpunk",
-      "qualifyingSourceCommits": 17,
+      "qualifyingSourceCommits": 19,
       "rebaseline": null
     },
     {
@@ -669,7 +669,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-detective",
-      "qualifyingSourceCommits": 20,
+      "qualifyingSourceCommits": 22,
       "rebaseline": null
     },
     {
@@ -692,7 +692,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-fantasy",
-      "qualifyingSourceCommits": 27,
+      "qualifyingSourceCommits": 29,
       "rebaseline": null
     },
     {
@@ -715,7 +715,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-gladiator",
-      "qualifyingSourceCommits": 23,
+      "qualifyingSourceCommits": 25,
       "rebaseline": null
     },
     {
@@ -738,7 +738,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-merchant",
-      "qualifyingSourceCommits": 17,
+      "qualifyingSourceCommits": 19,
       "rebaseline": null
     },
     {
@@ -761,7 +761,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-pirate",
-      "qualifyingSourceCommits": 21,
+      "qualifyingSourceCommits": 23,
       "rebaseline": null
     },
     {
@@ -783,7 +783,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-ronin",
-      "qualifyingSourceCommits": 18,
+      "qualifyingSourceCommits": 20,
       "rebaseline": null
     },
     {
@@ -805,7 +805,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-vampire",
-      "qualifyingSourceCommits": 18,
+      "qualifyingSourceCommits": 20,
       "rebaseline": null
     },
     {
@@ -827,7 +827,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-weird-west",
-      "qualifyingSourceCommits": 18,
+      "qualifyingSourceCommits": 20,
       "rebaseline": null
     },
     {
@@ -849,7 +849,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "starter-zombie",
-      "qualifyingSourceCommits": 20,
+      "qualifyingSourceCommits": 22,
       "rebaseline": null
     },
     {
@@ -868,7 +868,7 @@
       "confidence": "low",
       "highWater": 1,
       "name": "terminal-ui",
-      "qualifyingSourceCommits": 27,
+      "qualifyingSourceCommits": 28,
       "rebaseline": null
     }
   ],
@@ -901,8 +901,8 @@
         "path": ".github/workflows/pages.yml"
       },
       {
-        "commits": 18,
-        "lines": 841,
+        "commits": 19,
+        "lines": 851,
         "path": ".github/workflows/release.yml"
       },
       {
@@ -912,12 +912,17 @@
       },
       {
         "commits": 1,
+        "lines": 431,
+        "path": ".polyglot-pins.json"
+      },
+      {
+        "commits": 1,
         "lines": 1,
         "path": ".signalfire/save.json"
       },
       {
-        "commits": 55,
-        "lines": 2345,
+        "commits": 58,
+        "lines": 2368,
         "path": "CHANGELOG.md"
       },
       {
@@ -931,43 +936,43 @@
         "path": "PHILOSOPHY.md"
       },
       {
-        "commits": 31,
-        "lines": 2566,
+        "commits": 33,
+        "lines": 2792,
         "path": "README.es.md"
       },
       {
-        "commits": 31,
-        "lines": 2185,
+        "commits": 33,
+        "lines": 2430,
         "path": "README.fr.md"
       },
       {
-        "commits": 31,
-        "lines": 2345,
+        "commits": 33,
+        "lines": 2600,
         "path": "README.hi.md"
       },
       {
-        "commits": 31,
-        "lines": 2674,
+        "commits": 33,
+        "lines": 2979,
         "path": "README.it.md"
       },
       {
-        "commits": 31,
-        "lines": 2323,
+        "commits": 33,
+        "lines": 2563,
         "path": "README.ja.md"
       },
       {
-        "commits": 43,
-        "lines": 817,
+        "commits": 45,
+        "lines": 898,
         "path": "README.md"
       },
       {
-        "commits": 31,
-        "lines": 2028,
+        "commits": 33,
+        "lines": 2264,
         "path": "README.pt-BR.md"
       },
       {
-        "commits": 31,
-        "lines": 2716,
+        "commits": 33,
+        "lines": 2969,
         "path": "README.zh.md"
       },
       {
@@ -986,8 +991,8 @@
         "path": "SHIP_GATE.md"
       },
       {
-        "commits": 12,
-        "lines": 548,
+        "commits": 13,
+        "lines": 579,
         "path": "atlas/README.md"
       },
       {
@@ -996,18 +1001,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 12,
-        "lines": 5079,
+        "commits": 13,
+        "lines": 5184,
         "path": "atlas/page.json"
       },
       {
-        "commits": 12,
-        "lines": 43921,
+        "commits": 13,
+        "lines": 44086,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 12,
-        "lines": 105812,
+        "commits": 13,
+        "lines": 106121,
         "path": "atlas/structure.json"
       },
       {
@@ -1161,6 +1166,11 @@
         "path": "docs/handbook/02-engine-philosophy.md"
       },
       {
+        "commits": 2,
+        "lines": 12,
+        "path": "docs/handbook/08-ai-cognition.md"
+      },
+      {
         "commits": 1,
         "lines": 2,
         "path": "docs/handbook/13-content-files.md"
@@ -1261,18 +1271,18 @@
         "path": "docs/handbook/65-consequences-that-leave-marks.md"
       },
       {
-        "commits": 9,
-        "lines": 148,
+        "commits": 11,
+        "lines": 160,
         "path": "docs/handbook/66-visual-clients.md"
       },
       {
-        "commits": 3,
-        "lines": 297,
+        "commits": 2,
+        "lines": 264,
         "path": "docs/handbook/appendix-a-event-vocabulary.md"
       },
       {
-        "commits": 4,
-        "lines": 506,
+        "commits": 5,
+        "lines": 512,
         "path": "docs/handbook/appendix-d-cli-reference.md"
       },
       {
@@ -1791,6 +1801,26 @@
         "path": "packages/cli/src/__fixtures__/c1-forge-manifest.json"
       },
       {
+        "commits": 1,
+        "lines": 22,
+        "path": "packages/cli/src/__fixtures__/forge-companion-roles-manifest.json"
+      },
+      {
+        "commits": 1,
+        "lines": 221,
+        "path": "packages/cli/src/__fixtures__/forge-companion-roles-pack.json"
+      },
+      {
+        "commits": 1,
+        "lines": 22,
+        "path": "packages/cli/src/__fixtures__/forge-passive-roles-manifest.json"
+      },
+      {
+        "commits": 1,
+        "lines": 141,
+        "path": "packages/cli/src/__fixtures__/forge-passive-roles-pack.json"
+      },
+      {
         "commits": 7,
         "lines": 1192,
         "path": "packages/cli/src/audit-content.test.ts"
@@ -1881,8 +1911,8 @@
         "path": "packages/cli/src/c3/open-gates.ts"
       },
       {
-        "commits": 11,
-        "lines": 1290,
+        "commits": 14,
+        "lines": 1432,
         "path": "packages/cli/src/c4-content-intake.test.ts"
       },
       {
@@ -1976,13 +2006,13 @@
         "path": "packages/cli/src/history.ts"
       },
       {
-        "commits": 12,
-        "lines": 1353,
+        "commits": 13,
+        "lines": 1364,
         "path": "packages/cli/src/inspect.test.ts"
       },
       {
-        "commits": 14,
-        "lines": 1161,
+        "commits": 15,
+        "lines": 1165,
         "path": "packages/cli/src/inspect.ts"
       },
       {
@@ -2096,38 +2126,38 @@
         "path": "packages/cli/src/scaffold.ts"
       },
       {
-        "commits": 6,
-        "lines": 614,
+        "commits": 7,
+        "lines": 708,
         "path": "packages/cli/src/session-narration.test.ts"
       },
       {
-        "commits": 19,
-        "lines": 1419,
+        "commits": 21,
+        "lines": 1479,
         "path": "packages/cli/src/sidecar-command.ts"
       },
       {
-        "commits": 2,
-        "lines": 310,
+        "commits": 3,
+        "lines": 343,
         "path": "packages/cli/src/sidecar-pack-intake.test.ts"
       },
       {
-        "commits": 8,
-        "lines": 1284,
+        "commits": 10,
+        "lines": 1551,
         "path": "packages/cli/src/turns.test.ts"
       },
       {
-        "commits": 5,
-        "lines": 805,
+        "commits": 6,
+        "lines": 856,
         "path": "packages/cli/src/turns.ts"
       },
       {
-        "commits": 6,
-        "lines": 355,
+        "commits": 9,
+        "lines": 456,
         "path": "packages/cli/src/validate.test.ts"
       },
       {
-        "commits": 8,
-        "lines": 510,
+        "commits": 10,
+        "lines": 579,
         "path": "packages/cli/src/validate.ts"
       },
       {
@@ -2226,13 +2256,13 @@
         "path": "packages/content-schema/src/index.ts"
       },
       {
-        "commits": 27,
-        "lines": 3488,
+        "commits": 28,
+        "lines": 3592,
         "path": "packages/content-schema/src/intake.test.ts"
       },
       {
-        "commits": 32,
-        "lines": 4020,
+        "commits": 33,
+        "lines": 4046,
         "path": "packages/content-schema/src/intake.ts"
       },
       {
@@ -2306,8 +2336,8 @@
         "path": "packages/content-schema/src/validate.ts"
       },
       {
-        "commits": 3,
-        "lines": 5,
+        "commits": 1,
+        "lines": 1,
         "path": "packages/core/README.md"
       },
       {
@@ -2356,13 +2386,13 @@
         "path": "packages/core/src/engine.ts"
       },
       {
-        "commits": 4,
-        "lines": 1076,
+        "commits": 2,
+        "lines": 1425,
         "path": "packages/core/src/event-vocabulary.test.ts"
       },
       {
-        "commits": 3,
-        "lines": 310,
+        "commits": 1,
+        "lines": 192,
         "path": "packages/core/src/event-vocabulary.ts"
       },
       {
@@ -3026,13 +3056,13 @@
         "path": "packages/modules/src/belief-provenance.ts"
       },
       {
-        "commits": 10,
-        "lines": 918,
+        "commits": 13,
+        "lines": 1240,
         "path": "packages/modules/src/cognition-core.test.ts"
       },
       {
-        "commits": 9,
-        "lines": 735,
+        "commits": 11,
+        "lines": 880,
         "path": "packages/modules/src/cognition-core.ts"
       },
       {
@@ -3311,8 +3341,8 @@
         "path": "packages/modules/src/hazard-interpreter.ts"
       },
       {
-        "commits": 68,
-        "lines": 692,
+        "commits": 70,
+        "lines": 694,
         "path": "packages/modules/src/index.ts"
       },
       {
@@ -4391,13 +4421,13 @@
         "path": "packages/presentation/package.json"
       },
       {
-        "commits": 12,
-        "lines": 1466,
+        "commits": 13,
+        "lines": 1542,
         "path": "packages/presentation/src/builder.test.ts"
       },
       {
-        "commits": 12,
-        "lines": 1223,
+        "commits": 13,
+        "lines": 1243,
         "path": "packages/presentation/src/builder.ts"
       },
       {
@@ -4481,8 +4511,8 @@
         "path": "packages/sidecar/LICENSE"
       },
       {
-        "commits": 16,
-        "lines": 393,
+        "commits": 18,
+        "lines": 399,
         "path": "packages/sidecar/README.md"
       },
       {
@@ -4496,8 +4526,8 @@
         "path": "packages/sidecar/gdscript/framing.gd"
       },
       {
-        "commits": 7,
-        "lines": 1144,
+        "commits": 8,
+        "lines": 1150,
         "path": "packages/sidecar/gdscript/sidecar_client.gd"
       },
       {
@@ -4511,13 +4541,13 @@
         "path": "packages/sidecar/src/client.test.ts"
       },
       {
-        "commits": 11,
-        "lines": 932,
+        "commits": 12,
+        "lines": 953,
         "path": "packages/sidecar/src/client.ts"
       },
       {
-        "commits": 2,
-        "lines": 180,
+        "commits": 3,
+        "lines": 196,
         "path": "packages/sidecar/src/felt.test.ts"
       },
       {
@@ -4546,8 +4576,8 @@
         "path": "packages/sidecar/src/index.ts"
       },
       {
-        "commits": 21,
-        "lines": 1058,
+        "commits": 23,
+        "lines": 1083,
         "path": "packages/sidecar/src/protocol.ts"
       },
       {
@@ -4561,13 +4591,13 @@
         "path": "packages/sidecar/src/serializer.ts"
       },
       {
-        "commits": 28,
-        "lines": 3258,
+        "commits": 29,
+        "lines": 3651,
         "path": "packages/sidecar/src/server.test.ts"
       },
       {
-        "commits": 29,
-        "lines": 2961,
+        "commits": 30,
+        "lines": 3050,
         "path": "packages/sidecar/src/server.ts"
       },
       {
@@ -4846,8 +4876,8 @@
         "path": "packages/starter-colony/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-colony/src/intent-profiles.test.ts"
       },
       {
@@ -4921,8 +4951,8 @@
         "path": "packages/starter-cyberpunk/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-cyberpunk/src/intent-profiles.test.ts"
       },
       {
@@ -5026,8 +5056,8 @@
         "path": "packages/starter-detective/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-detective/src/intent-profiles.test.ts"
       },
       {
@@ -5096,8 +5126,8 @@
         "path": "packages/starter-fantasy/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-fantasy/src/intent-profiles.test.ts"
       },
       {
@@ -5211,8 +5241,8 @@
         "path": "packages/starter-gladiator/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-gladiator/src/intent-profiles.test.ts"
       },
       {
@@ -5346,8 +5376,8 @@
         "path": "packages/starter-merchant/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 212,
+        "commits": 4,
+        "lines": 216,
         "path": "packages/starter-merchant/src/intent-profiles.test.ts"
       },
       {
@@ -5421,8 +5451,8 @@
         "path": "packages/starter-pirate/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-pirate/src/intent-profiles.test.ts"
       },
       {
@@ -5521,8 +5551,8 @@
         "path": "packages/starter-ronin/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-ronin/src/intent-profiles.test.ts"
       },
       {
@@ -5626,8 +5656,8 @@
         "path": "packages/starter-vampire/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-vampire/src/intent-profiles.test.ts"
       },
       {
@@ -5726,8 +5756,8 @@
         "path": "packages/starter-weird-west/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-weird-west/src/intent-profiles.test.ts"
       },
       {
@@ -5836,8 +5866,8 @@
         "path": "packages/starter-zombie/src/index.ts"
       },
       {
-        "commits": 2,
-        "lines": 194,
+        "commits": 4,
+        "lines": 198,
         "path": "packages/starter-zombie/src/intent-profiles.test.ts"
       },
       {
@@ -5886,18 +5916,18 @@
         "path": "packages/terminal-ui/src/glyphs.ts"
       },
       {
-        "commits": 14,
-        "lines": 94,
+        "commits": 15,
+        "lines": 95,
         "path": "packages/terminal-ui/src/index.ts"
       },
       {
-        "commits": 12,
-        "lines": 896,
+        "commits": 13,
+        "lines": 920,
         "path": "packages/terminal-ui/src/presentation.test.ts"
       },
       {
-        "commits": 9,
-        "lines": 610,
+        "commits": 10,
+        "lines": 621,
         "path": "packages/terminal-ui/src/presentation.ts"
       },
       {
@@ -5906,13 +5936,13 @@
         "path": "packages/terminal-ui/src/relic-hud.test.ts"
       },
       {
-        "commits": 33,
-        "lines": 4140,
+        "commits": 34,
+        "lines": 4178,
         "path": "packages/terminal-ui/src/renderer.test.ts"
       },
       {
-        "commits": 36,
-        "lines": 3184,
+        "commits": 37,
+        "lines": 3231,
         "path": "packages/terminal-ui/src/renderer.ts"
       },
       {
@@ -5931,8 +5961,8 @@
         "path": "scripts/check-packaging.mjs"
       },
       {
-        "commits": 13,
-        "lines": 1091,
+        "commits": 14,
+        "lines": 1233,
         "path": "scripts/gates.test.ts"
       },
       {
@@ -5969,6 +5999,11 @@
         "commits": 2,
         "lines": 4,
         "path": "site/src/content/docs/handbook/02-engine-philosophy.md"
+      },
+      {
+        "commits": 2,
+        "lines": 12,
+        "path": "site/src/content/docs/handbook/08-ai-cognition.md"
       },
       {
         "commits": 1,
@@ -6146,18 +6181,18 @@
         "path": "site/src/content/docs/handbook/65-consequences-that-leave-marks.md"
       },
       {
-        "commits": 9,
-        "lines": 158,
+        "commits": 11,
+        "lines": 170,
         "path": "site/src/content/docs/handbook/66-visual-clients.md"
       },
       {
-        "commits": 3,
-        "lines": 315,
+        "commits": 2,
+        "lines": 264,
         "path": "site/src/content/docs/handbook/appendix-a-event-vocabulary.md"
       },
       {
-        "commits": 4,
-        "lines": 412,
+        "commits": 5,
+        "lines": 418,
         "path": "site/src/content/docs/handbook/appendix-d-cli-reference.md"
       },
       {
@@ -6176,8 +6211,8 @@
         "path": "templates/starter/LICENSE"
       },
       {
-        "commits": 8,
-        "lines": 143,
+        "commits": 11,
+        "lines": 151,
         "path": "templates/starter/README.md"
       },
       {
@@ -6196,8 +6231,8 @@
         "path": "templates/starter/src/content.json"
       },
       {
-        "commits": 16,
-        "lines": 448,
+        "commits": 18,
+        "lines": 457,
         "path": "templates/starter/src/content.ts"
       },
       {
@@ -6206,13 +6241,13 @@
         "path": "templates/starter/src/index.ts"
       },
       {
-        "commits": 25,
-        "lines": 459,
+        "commits": 27,
+        "lines": 469,
         "path": "templates/starter/src/setup.ts"
       },
       {
-        "commits": 17,
-        "lines": 693,
+        "commits": 19,
+        "lines": 703,
         "path": "templates/starter/src/starter.test.ts"
       },
       {
@@ -6241,220 +6276,213 @@
     "level": "full",
     "reason": "at least 30 qualifying commits, and at least 20 source files reach 10 revisions"
   },
-  "generatedAt": "2026-11-24T13:33:16.359Z",
+  "generatedAt": "2026-11-25T12:36:56.552Z",
   "generatedFrom": {
-    "commit": "c678bc7ee4d869df08e91d8e3c2f9e669b37f437"
+    "commit": "18d65510f5c367d3e8d6314aba382d110b0e77c4"
   },
   "pairs": [
     {
       "a": "README.es.md",
       "b": "README.fr.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.hi.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.it.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.ja.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.es.md",
+      "b": "README.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
+    },
+    {
+      "a": "README.es.md",
       "b": "README.pt-BR.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.zh.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
-    },
-    {
-      "a": "README.es.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
     },
     {
       "a": "README.fr.md",
       "b": "README.hi.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.it.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.ja.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.fr.md",
+      "b": "README.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
+    },
+    {
+      "a": "README.fr.md",
       "b": "README.pt-BR.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.zh.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
-    },
-    {
-      "a": "README.fr.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
     },
     {
       "a": "README.hi.md",
       "b": "README.it.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.ja.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.hi.md",
+      "b": "README.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
+    },
+    {
+      "a": "README.hi.md",
       "b": "README.pt-BR.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.zh.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
-    },
-    {
-      "a": "README.hi.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
     },
     {
       "a": "README.it.md",
       "b": "README.ja.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.it.md",
+      "b": "README.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
+    },
+    {
+      "a": "README.it.md",
       "b": "README.pt-BR.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.it.md",
       "b": "README.zh.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
-      "a": "README.it.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
+      "a": "README.ja.md",
+      "b": "README.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
     },
     {
       "a": "README.ja.md",
       "b": "README.pt-BR.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
     },
     {
       "a": "README.ja.md",
       "b": "README.zh.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
-    },
-    {
-      "a": "README.ja.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
     },
     {
       "a": "README.md",
-      "b": "SHIP_GATE.md",
+      "b": "README.pt-BR.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
+    },
+    {
+      "a": "README.md",
+      "b": "README.zh.md",
+      "either": 23,
+      "shared": 12,
+      "strength": 0.521739
+    },
+    {
+      "a": "README.md",
+      "b": "package.json",
       "either": 24,
       "shared": 12,
       "strength": 0.5
     },
     {
-      "a": "README.md",
-      "b": "package.json",
-      "either": 22,
-      "shared": 12,
-      "strength": 0.545455
-    },
-    {
       "a": "README.pt-BR.md",
       "b": "README.zh.md",
-      "either": 13,
-      "shared": 13,
+      "either": 15,
+      "shared": 15,
       "strength": 1
-    },
-    {
-      "a": "README.pt-BR.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
-    },
-    {
-      "a": "README.zh.md",
-      "b": "package.json",
-      "either": 19,
-      "shared": 10,
-      "strength": 0.526316
     },
     {
       "a": "SCORECARD.md",
@@ -7871,18 +7899,11 @@
       "strength": 0.777778
     },
     {
-      "a": "packages/content-schema/src/gate.ts",
-      "b": "packages/content-schema/src/intake.ts",
-      "either": 22,
-      "shared": 11,
-      "strength": 0.5
-    },
-    {
       "a": "packages/content-schema/src/intake.test.ts",
       "b": "packages/content-schema/src/intake.ts",
-      "either": 23,
-      "shared": 15,
-      "strength": 0.652174
+      "either": 24,
+      "shared": 16,
+      "strength": 0.666667
     },
     {
       "a": "packages/core/package.json",
@@ -8881,23 +8902,23 @@
     {
       "a": "packages/sidecar/src/protocol.ts",
       "b": "packages/sidecar/src/server.test.ts",
-      "either": 19,
-      "shared": 11,
-      "strength": 0.578947
+      "either": 21,
+      "shared": 12,
+      "strength": 0.571429
     },
     {
       "a": "packages/sidecar/src/protocol.ts",
       "b": "packages/sidecar/src/server.ts",
-      "either": 18,
-      "shared": 11,
-      "strength": 0.611111
+      "either": 20,
+      "shared": 12,
+      "strength": 0.6
     },
     {
       "a": "packages/sidecar/src/server.test.ts",
       "b": "packages/sidecar/src/server.ts",
-      "either": 23,
-      "shared": 12,
-      "strength": 0.521739
+      "either": 24,
+      "shared": 13,
+      "strength": 0.541667
     },
     {
       "a": "packages/soundpack-core/package.json",
@@ -9455,9 +9476,9 @@
     {
       "a": "packages/terminal-ui/src/renderer.test.ts",
       "b": "packages/terminal-ui/src/renderer.ts",
-      "either": 23,
-      "shared": 18,
-      "strength": 0.782609
+      "either": 24,
+      "shared": 19,
+      "strength": 0.791667
     }
   ],
   "parameters": {
@@ -9470,16 +9491,16 @@
     "floor": "strong",
     "floorHeld": false,
     "floorTrigger": null,
-    "headDate": "2026-11-24T08:27:28-05:00",
-    "inScopeFiles": 1397,
+    "headDate": "2026-11-24T20:00:37-05:00",
+    "inScopeFiles": 1402,
     "pinnedStart": null,
     "priorFloor": "strong",
-    "qualifyingCommits": 437,
+    "qualifyingCommits": 440,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 10,
-    "since": "2026-05-28T13:27:28.000Z",
+    "since": "2026-05-29T01:00:37.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",
@@ -9495,7 +9516,7 @@
     ],
     "sourceFileReach": 20,
     "sourceFileRise": 25,
-    "sourceFilesReachingStrongFloor": 52,
+    "sourceFilesReachingStrongFloor": 53,
     "strength": 0.5,
     "windowDays": 180
   },

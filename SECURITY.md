@@ -4,10 +4,10 @@
 
 | Version | Supported |
 |---------|-----------|
-| 3.x     | Yes       |
-| < 3.0   | No        |
+| 4.x     | Yes       |
+| < 4.0   | No        |
 
-Security fixes ship only in the latest 3.x release. The last 2.x release was 2.9.0 (2026-07-22).
+Security fixes ship only in the latest 4.x release. The last 3.x release was 3.12.2 (2026-11-21).
 
 ## Reporting a Vulnerability
 

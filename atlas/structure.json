@@ -44,7 +44,7 @@
           "path": ".github/workflows/pages.yml"
         },
         {
-          "hash": "e2a819e9f62e11584cb5810f7065d4ba6d68a947b1028d39e76e7d3e5067f1d9",
+          "hash": "c2bb3afbe4e571718982f104effc87ee114ad2a8340d9461678f249b5f63dd23",
           "path": ".github/workflows/release.yml"
         }
       ],
@@ -105,7 +105,7 @@
           "path": "packages/asset-registry/README.zh.md"
         },
         {
-          "hash": "3714d115c4436c02be29ab50e73c0b8c856ce73cce056e6eebe3a0321ab9fc86",
+          "hash": "9442142899f9330062e4cb5ddfa3ea2ce19424bc71b619a84b0f8070d6167de8",
           "path": "packages/asset-registry/package.json"
         },
         {
@@ -374,7 +374,7 @@
           "path": "packages/audio-director/README.zh.md"
         },
         {
-          "hash": "32b4302108eb27d264e11975bc1f53535ba7123df239cc8dd4b0d8c2df29d93f",
+          "hash": "0d1e7f35d5d61ddde8b5fcab7c244983328b623cd0028cfea0654d6113b28197",
           "path": "packages/audio-director/package.json"
         },
         {
@@ -523,7 +523,7 @@
           "path": "packages/campaign-memory/README.zh.md"
         },
         {
-          "hash": "699db45ff3cc31bc8dc1101a6a76969342e3a64b716cae5cd71b0acb359cb30f",
+          "hash": "8ef352513fa5daa812daa1835dd6febbe3346acd6c7760c19cb925cfa2d81de6",
           "path": "packages/campaign-memory/package.json"
         },
         {
@@ -876,7 +876,7 @@
           "path": "packages/character-creation/README.zh.md"
         },
         {
-          "hash": "2581f69b8f2ce5d2015fc9cf7d53757199f4e62c95c6bcd4f2d2fd95acb4c9b3",
+          "hash": "ef596143929f83f2106a2f593bb43bee3020798e046b8569fb1689f086ac1270",
           "path": "packages/character-creation/package.json"
         },
         {
@@ -1219,7 +1219,7 @@
           "path": "packages/character-profile/README.zh.md"
         },
         {
-          "hash": "0636dbe8fa99fd5a25a940696e34fbca7b8c8807d5079f3a0760a810e71074ec",
+          "hash": "4756ac7f57c8907d5dfaf1fb911ce4abf0da3f48c7ac8f4dfc0e1e4c2621bdda",
           "path": "packages/character-profile/package.json"
         },
         {
@@ -1593,7 +1593,7 @@
           "path": "packages/cli/README.zh.md"
         },
         {
-          "hash": "7f68ee52acf6d588af2dcf0fc656c8ba253a5af1aa02cd33fde12226fc95d612",
+          "hash": "46d5ff17c5a47e83fde4bf7303151f578a57b0cbf91d4d82b239574b9f5fe793",
           "path": "packages/cli/package.json"
         },
         {
@@ -1603,6 +1603,22 @@
         {
           "hash": "d24cacc9b0dcef5df6b0893eb2a820fd920ec5368ebef7979bd1d0146c648417",
           "path": "packages/cli/src/__fixtures__/c1-forge-manifest.json"
+        },
+        {
+          "hash": "d75e9cd51e918e664a96a87b91445757b6704516b9c44bfe32bb99abfd97846f",
+          "path": "packages/cli/src/__fixtures__/forge-companion-roles-manifest.json"
+        },
+        {
+          "hash": "b8966113b48dfbbef8b25408d05a1722105bfedd3977f62d02786421aeb5845d",
+          "path": "packages/cli/src/__fixtures__/forge-companion-roles-pack.json"
+        },
+        {
+          "hash": "a0700b4705a1f36191e120dad578e04d3b3d890fc326fa298262fea1fd60579c",
+          "path": "packages/cli/src/__fixtures__/forge-passive-roles-manifest.json"
+        },
+        {
+          "hash": "0f4541410cce316b10079825bee9046d82bf8d5f20f8f707fa3a2e79bcdeef99",
+          "path": "packages/cli/src/__fixtures__/forge-passive-roles-pack.json"
         },
         {
           "hash": "d709f9d54cbbdbaff1da484f484e0f484283c054fe24f0019e7b76a86feb2358",
@@ -3747,7 +3763,7 @@
           "path": "packages/cli/src/c3/open-gates.ts"
         },
         {
-          "hash": "2a4dac81d525e37f5be9649287f6b43ea59844c18bc7278fcad50707ccd6fc4e",
+          "hash": "5d4413f13b9b186a2d00550fde9c587ceb4ff3182fc31b4f0bb611c2ba3d4c36",
           "importOrder": [
             "packages/cli/src/sidecar-command.ts",
             "packages/cli/src/engine-version.ts",
@@ -4755,7 +4771,7 @@
           "path": "packages/cli/src/index.ts"
         },
         {
-          "hash": "978e733175b62c314c0137f21d0886b33a339ebdffa5877f64af8dd5035de85f",
+          "hash": "79ac62586ec263057a8491d434745af6dfbaaf1b1852f0c1a7dd868a07032d7b",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/terminal-ui/src/index.ts",
@@ -4785,25 +4801,25 @@
             {
               "in": "runInspectSave",
               "kind": "catch",
-              "line": 399
+              "line": 401
             },
             {
               "in": "runInspectSave",
               "kind": "catch",
-              "line": 420
+              "line": 422
             },
             {
               "in": "runInspectSave",
               "kind": "catch",
-              "line": 450
+              "line": 452
             },
             {
               "in": "runInspectSave",
               "kind": "throw",
-              "line": 460
+              "line": 462
             }
           ],
-          "hash": "347b68690532c3d9565c0a11e07b45a1efbb0bab72c904a238d77249b6bb9afb",
+          "hash": "d8babde069afa5830847102c575bf2244a0d3c6d0eadb4ddd8c6099b942e0748",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/modules/src/index.ts",
@@ -6200,7 +6216,7 @@
           "path": "packages/cli/src/scaffold.ts"
         },
         {
-          "hash": "e6230ed879ecbe2de9e065d4b28df9e3553cc213433113a0409913eea920f7c8",
+          "hash": "5dbdc08f220d508534b43eb0bf16aeb439cc8ab55f6bf3f744310d8cab5f6256",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/terminal-ui/src/index.ts",
@@ -6226,20 +6242,20 @@
             {
               "in": "runSidecar",
               "kind": "catch",
-              "line": 234
+              "line": 256
             },
             {
               "in": "runSidecar",
               "kind": "throw",
-              "line": 247
+              "line": 269
             },
             {
               "in": "runSidecar",
               "kind": "catch",
-              "line": 321
+              "line": 343
             }
           ],
-          "hash": "346c3b6a77f3316bb185d67a077db16dea56002038e7e06ba01fe8b64c3f637a",
+          "hash": "cceda41b2901810face9e43044e9a42645ac123877721bb91963644a9f7341f5",
           "importOrder": [
             "packages/sidecar/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -6261,7 +6277,7 @@
           "path": "packages/cli/src/sidecar-command.ts"
         },
         {
-          "hash": "da3883ead66b1d656a70b1fe4b7e838637762f74d3d024e741264629c3a57e92",
+          "hash": "3a6bac9d2641118686d6307e942033d700b7fab4f105b8e5bbd5bad154562bbd",
           "importOrder": [
             "packages/sidecar/src/index.ts",
             "packages/cli/src/sidecar-command.ts",
@@ -6276,7 +6292,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "cc312394fbcc61d41fca19ecead7299dae1b9f04172c079a90d4ecc0b2963326",
+          "hash": "d66e9cac02f8abc3f2946ce2dedba52f8cc22cf2cc69bd6bdc1097c64920280b",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/starter-fantasy/src/index.ts",
@@ -6296,6 +6312,7 @@
           "exports": [
             "getAbilityCatalog",
             "listHostilesInPlayerZone",
+            "listTurnActors",
             "runCompanionTurns",
             "runNpcTurns"
           ],
@@ -6303,15 +6320,15 @@
             {
               "in": "runNpcTurns",
               "kind": "catch",
-              "line": 119
+              "line": 154
             },
             {
               "in": "runCompanionTurns",
               "kind": "catch",
-              "line": 276
+              "line": 313
             }
           ],
-          "hash": "6645377ac867322d460f3ff313c3e38f48a42a2c27864b975f58c865f05166f0",
+          "hash": "e671c0afde0a92ec28ec51826d356c0600c42c508c3c36b96fe8e2531282af4a",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -6327,7 +6344,7 @@
           "path": "packages/cli/src/turns.ts"
         },
         {
-          "hash": "e6a76457d11597052596003ee77135e4c59d3caaa146b73aa2f8338626845adb",
+          "hash": "217ea4ad7500d6c03e2ed7e03247588425c5b54ca098ba82dbe1d07154fe1f1f",
           "importOrder": [
             "packages/cli/src/validate.ts",
             "packages/cli/src/c0/fixture-path.ts"
@@ -6347,15 +6364,15 @@
             {
               "in": "runValidate",
               "kind": "catch",
-              "line": 166
+              "line": 202
             },
             {
               "in": "runValidate",
               "kind": "catch",
-              "line": 228
+              "line": 265
             }
           ],
-          "hash": "757a583820b7eef799809da35c72eb4c374ace59eea4347c9b400d15e5909a8f",
+          "hash": "5fa105562e995ecb9aa478981372df5d13924ea88e0df9972df74e24bd9e2eb1",
           "importOrder": [
             "packages/content-schema/src/index.ts",
             "packages/modules/src/index.ts",
@@ -6514,7 +6531,7 @@
           "path": "packages/content-schema/README.zh.md"
         },
         {
-          "hash": "825d9d002a4cf82d3f9a28d5073596f3aa7d905883a61f9bf5a60346b69b390b",
+          "hash": "09613b2a670886dc39fc105278ee8155c92b096554493957f2ab767fdf66c6d2",
           "path": "packages/content-schema/package.json"
         },
         {
@@ -6661,7 +6678,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "e508480fbcbba537dcc7aaeb82e290140ed87c366830bce3b7b427f32f315ad9",
+          "hash": "c99ccf6d9cd4ba1566cdb5c5dc8b324085251124dd6059454f30497356be6895",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts"
@@ -6701,20 +6718,20 @@
             {
               "in": "applyContentPack",
               "kind": "catch",
-              "line": 1352
+              "line": 1364
             },
             {
               "in": "applyContentPack",
               "kind": "catch",
-              "line": 1372
+              "line": 1384
             },
             {
               "in": "applyContentPack",
               "kind": "throw",
-              "line": 1381
+              "line": 1394
             }
           ],
-          "hash": "c061e593d5e7d403b16e145af589a5c0aaa8aeae804b0b1f2fa5f8a9ab3e2784",
+          "hash": "17f0da9cbdbdd7e0c8c25ca0f0baff7ff5be49c64d42a42a0af717f2d2b438b9",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/refs.ts",
@@ -7083,7 +7100,7 @@
           "path": "packages/core/README.zh.md"
         },
         {
-          "hash": "fa81b99290aefc2124dc769e4b009683a2d2a94de5542a7dc6ef1c6f6514f04c",
+          "hash": "2c8f77d42b0daa5c651ef19e9b5c43a5ba207f5e4652d54ec292dbe4cf09114c",
           "path": "packages/core/package.json"
         },
         {
@@ -7266,7 +7283,7 @@
           "path": "packages/core/src/engine.ts"
         },
         {
-          "hash": "f76adb5b70d01e642398f58d47fb5ff1447c69f4eb5930d4ee011f013bc63213",
+          "hash": "3a1941a06d472835076f8ef635f3581eeebbdb08d539e0aa527ec31c74c89d26",
           "importsFiles": [
             "packages/core/src/index.ts"
           ],
@@ -8166,7 +8183,7 @@
           "path": "docs/handbook/07-rulesets.md"
         },
         {
-          "hash": "1469fc0ab89b56da1d4df793a82a6d263247a8adf2b581221f94763b9ecf7e65",
+          "hash": "b86da9670db116e0831769f5ad6b4f62ca49ee86988d17c227014683a1ca080c",
           "path": "docs/handbook/08-ai-cognition.md"
         },
         {
@@ -8406,11 +8423,11 @@
           "path": "docs/handbook/65-consequences-that-leave-marks.md"
         },
         {
-          "hash": "e83d8a44f473729b0bf7ea6509778793823dfc0e315fe70e0f2e5779969f9b6e",
+          "hash": "6f46e0801af0c769fb309aca3acd8fc4f4f80b2f125d1283a048cc898ee2dd58",
           "path": "docs/handbook/66-visual-clients.md"
         },
         {
-          "hash": "b2be32d25780f102341304d1960706babd583841909f8a3cd867f8444e859a33",
+          "hash": "baa485555496078cdabd07d29881524c2a9387bf8160b37a9df616a933bf9a4f",
           "path": "docs/handbook/appendix-a-event-vocabulary.md"
         },
         {
@@ -8422,7 +8439,7 @@
           "path": "docs/handbook/appendix-c-module-api.md"
         },
         {
-          "hash": "bd06a0a9ed67b7e33e33f1a2a7ddbd4bf0887681ffc622eeb56430aee9ba6696",
+          "hash": "4a90dbfd1f7f7c4e60dfeceea81e1ff5b76139c84e23c343add7d3d1a593949e",
           "path": "docs/handbook/appendix-d-cli-reference.md"
         },
         {
@@ -8617,7 +8634,7 @@
           "path": "packages/equipment/README.zh.md"
         },
         {
-          "hash": "2b9dcbb54c3ad1027b6a6c2a1606406b3afacfe1cc54a7a58dcf0b65a517e14f",
+          "hash": "a178d7ddc0f500173155b0ae050c689cb5f403bb3c5fa6579033fd6767da85bf",
           "path": "packages/equipment/package.json"
         },
         {
@@ -8966,7 +8983,7 @@
           "path": "packages/image-gen/README.zh.md"
         },
         {
-          "hash": "bc1387d153046563f4c14b5f7106df1d43b6c2c9f067f8f1d6c800f49d00a537",
+          "hash": "a993953715d0550164c03774066e70ab8b3341a988b976c3e1f90401f1036487",
           "path": "packages/image-gen/package.json"
         },
         {
@@ -9297,7 +9314,7 @@
           "path": "packages/ledger-adapter/README.md"
         },
         {
-          "hash": "e63d76da36b2ccb0dc5523c39c9ae27f66ec76e7bf6c0947e11fc2d5ca8f91de",
+          "hash": "b00073f274b183587a03bd51b3f681663643bea77d396b1a2ff23d3e83046a55",
           "path": "packages/ledger-adapter/package.json"
         },
         {
@@ -10579,7 +10596,7 @@
           "path": "packages/modules/README.zh.md"
         },
         {
-          "hash": "8cdc6f32aae634345a96f4d037646f7087c2912a6a17f97a8cd2d63552bc9fe2",
+          "hash": "46bde2b2eb617e71a5ecf3faa982ad589d7cd8c337cfd2b1084604504c130de3",
           "path": "packages/modules/package.json"
         },
         {
@@ -11221,7 +11238,7 @@
           "path": "packages/modules/src/belief-provenance.ts"
         },
         {
-          "hash": "0cebca8ecde70b3baa73159622c822cfbba3670c37006150edee6840a6b22fc6",
+          "hash": "003f1a90cca556ae65545c5501a7ca74d5f87bdee4f221607ac123dce45d330a",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/modules/src/cognition-core.ts",
@@ -11258,7 +11275,7 @@
             "selectIntent",
             "setBelief"
           ],
-          "hash": "3a078febb29afcacb243a14786b4fe65fc1ba6c3978a11f1b9bcfef860a46cfe",
+          "hash": "db34fa6c927d129032e0b910b1543a1f5409e162825538211dfa38452d1223c2",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/modules/src/status-core.ts",
@@ -12633,7 +12650,7 @@
           "path": "packages/modules/src/hazard-interpreter.ts"
         },
         {
-          "hash": "fb64a726c3f31b27574c67a67ec0d55b2869ab84bfdff9472746d5cc20087bcb",
+          "hash": "407599ded4955989b09927aea64f24d122d43d0686181c6d2db4a9d44a81ae65",
           "importOrder": [
             "packages/modules/src/make-event.ts",
             "packages/modules/src/traversal-core.ts",
@@ -14726,7 +14743,7 @@
           "path": "packages/ollama/README.zh.md"
         },
         {
-          "hash": "ab92925d0db60b1f3acb67713a69b4676ec0162c428b50908d6bb4faa4037625",
+          "hash": "d2b1e182675c4421d9acb395281eadb2f2bced7f0664ba0b3744bbd464dac9ff",
           "path": "packages/ollama/package.json"
         },
         {
@@ -18360,7 +18377,7 @@
           "path": "packages/pack-registry/README.zh.md"
         },
         {
-          "hash": "8bbaa8c310ccbc53a9db5f8b79638e4c7f53b7f8c9bd7ec69ee5cb5511641ba6",
+          "hash": "6e5a02bde15646a14c9a704cf0abd477dd2be12d6ed329a3b6c36b8f3260275b",
           "path": "packages/pack-registry/package.json"
         },
         {
@@ -18684,11 +18701,11 @@
           "path": "packages/presentation/README.zh.md"
         },
         {
-          "hash": "46511b18b63203daa47b9e076a42b11b2bc127af0ec7af012abfd912f4754d42",
+          "hash": "cf40ac0dead6c47bfb3374840c28c4a4676ec7b3ffa059230809bbe2e2aafaf9",
           "path": "packages/presentation/package.json"
         },
         {
-          "hash": "1977f6560d405768be78944c78e87eaca1485cb57571d5800f2abb8cb5499a7c",
+          "hash": "164fc3a7be140a34afbbdadd110650f8cd6d4893cc2b9352cbcac494b9bf54c1",
           "importsFiles": [
             "packages/presentation/src/builder.ts",
             "packages/presentation/src/validate.ts"
@@ -18704,7 +18721,7 @@
             "deriveTone",
             "deriveUrgency"
           ],
-          "hash": "28cdf79496025aa0a695b9b7269775343bf3df8009c4f87464bbc4058d526060",
+          "hash": "4d706a8f2093215ccdb58a17ea348e0dae27fcc1dac334e7f8b2699249b36a12",
           "importsFiles": [
             "packages/presentation/src/types.ts"
           ],
@@ -18787,7 +18804,11 @@
           "path": ".gitignore"
         },
         {
-          "hash": "8556b28de090838eaea62c6c870a09cf2f9716cafaebf9b25001de4a368f6acb",
+          "hash": "522fa8e606a6fc35be3dafab1b977e8187f2e6d02167dcd5aef12d91c34aadef",
+          "path": ".polyglot-pins.json"
+        },
+        {
+          "hash": "62e622f577475b7e59a4f14bfe2365cb27ad07a3c2ef229106fbc5a179ada26f",
           "path": "CHANGELOG.md"
         },
         {
@@ -18807,35 +18828,35 @@
           "path": "PHILOSOPHY.md"
         },
         {
-          "hash": "4ff022297da470756432268f296df52b3b3efd63e5250edd576e6d01dd8e0701",
+          "hash": "57be2e9be0675f3ceb08b76815fa80d4314e1237de9ee6af188821c5081d4f8f",
           "path": "README.es.md"
         },
         {
-          "hash": "084410479701eef39e71100bb6b4eaa583f9ef64a4dda2d1e9408c72b02b671e",
+          "hash": "c0bfcd8dbc17c6dfe8f46b0c7a2e5c392f6f46cfba76e21fbf0a9448a6b83706",
           "path": "README.fr.md"
         },
         {
-          "hash": "902bd1ff989086640303640cf01d5677fb773ef69dbde5d720b4cdb047ffbc2a",
+          "hash": "ddf1d71a9c82a55e6cfe95ead55b90176e4d16ad3bb6e6e4511b0e91803d8dfd",
           "path": "README.hi.md"
         },
         {
-          "hash": "3c7f3341ed8a7c6b6281995ad3565ae32f7520bef4067ac7704402c98633194e",
+          "hash": "bbc3c861eb3339b3dd2ca9a9e825002829c56cb46fa273ce862c33492eb6caef",
           "path": "README.it.md"
         },
         {
-          "hash": "a960406327035b8df2915600270f79fca1535532cc7e9b3197a04ae21cc2e828",
+          "hash": "2b437559d148edb22150b43d5949576078a629e29aee258af2e10cb05b31fd0f",
           "path": "README.ja.md"
         },
         {
-          "hash": "7cd276f8a32b0eba044cedcc2566cbae960bd841127742a2cfe919106fe589c9",
+          "hash": "153b3a8720b4ae7eff491c8336940c776c5c991a9074fbbf317fdc5885099423",
           "path": "README.md"
         },
         {
-          "hash": "4003981d63e9a91bfd96d8e0c343f27865de658aedf7831e4a071348f5e1950e",
+          "hash": "72c61c4da9c39711c6d4bd543a33a43f3908e3be83738d195935c7e90b1006ec",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "9f692ab22f21e1039b6fc7c39a3bde5e099f7f8b1d51b1d3bf8ba79d40b3b0a6",
+          "hash": "223e62e2ae61e6d5926027e28e0f5fcb0a46e12b86fec84d10daa1ac630c5e84",
           "path": "README.zh.md"
         },
         {
@@ -18843,11 +18864,11 @@
           "path": "SCORECARD.md"
         },
         {
-          "hash": "ae9e5117de8295f1ba86bd50c98f3af8955a874137dc946b7281daca59b56cd7",
+          "hash": "ef59e1011820c58534216f762246c7649a1bd9f6c7f27827162f40fe17f23fe9",
           "path": "SECURITY.md"
         },
         {
-          "hash": "9b8a0d6a26e65d764a3515cd520499b868485deab85b4e6c8b974335ca94ec3c",
+          "hash": "07424ba3908371dab9015d9f110e81f42e10280d5d6c6f7da0e6f53808052376",
           "path": "SHIP_GATE.md"
         },
         {
@@ -18859,11 +18880,11 @@
           "path": "eslint.config.js"
         },
         {
-          "hash": "d540018d0863141656ae20fa58763fbb395defa75e8b2c6ee257f5d1b15d0db4",
+          "hash": "2505ac1703d50334c89b10f730f9143f46c3a8e29cb1f65eb073b8d5cb24254e",
           "path": "package-lock.json"
         },
         {
-          "hash": "0a1890a3d7c9877a45c3c002146e5c076802534f69a5abaa8797067543be4e5c",
+          "hash": "dcf211314cea1cedb17233263971ca99efff84c4cfd3a66de37f2f4fa5f451b3",
           "path": "package.json"
         },
         {
@@ -18939,7 +18960,7 @@
           "path": "packages/rumor-system/README.zh.md"
         },
         {
-          "hash": "fc3211a3716a1268d623f79822418d61fe890e6ec61d59f2643137adcc89b634",
+          "hash": "f7ef49e4fba294c44a68be583226f823a0dd3856c2328c2eae3335a6f9f31d43",
           "path": "packages/rumor-system/package.json"
         },
         {
@@ -19110,8 +19131,8 @@
     },
     {
       "dynamicReads": 6,
-      "dynamicSpawns": 3,
-      "dynamicSpawnsInTests": 2,
+      "dynamicSpawns": 4,
+      "dynamicSpawnsInTests": 3,
       "dynamicWrites": 0,
       "entryPoints": [],
       "externals": 0,
@@ -19130,7 +19151,7 @@
           "sequences": []
         },
         {
-          "hash": "1961b91c651c35eb48720d15481a6df5105186b2b6a25f8f164cd81fc63758ef",
+          "hash": "335ad6c990150571da07d1b63709b3e456a40bab72cdb26e351578ba1ff2d71d",
           "importsFiles": [
             "vitest.config.ts"
           ],
@@ -19217,7 +19238,7 @@
           "path": "packages/sidecar/LICENSE"
         },
         {
-          "hash": "5314d099be337ad7939355bef61f5197de343c24b70b511817e8ea94c20b828e",
+          "hash": "663e7de5cc4377412aaff937da5a13f20b9f9c7f0bf3f760c309fc7976affdc5",
           "path": "packages/sidecar/README.md"
         },
         {
@@ -19255,14 +19276,14 @@
             "try_canonical_json",
             "try_canonical_state_hash"
           ],
-          "hash": "f91f4283fdcb424898f2ce096bd2ecf4b8ecd0d37109e8a2425bd7f73a3bc3b6",
+          "hash": "b2fb9f376f7a8337fbf5fe99f16299d067d4ede053f171ca8bc4229b7b69144f",
           "importsFiles": [
             "packages/sidecar/gdscript/framing.gd"
           ],
           "path": "packages/sidecar/gdscript/sidecar_client.gd"
         },
         {
-          "hash": "027365074d782f6701cce5391b97518b7599eb477da0e04dc724030d1c38eb56",
+          "hash": "805ca70dd75bec1d7fbd9e953d3153382d210d945c8c38bab5b6767626984e96",
           "path": "packages/sidecar/package.json"
         },
         {
@@ -19283,7 +19304,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "f50d8ddfee83997a9aa1081b778efabf3b6544ae3a5bd59919283ce3b7b51e6d",
+          "hash": "4b87d0398d6c31099ae39cb5a049709e5878b8a5f4660bbfdfa6e92fbef69a0c",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/framing.ts",
@@ -19293,7 +19314,7 @@
           "path": "packages/sidecar/src/client.ts"
         },
         {
-          "hash": "e93e7e23dd79e4ccca64e9253cb01ecf091f0af9b4546d2cb7e2e6ef8cd91c06",
+          "hash": "894cacbc6095d86ff29e8ca684d409eb990840f4c02f59cdf7e04df862d1c2f5",
           "importsFiles": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/felt.ts"
@@ -19403,10 +19424,10 @@
             {
               "in": "assertNotReserved",
               "kind": "throw",
-              "line": 349
+              "line": 364
             }
           ],
-          "hash": "c9ca6a19121988e11f7a9c943d6bb3e96493f27e2efc51bb3bcd3121f091605a",
+          "hash": "c3f6fbc9ab1f60143f398c6bb0d4165eb9c35783d01996e33027edfa92824478",
           "importsFiles": [
             "packages/sidecar/src/framing.ts"
           ],
@@ -19445,7 +19466,7 @@
           "path": "packages/sidecar/src/serializer.ts"
         },
         {
-          "hash": "15ef55b0721862ba3a709f24d9611827b93b9d0df60fcb6a222a8306a1d33517",
+          "hash": "bf4cbbbc4ad674d65ccf2002ad77a0fd2057890f1f79b4293e37ddcf9ea34f35",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/client.ts",
@@ -19473,55 +19494,65 @@
             {
               "in": "handle",
               "kind": "catch",
-              "line": 358
+              "line": 363
             },
             {
               "in": "dispatch",
               "kind": "catch",
-              "line": 623
+              "line": 630
             },
             {
               "in": "dispatch",
               "kind": "throw",
-              "line": 627
+              "line": 634
             },
             {
               "in": "dispatch",
               "kind": "catch",
-              "line": 631
+              "line": 638
             },
             {
               "in": "preview",
               "kind": "throw",
-              "line": 696
+              "line": 703
             },
             {
               "in": "runWorldMutation",
               "kind": "catch",
-              "line": 925
+              "line": 947
             },
             {
               "in": "runWorldMutation",
               "kind": "throw",
-              "line": 934
+              "line": 956
+            },
+            {
+              "in": "rebaseAfterLoad",
+              "kind": "catch",
+              "line": 1153
+            },
+            {
+              "in": "rebaseAfterLoad",
+              "kind": "throw",
+              "line": 1154
             },
             {
               "in": "replicatePeerCommit",
               "kind": "catch",
-              "line": 1193
+              "line": 1247
             },
             {
               "in": "outbound",
               "kind": "catch",
-              "line": 1217
+              "line": 1272
             },
             {
               "in": "outbound",
               "kind": "throw",
-              "line": 1236
+              "line": 1291
             }
           ],
-          "hash": "179d890ea4570f67b3f7b2fb874289b0b16deb124b66fdb5eb70bbd3d2fe4718",
+          "hash": "da20d36a053a7a618520043fee86a90d7a78e50a716cf6caa30207a31cd20f80",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/sidecar/src/protocol.ts",
@@ -19697,7 +19728,7 @@
           "path": "site/src/content/docs/handbook/07-rulesets.md"
         },
         {
-          "hash": "33bb613b3ec317b1d0275b97dd74d1ce75f04f0e52d5b09507e26af7d244a537",
+          "hash": "5e5077a402b5da6dc9ca1e08375b0552a9accc74e30fc92d8fa2ba1ca90db8c1",
           "path": "site/src/content/docs/handbook/08-ai-cognition.md"
         },
         {
@@ -19937,11 +19968,11 @@
           "path": "site/src/content/docs/handbook/65-consequences-that-leave-marks.md"
         },
         {
-          "hash": "58a65726f44e7a0ed720b49f05450a2db977292c6f8db06866c12f0bfd6dab70",
+          "hash": "e54b680b78314c1491d655d625ede45dbea5df1e92bc7b52dc3e3907f39a28f3",
           "path": "site/src/content/docs/handbook/66-visual-clients.md"
         },
         {
-          "hash": "c30aba065a879e1b22ee0aa59fea8b2bf3f4b0754b2632df274d7e35676be7f5",
+          "hash": "0b8c0ed8c7c2b504c5d33f48ecaae1a4505eb155eccffd36e4c8c8a7cc65c2e1",
           "path": "site/src/content/docs/handbook/appendix-a-event-vocabulary.md"
         },
         {
@@ -19953,7 +19984,7 @@
           "path": "site/src/content/docs/handbook/appendix-c-module-api.md"
         },
         {
-          "hash": "daba932f0ba2892af7de35ae453896ccab616fa583249640ec8045718f6f4fd0",
+          "hash": "5142009462d992171e7f3fee9e365cdf4b66373033d09146925d0548fb299510",
           "path": "site/src/content/docs/handbook/appendix-d-cli-reference.md"
         },
         {
@@ -19961,7 +19992,7 @@
           "path": "site/src/content/docs/handbook/beginners.md"
         },
         {
-          "hash": "7ddbdf5c29e06253d4274e248520644c16da9c762a5c5ff7e361316e79251ecd",
+          "hash": "2b9e0fe736ce81ed668c76f8e2deb1ce7411c188ba5f73729f493aa63d03b348",
           "path": "site/src/content/docs/handbook/index.md"
         },
         {
@@ -19978,7 +20009,7 @@
         },
         {
           "constantOnly": true,
-          "hash": "0789ad4a0a6155e11b38bb86ed530ae0af7aa900874c086d3c670f671826f3e8",
+          "hash": "c1f84922545f82912159d1780b3ab02967228f77926d12e49dc6e6bc83f68a41",
           "path": "site/src/site-config.ts"
         },
         {
@@ -20051,7 +20082,7 @@
           "path": "packages/soundpack-core/README.zh.md"
         },
         {
-          "hash": "e2c12ce3d42548b724702a9eb7966fc5a7c7634392b1662faa8b870c7bdf9632",
+          "hash": "12a9b54aab02832cce7061cf5f93d949e952f59595b914265f4dbc242e37c2f6",
           "path": "packages/soundpack-core/package.json"
         },
         {
@@ -20336,7 +20367,7 @@
           "path": "templates/starter/LICENSE"
         },
         {
-          "hash": "c1921979cc7e9b4ce5a25c4c311e559aa3127af148299b4d498ef01c2b068570",
+          "hash": "1c42a6484f5946b6ef9e5481139f45ec32d39262bf93cbc0e44984e553d92d55",
           "path": "templates/starter/README.md"
         },
         {
@@ -20344,7 +20375,7 @@
           "path": "templates/starter/SCAFFOLD.md"
         },
         {
-          "hash": "8aed4afdbcb76bd5595d880186478b595283d3f637ebc8310c4a78f426c84137",
+          "hash": "8ef7147b2cdaf63df5e9919ab748127feb345d6c5f0bd78c169eceeba9af01ee",
           "path": "templates/starter/package.json"
         },
         {
@@ -20355,7 +20386,7 @@
           "exports": [
             "toContentPack"
           ],
-          "hash": "eb771a6e960ecbbaf7fbc4528a57a980d966c47d43c4535cc32b1461d0e61add",
+          "hash": "918321836fc3a7d01d3f5f195a195fdeddc3b68592b076b09c2665bf31cad3d8",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -20405,10 +20436,10 @@
             {
               "in": "createGame",
               "kind": "throw",
-              "line": 178
+              "line": 180
             }
           ],
-          "hash": "fb109186eecfaf584702359605f1525e34bacd8359e2924783f12ea6ab26ae5f",
+          "hash": "d3619e1c3942ed3877d3ecd214a19d0e9fd9cb479294da0f8545922652fde2cc",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/modules/src/index.ts",
@@ -20426,7 +20457,7 @@
           "path": "templates/starter/src/setup.ts"
         },
         {
-          "hash": "63a452fbe3959156c123fb307aac409cb51f704ffec26e055a70ad1a20869f71",
+          "hash": "610b7da4c4ac8c1a39f1fc99073aa046629716819a4b54a4d1fd16c6cac6cb09",
           "importOrder": [
             "packages/content-schema/src/index.ts",
             "packages/modules/src/index.ts",
@@ -20512,7 +20543,7 @@
           "path": "packages/starter-bounty-hunter/README.zh.md"
         },
         {
-          "hash": "e5e31f62592bcb8fb223851f0088cffc54e2c8bb5c72367af409617caa3572eb",
+          "hash": "d600c62692046efaa0d2db8dab6a0f157d4aa1220068eb0f50a98d283262414c",
           "path": "packages/starter-bounty-hunter/package.json"
         },
         {
@@ -20554,7 +20585,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "6b26b82745c08ce8e5837da005278f864be637721ac4451ce4f2bfad55d3ce19",
+          "hash": "a355c0e0e64faa3a541187229d045478acc45624838de61ca3c3a3f17921fe94",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -20721,7 +20752,7 @@
           "path": "packages/starter-colony/README.zh.md"
         },
         {
-          "hash": "394d1442441e2276ec6f111b3a47aa13147f1162a6ad9379889a2c3d775320ee",
+          "hash": "ada5b5fbdb1099431b2d4fd652fa8bab3aef0b6452cd7fcaaeb177f161991c35",
           "path": "packages/starter-colony/package.json"
         },
         {
@@ -20775,7 +20806,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "94a3a72d598dc7e4eddcf2e9c9774c575767dd48895bda3f5fe4fa1690e1d65a",
+          "hash": "9c01a5c8e87d698218412b81328e3f3b3ffff73b3d13e616fa368011c8ee4c5d",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -20810,7 +20841,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "9f9997f2dc8929c0eb71eec73e1fd85d78888ab09787ea21b736193b36b2349f",
+          "hash": "67130b1c5fadfa0bf5c93e19548b71cf436370de1f101126d1c171d89b958f19",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -20985,7 +21016,7 @@
           "path": "packages/starter-cyberpunk/README.zh.md"
         },
         {
-          "hash": "3a6f449c46250f6b4df103f920675667f1fc0d0d3da08a89f5b8b8a6705bf609",
+          "hash": "079478a3d4903d8c630d7bf05a344c108f183d644417d7070652e28cbf8d9ce9",
           "path": "packages/starter-cyberpunk/package.json"
         },
         {
@@ -21029,7 +21060,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "cbe48094a4b218bfea13c80f3ed4d5cd11122a470b81f0b6540615e278cb353c",
+          "hash": "39188ade15e5914ed23aa91d38f3e8892cff8f7ddd55b275b409b05278b43996",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/modules/src/index.ts",
@@ -21064,7 +21095,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "e490916eac127b0a158b361fbe6aeb04a592875145a82836172edae1c174a1ff",
+          "hash": "3420294046cb7ae2db6a81426a9175e4a0d20601d551c194decce9db6a639a7d",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -21289,7 +21320,7 @@
           "path": "packages/starter-detective/README.zh.md"
         },
         {
-          "hash": "0df2d5d0a4dcdccdf691b5dccdacbfcaad8feea1ce507fea9b3b3d44ab667ffe",
+          "hash": "5b89a717dce205530bfef9a967357bf05d5064c7b88d866f3b49224275779106",
           "path": "packages/starter-detective/package.json"
         },
         {
@@ -21352,7 +21383,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "ccc4980c8e09416461d85f6baf36d30339fab1a0d4e15cfd8297962d803378ad",
+          "hash": "a7112f9148cf4df281104d6a01bee10cc6e070e0d27eaa2b513ea306562005e4",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -21387,7 +21418,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "23a752b4be89f15d8450f5b210a8279904e2f7897aa879f6bcd02dfa3def87a9",
+          "hash": "7960940f8dd394814d5195dcf1b9517e8b1b871fdc22eb873ea1911b1c572af1",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -21548,7 +21579,7 @@
           "path": "packages/starter-fantasy/README.zh.md"
         },
         {
-          "hash": "635c3c5745985e3d0d000569ae0664dbaf8f550b530d4d3cdb20bb43adab28f9",
+          "hash": "045592883c1879cf81734d30b47a167e0c2a0f045e6ba56800d95a0ea206fcaa",
           "path": "packages/starter-fantasy/package.json"
         },
         {
@@ -21573,7 +21604,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "1b9b996105d6c76e7531d4045f5681c003c42d3c5e43d5a4cc1ed657ac357ac0",
+          "hash": "aad392e11a0e04676ed1e0441b3f845df43fe5a3e745e38631441093704d1b1d",
           "path": "packages/starter-fantasy/src/content.json"
         },
         {
@@ -21599,7 +21630,7 @@
           "exports": [
             "toContentPack"
           ],
-          "hash": "56455dc8909fe332afc5bce7b82400dd687634d18eeffc23ed9aa1d08ba7821c",
+          "hash": "ec0572d427c3c85b825ddcbeeb9848ad12bd6643ce869c01203dd230ee55b4f0",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -21636,7 +21667,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "4dfc81783fdc8b9b90567b83fda66819752199f5a4c6b2ca1ba51399f1027ec7",
+          "hash": "ee0331dae019b6f767446a5bdf0bed472ea50d246dc57782a14eb44cfcfcf43f",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -21836,7 +21867,7 @@
           "path": "packages/starter-gladiator/README.zh.md"
         },
         {
-          "hash": "f7aea033682b09fd1f2187631b635285f0c9fcd9312852a85a5317400c04b231",
+          "hash": "5310f3f8314848483f1a747f4596f2e0a8001439ae40fc6ad186e7a330c5721d",
           "path": "packages/starter-gladiator/package.json"
         },
         {
@@ -21895,7 +21926,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "064814dc165f2357404f5654cd3b645e5354c4736aa491044abe6ca4a97a619a",
+          "hash": "4afe65b6acbaddb3bf5a2b51f3c33c7025edfe0aeb313b54283f1f7e22e355af",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -21953,7 +21984,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "d89c2f6ff9d7c08fa5b2f3bc8ca622fcc74e89930337e3d61d984c1e6879edb0",
+          "hash": "08b11be1299eb42b137de8899212b0236f69d84fd44eaa79713f7bc209f861c3",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -22130,7 +22161,7 @@
           "path": "packages/starter-merchant/README.zh.md"
         },
         {
-          "hash": "fc9e536f9290a08589a628dbc87ec66824cf3adfdfb29b8695dedbff47575be6",
+          "hash": "9ab29b0effa379dacd10db65ce91409bf1c0c4c0f67ee14ace932d906e79c5cd",
           "path": "packages/starter-merchant/package.json"
         },
         {
@@ -22184,7 +22215,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "b5091de808f7b0c09ddd6e4bea26199150231536e86c686ef5705b12f38c1256",
+          "hash": "c34dc6c4a5486ab7cc87591975e7840b5b3febd0495c99af2c9b1945d0fc2016",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -22284,7 +22315,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "5f5948f2a2e7324ad94aa8a2d130074eab3e05bb654e25e22d0ac3cd7ca90e5c",
+          "hash": "328c31b030fa73519c806b58a15898bf8a9d22bd37abae6a6286c9f14a982c70",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -22444,7 +22475,7 @@
           "path": "packages/starter-pirate/README.zh.md"
         },
         {
-          "hash": "bf0cd30563dd9bc98bf7ba5962ac2ecb996685ef55487ff7be2f0b6bea3c6a8b",
+          "hash": "b25bd9494e1ddc53140860bdda128788229c909b45ce5a75a0d0e4261be0c024",
           "path": "packages/starter-pirate/package.json"
         },
         {
@@ -22505,7 +22536,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "4cfacd2a30e3ce5053380b49394cb77504a455dc30496fd580707fa6d9ad2fe2",
+          "hash": "1165c4655f2d998e963951222a2ccfbdf0ae35cb6ba2bfdea330b7fa60b46d11",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -22540,7 +22571,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "a11e7619f6476e510dc41d71ca446902e490f96913e6f5e24d1482406584b34b",
+          "hash": "fa3c167e0759586562e8c6252f327962500fcfaeecb2631010b74c69f9fa5faf",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -22690,7 +22721,7 @@
           "path": "packages/starter-ronin/README.zh.md"
         },
         {
-          "hash": "3dfd3f433660e6f608601424b8d4004226abd4c16e85fb4e93c6a5ca1e97b251",
+          "hash": "3cb7c41356810cc2c9879fe2295852f6d1d9867c001d0c0dd84c0c1f7fd11abb",
           "path": "packages/starter-ronin/package.json"
         },
         {
@@ -22746,7 +22777,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "838645d3b172b7676bc6dd1e9707abf384c976884a32202ec3bf57039f5c021b",
+          "hash": "78d90313b7bb03485f663d54e5bb93ddb125b45a7d82df4c0b1330fb50c3875d",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -22781,7 +22812,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "09c8f2d1bfd07934b827c560a4aaa96624f83038d56cf9b910f48ee7342c7129",
+          "hash": "84c3614e815b534585aa24302eb8f8361ece44fd53007c9384826e5089d03640",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -22948,7 +22979,7 @@
           "path": "packages/starter-vampire/README.zh.md"
         },
         {
-          "hash": "c7c0cb8174787634ee3ec50789518475a09b8d9d48fc869d986ff8d486eb3385",
+          "hash": "409bf68306b7f5d323eaf0e9b503c368ea1a3e0a0169baf04ecc714513e196dc",
           "path": "packages/starter-vampire/package.json"
         },
         {
@@ -23002,7 +23033,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "7365ff117520879d43942093a80d4a908f6e78bcfdb4fd45ce7ae8eca333a9ea",
+          "hash": "f396174051a8ce6f4f1f344ef305714926cb84dc5b048d461fa02976ab010af6",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -23037,7 +23068,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "5438c73ca3b14a3bd39fbe5faac445a6fb7193732891d4b9a22f168e62c0a794",
+          "hash": "fa802e10f4e36e4e1cd15278076466cdb29a4e11b1ee63a0f8f93e946a4b28c1",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -23204,7 +23235,7 @@
           "path": "packages/starter-weird-west/README.zh.md"
         },
         {
-          "hash": "2b236f3625a2b829213298823c83e8850890a19eefdba0c0256c7286b3810464",
+          "hash": "30978851ee4d3d3ab0b91506a75e6d7b87ac1132a9152aec9b8a2dbf64152af3",
           "path": "packages/starter-weird-west/package.json"
         },
         {
@@ -23248,7 +23279,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "566f943c18ddf7f2669da6c62d34b7e4889f0cd6feca8eae433e1769863dec4d",
+          "hash": "4a63500bc02446f2a030b748609536a63e2420ed9aa75f5c73f3ca92b3581d53",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -23283,7 +23314,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "7261caec7d6b5aa81b40ac4134b71d7af140af8b67c6c227410010d9b700d6ca",
+          "hash": "712b8446b14457c60b7ae0e712534dea124dec458c26fec2937ccad7b94cac32",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -23433,7 +23464,7 @@
           "path": "packages/starter-zombie/README.zh.md"
         },
         {
-          "hash": "0d0ac35b14ed7c98f600086ef5fd0d1f1270cc29521edf1f780d8e9a6b70fcd5",
+          "hash": "f43cab3f8be6ab00d95fd96817ba7936d92132547aae0db705e175da91364c4d",
           "path": "packages/starter-zombie/package.json"
         },
         {
@@ -23494,7 +23525,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "89d67dff20abb50360e5180a312587dd0cfca6d06ab7e1f6693ff45ae1e9a6a9",
+          "hash": "28ba07db36dbd543c72963920e1ad2e3caa1cac7097bd14d0ceb50308bfd9ecf",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/content-schema/src/index.ts",
@@ -23539,7 +23570,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "7cb8501b7be21edc7ed1104a70cd8b617e3614fe3af983fcb98cd3545910d9ad",
+          "hash": "e67b81296f703f6911019e239a42715d0f38ede30b28507617743200e42708a6",
           "importOrder": [
             "packages/modules/src/index.ts",
             "packages/core/src/index.ts",
@@ -23700,7 +23731,7 @@
           "path": "packages/terminal-ui/README.zh.md"
         },
         {
-          "hash": "60d3f585109b4202732a1ae055e0400e154bcf571a236fd229538b0ca347902a",
+          "hash": "51961f736b6984f4766a5b18a57509f107df7cc0dfc9dc8148b0f6d43eeb03d3",
           "path": "packages/terminal-ui/package.json"
         },
         {
@@ -23714,7 +23745,7 @@
           "path": "packages/terminal-ui/src/glyphs.ts"
         },
         {
-          "hash": "36c6dee5b91bd53887e09e286ef9858619385dc1227cac031d7e8c23947a5e96",
+          "hash": "4d3b82b688b03dc15d427d2cb4eac53920bf56554c2782ab05d5995933ab712d",
           "importOrder": [
             "packages/terminal-ui/src/renderer.ts",
             "packages/terminal-ui/src/presentation.ts",
@@ -23731,7 +23762,7 @@
           "reexportsOnly": true
         },
         {
-          "hash": "70ec3bcb98ee87c1fe219b4d376699b16e04d7af129965c9459e478d493a64dd",
+          "hash": "33bdcbdb844fe4958ab32550f15724990c77658a268fef01405aaf136b91a462",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/presentation/src/index.ts",
@@ -23757,7 +23788,7 @@
             "presentTurn",
             "renderNarrationLine"
           ],
-          "hash": "07b86c094e5edc32673a669a5a5b6e2b17139c1767265052eb0d5297ee23b6d8",
+          "hash": "a4dc2e7c7209c9f665b4f6ac38dac721b95ef7773adce4a5d00eda012dc64d30",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/presentation/src/index.ts",
@@ -23789,7 +23820,7 @@
           "testFramework": "vitest"
         },
         {
-          "hash": "e99db83da7e924faec7e64e39c80158916b908f65e7242a88dfc6fc469cf01d9",
+          "hash": "dafdd3c60cc10360c047690864b62626f3fb2f1994c52a5f71bc7ec606c722e3",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/terminal-ui/src/renderer.ts",
@@ -23824,7 +23855,7 @@
             "visibleDialogueChoices",
             "wrapToWidth"
           ],
-          "hash": "0d6e973146c324ea470a5b38c926e7458ad5f751496515aac0e9ba9149bdfc85",
+          "hash": "a6cd881ee98639d760798e992ad1899fffde0b7e66bd96a1968c53965f473fde",
           "importOrder": [
             "packages/core/src/index.ts",
             "packages/terminal-ui/src/styles.ts",
@@ -29438,8 +29469,8 @@
   ],
   "engine": "1.26.0",
   "generatedFrom": {
-    "commit": "c678bc7ee4d869df08e91d8e3c2f9e669b37f437",
-    "tracked": 1392
+    "commit": "18d65510f5c367d3e8d6314aba382d110b0e77c4",
+    "tracked": 1397
   },
   "landings": [
     {
@@ -30882,6 +30913,66 @@
         }
       ],
       "target": "packages/cli/src/__fixtures__/c1-forge-manifest.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/cli/src/c4-content-intake.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/cli/src/validate.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/cli/src/__fixtures__/forge-companion-roles-manifest.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/cli/src/c4-content-intake.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/cli/src/validate.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/cli/src/__fixtures__/forge-companion-roles-pack.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/cli/src/c4-content-intake.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/cli/src/__fixtures__/forge-passive-roles-manifest.json",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "packages/cli/src/c4-content-intake.test.ts",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": "packages/cli/src/__fixtures__/forge-passive-roles-pack.json",
       "writers": []
     },
     {

@@ -1,20 +1,18 @@
 # ai-rpg-engine: how it works
 
-Mapped at 2026-11-24 from commit c678bc7 by Atlas 1.26.0.
+Mapped at 2026-11-25 from commit 18d6551 by Atlas 1.26.0.
 
 ## What this is
 
 40 parts, mostly TypeScript (801 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.
 
-## What changed since 2026-11-24 (c44ca4d)
+## What changed since 2026-11-24 (c678bc7)
 
-- CI runs 1 more file than before.
-- Release runs 1 more file than before.
-- docs/handbook/appendix-a-event-vocabulary.md is now read by packages/core/src/event-vocabulary.test.ts.
-- package.json is now also read by .github/workflows/release.yml and scripts/gates.test.ts.
-- packages/ is now also read by packages/core/src/event-vocabulary.test.ts.
-- And 18 more new writers and readers of places.
-- 2 files added and 16 changed content, across 9 parts.
+- packages/cli/src/__fixtures__/forge-companion-roles-manifest.json is now read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.
+- packages/cli/src/__fixtures__/forge-companion-roles-pack.json is now read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.
+- packages/cli/src/__fixtures__/forge-passive-roles-manifest.json is now read by packages/cli/src/c4-content-intake.test.ts.
+- And 1 more new writer or reader of a place.
+- 5 files added and 115 changed content, across 37 parts.
 
 ## What comes in
 
@@ -79,11 +77,11 @@ Mapped at 2026-11-24 from commit c678bc7 by Atlas 1.26.0.
 - **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.ts** changed together in 11 of 16 commits, inside the ledger-adapter part.
 - **packages/ollama/src/cli-run.test.ts** and **packages/ollama/src/cli.ts** changed together in 11 of 16 commits, inside the ollama part.
 - **packages/ledger-adapter/src/contracts.ts** and **packages/ledger-adapter/src/settle/adapter.test.ts** changed together in 10 of 16 commits, inside the ledger-adapter part.
-- **packages/sidecar/src/protocol.ts** and **packages/sidecar/src/server.ts** changed together in 11 of 18 commits, inside the sidecar part.
+- **packages/sidecar/src/protocol.ts** and **packages/sidecar/src/server.ts** changed together in 12 of 20 commits, inside the sidecar part.
 
 12 files changed together with their own tests, as expected.
 
-Window: 180 days; a pair counts from 10 shared commits, since 52 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
+Window: 180 days; a pair counts from 10 shared commits, since 53 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do.
 
 ## What no test touches
 
@@ -139,7 +137,7 @@ Read those in order to follow one pull request end to end.
 - 16 writes and 13 reads go to the directory the command is run in or a path their caller passes, not to this repository.
 - 12 writes and 9 reads go to the directory the command is run in, not to this repository.
 - 6 writes and 3 reads go to a temporary directory, not to this repository.
-- 3 commands are built at run time and not followed, 2 of them in tests.
+- 4 commands are built at run time and not followed, 3 of them in tests.
 - CI runs or checks 436 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 436.
 - Release runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435.
 

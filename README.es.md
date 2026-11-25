@@ -37,7 +37,7 @@ Este es un **motor de composición**, no un juego terminado. Los 12 mundos inici
 
 ---
 
-## Estado actual (v3.12.2)
+## Estado actual (v4.0.0)
 
 **Lo que funciona y está probado:**
 - El núcleo de simulación: ticks deterministas, RNG con semilla, repetición idéntica byte a byte, y guardar y reanudar
@@ -303,13 +303,13 @@ Los 12 mundos de inicio son **ejemplos de composición**: demuestran cómo combi
 
 ### Dónde estamos ahora
 
-Ambas líneas de composición están completas: **8368 pruebas en 388 archivos**, los 12 iniciadores en `buildCombatStack` **y** `buildWorldStack`, reproducción determinista e idéntica byte a byte bajo semillas impresas, puntuación completa de la toma de decisiones de la IA y una CLI que crea, ejecuta, valida e inspecciona. El arco v3.x hizo que el mundo estuviera activo (NPC con nombre, la superficie social de 25 verbos, economías de género: v3.0–v3.1), colocó activos de propiedad del jugador en la testnet de XRPL como un canal secundario opcional (v3.2–v3.4), creó dos iniciadores centrados en el sistema y los convirtió en instrumentos de mejora del motor (v3.5–v3.6), iluminó y reforzó la capa estratégica hasta que las consecuencias dejan marcas reales (v3.7–v3.8), proporcionó a los hosts la superficie del motor que necesita Godot (v3.8.1), cerró el ciclo de creación para que una sesión de estudio o un paquete JSON básico produzca un mundo jugable de principio a fin (v3.9), colocó toda la capa estratégica en los sentidos del jugador (v3.10), afinó la profundidad que ahora alcanzan esos sentidos (v3.11) y **proporcionó a un host de dibujo la sensación de un ciclo: el primer cliente de píxeles, un puerto dimétrico de Godot 4, se ejecuta en ese contrato (v3.12)**.
+Las dos columnas de composición están completas: los 12 mundos iniciales usan `buildCombatStack` **y** `buildWorldStack`, la repetición es determinista e idéntica byte a byte con semillas impresas, la puntuación de decisiones de la IA está completa y la CLI crea estructuras, ejecuta, valida e inspecciona.
 
 El historial completo de versiones está en [CHANGELOG.md](CHANGELOG.md).
 
 ### Siguiente
 
-v3.12 cerró el contrato felt y el primer host de dibujo. Lo que queda es un trabajo de ciclo posterior, no los restos de este:
+Lo que queda es trabajo de ciclos posteriores:
 
 - Un fondo ambiental de la familia de tono «próspero» (el puente de tono y la selección aleatoria por zona ya están incluidos; CORE aún no tiene una pista base próspera).
 - Multijugador: dos jugadores *humanos* compartiendo un mundo (una capa de red, deliberadamente pospuesta; los perfiles compartidos de un solo controlador se envían hoy como [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).

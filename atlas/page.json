@@ -208,66 +208,53 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 2,
-      "changed": 16,
+      "added": 5,
+      "changed": 115,
       "moved": 0,
-      "parts": 9,
+      "parts": 37,
       "removed": 0
     },
     "items": [
       {
-        "kind": "door",
-        "sentence": "CI runs 1 more file than before.",
+        "kind": "landing",
+        "sentence": "packages/cli/src/__fixtures__/forge-companion-roles-manifest.json is now read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.",
         "subjects": [
-          ".github/workflows/ci.yml"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "Release runs 1 more file than before.",
-        "subjects": [
-          ".github/workflows/release.yml"
+          "packages/cli/src/__fixtures__/forge-companion-roles-manifest.json",
+          "packages/cli/src/c4-content-intake.test.ts",
+          "packages/cli/src/validate.test.ts"
         ]
       },
       {
         "kind": "landing",
-        "sentence": "docs/handbook/appendix-a-event-vocabulary.md is now read by packages/core/src/event-vocabulary.test.ts.",
+        "sentence": "packages/cli/src/__fixtures__/forge-companion-roles-pack.json is now read by packages/cli/src/c4-content-intake.test.ts and packages/cli/src/validate.test.ts.",
         "subjects": [
-          "docs/handbook/appendix-a-event-vocabulary.md",
-          "packages/core/src/event-vocabulary.test.ts"
+          "packages/cli/src/__fixtures__/forge-companion-roles-pack.json",
+          "packages/cli/src/c4-content-intake.test.ts",
+          "packages/cli/src/validate.test.ts"
         ]
       },
       {
         "kind": "landing",
-        "sentence": "package.json is now also read by .github/workflows/release.yml and scripts/gates.test.ts.",
+        "sentence": "packages/cli/src/__fixtures__/forge-passive-roles-manifest.json is now read by packages/cli/src/c4-content-intake.test.ts.",
         "subjects": [
-          "package.json",
-          ".github/workflows/release.yml",
-          "scripts/gates.test.ts"
+          "packages/cli/src/__fixtures__/forge-passive-roles-manifest.json",
+          "packages/cli/src/c4-content-intake.test.ts"
         ]
       },
       {
         "kind": "landing",
-        "sentence": "packages/ is now also read by packages/core/src/event-vocabulary.test.ts.",
-        "subjects": [
-          "packages/",
-          "packages/core/src/event-vocabulary.test.ts"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "And 18 more new writers and readers of places.",
+        "sentence": "And 1 more new writer or reader of a place.",
         "subjects": []
       },
       {
         "kind": "counts",
-        "sentence": "2 files added and 16 changed content, across 9 parts.",
+        "sentence": "5 files added and 115 changed content, across 37 parts.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "c44ca4db94a580b633aa80d9121fec2fce5acbab",
-      "generatedAt": "2026-11-24T12:35:45.809Z"
+      "commit": "c678bc7ee4d869df08e91d8e3c2f9e669b37f437",
+      "generatedAt": "2026-11-24T13:33:16.359Z"
     },
     "unchanged": false
   },
@@ -335,7 +322,7 @@
     {
       "a": "packages/sidecar/src/protocol.ts",
       "b": "packages/sidecar/src/server.ts",
-      "either": 18,
+      "either": 20,
       "partLabels": [
         "sidecar",
         "sidecar"
@@ -345,15 +332,15 @@
         "sidecar"
       ],
       "relation": "inside",
-      "shared": 11
+      "shared": 12
     }
   ],
   "changesTogetherNote": [
     "12 files changed together with their own tests, as expected.",
-    "Window: 180 days; a pair counts from 10 shared commits, since 52 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
+    "Window: 180 days; a pair counts from 10 shared commits, since 53 source files reach 10 revisions; the floor falls to 3 when fewer than 20 do."
   ],
   "changesTogetherWithTests": 12,
-  "commit": "c678bc7ee4d869df08e91d8e3c2f9e669b37f437",
+  "commit": "18d65510f5c367d3e8d6314aba382d110b0e77c4",
   "defaultBranch": "main",
   "derived": "40 parts, mostly TypeScript (801 files), JavaScript (13), GDScript (3), CSS (2) and Astro (1). Work enters through 6 doors; CI and Release each reach 35 parts, and CI is followed because a pull request goes through it. It publishes workspace packages to npm and a container image. It deploys a site to GitHub Pages. People run ai and ai-rpg-engine.",
   "doors": [
@@ -1602,7 +1589,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-11-24T13:33:16.359Z",
+  "generatedAt": "2026-11-25T12:36:56.552Z",
   "limits": [
     "5 imports could not be resolved: `fixtures/verify_state_digest_vectors.gd` imports `res://framing.gd`; `fixtures/verify_state_digest_vectors.gd` imports `res://sidecar_client.gd`; `packages/cli/src/external-pack.ts` imports a path built at run time; and 2 more.",
     "21 writes and 34 reads use paths built at run time and are not named here.",
@@ -1611,7 +1598,7 @@
     "16 writes and 13 reads go to the directory the command is run in or a path their caller passes, not to this repository.",
     "12 writes and 9 reads go to the directory the command is run in, not to this repository.",
     "6 writes and 3 reads go to a temporary directory, not to this repository.",
-    "3 commands are built at run time and not followed, 2 of them in tests.",
+    "4 commands are built at run time and not followed, 3 of them in tests.",
     "CI runs or checks 436 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 436.",
     "Release runs or checks 435 files and directories; the map records 200 of them, some from every directory, and walks its reach from all 435."
   ],

@@ -37,7 +37,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mon
 
 ---
 
-## État actuel (v3.12.2)
+## État actuel (v4.0.0)
 
 **Ce qui fonctionne et est testé :**
 - Le cœur de simulation : ticks déterministes, RNG à graine, rejeu identique octet pour octet, et sauvegarde et reprise
@@ -300,13 +300,13 @@ Les 12 mondes de départ sont des **exemples de composition** : ils montrent com
 
 ### Où nous en sommes aujourd’hui
 
-Les deux axes de composition sont terminés — **8368 tests sur 388 fichiers**, tous les 12 éléments de départ sur `buildCombatStack` **et** `buildWorldStack`, relecture déterministe et identique au niveau des octets sous des graines imprimées, évaluation complète des décisions de l’IA et une interface en ligne de commande qui crée, exécute, valide et inspecte. L’arc v3.x a rendu le monde actif (PNJ nommés, la surface sociale à 25 verbes, économies de genre — v3.0–v3.1), a placé les actifs appartenant aux joueurs sur le testnet XRPL en tant que canal secondaire sur demande (v3.2–v3.4), a créé deux éléments de départ axés sur le système et les a transformés en instruments d’amélioration du moteur (v3.5–v3.6), a éclairé et renforcé la couche stratégique jusqu’à ce que les conséquences laissent des marques réelles (v3.7–v3.8), a donné aux hôtes la surface du moteur dont Godot a besoin pour s’y attacher (v3.8.1), a fermé la boucle d’auteur afin qu’une session de studio ou un simple pack JSON produise un monde jouable de bout en bout (v3.9), a placé toute la couche stratégique sur les sens du joueur (v3.10), a affiné la profondeur que ces sens atteignent maintenant (v3.11) et **a donné à un hôte de dessin le sentiment d’un tic — le premier client pixel, un port dimétrique Godot 4, s’exécute sur ce contrat (v3.12)**.
+Les deux colonnes de composition sont terminées : les 12 mondes de départ utilisent `buildCombatStack` **et** `buildWorldStack`, la relecture est déterministe et identique octet pour octet avec des graines imprimées, l'évaluation des décisions de l'IA est complète, et la CLI génère, exécute, valide et inspecte.
 
 L'historique complet des versions se trouve dans [CHANGELOG.md](CHANGELOG.md).
 
 ### Suivant
 
-La v3.12 a bouclé le contrat felt et le premier hôte de rendu. Ce qui reste est un travail de cycle ultérieur, et non des restes de celui-ci :
+Ce qui reste relève de cycles ultérieurs :
 
 - Une nappe d’ambiance pour la famille tonale « prosperous » (le pont tonal et le tirage par zone sont livrés ; CORE n’a toujours pas de piste audio « prosperous »).
 - Multijoueur — deux joueurs *humains* partageant un monde (une couche de mise en réseau, délibérément différée ; les profils partagés à un seul contrôleur sont disponibles aujourd’hui sous la forme de [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
